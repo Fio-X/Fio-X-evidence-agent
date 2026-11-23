@@ -2673,12 +2673,12 @@
     "relief": 0.3,
     "filler": [],
     "figure_style": {
-     "default": "flat",
+     "default": "line",
      "values": [
       "flat",
       "line"
      ],
-     "doc": "How the crowd is painted. flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
+     "doc": "How the crowd is painted (line is the main look, flat is kept for comparison). flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
     }
    },
    "trade": {
@@ -2951,7 +2951,14 @@
     "tally_k": 1.0,
     "groups_k": 1.0,
     "row_k": 1.0,
-    "depth_groups": true
+    "depth_groups": true,
+    "body_w": 10.6,
+    "row_dy_k": 1.8,
+    "unlit_k": 0.72,
+    "stagger": 0.5,
+    "stagger_rows": 2,
+    "gap": 0.5,
+    "rank_max": 10
    },
    "container_unit": {
     "mark_z": 22,

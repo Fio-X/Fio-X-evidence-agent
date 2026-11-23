@@ -382,19 +382,28 @@ def stack_unit(size=1.0, lit=False, name="stack"):
     return out
 
 
+def _limb(m, pts, n=10):
+    """A tapered round limb: pts = [(x, z, rx, ry)] top to bottom, each a ring of that centre and half-widths (front view in x, z)."""
+    m.merge(loft([[(x + rx * math.cos(2 * math.pi * i / n), ry * math.sin(2 * math.pi * i / n), z) for i in range(n)] for x, z, rx, ry in pts]))
+
+
 def figure_unit(size=1.0, lit=False, name="figure", depth=0):
-    """A pictogram person in the Isotype manner (people): evenly proportioned, a round head one sixth of the height, no neck, shoulders
-    wider than the hips, two arms hanging free of the torso, two legs; a front view whose silhouette is the picture (no face, no pose:
-    lit and unlit differ in colour only). Every curved part is round (8 to 10 sides) so that Blender's pen draws the outline and no
-    crease inside it. `depth` 0..2 is the row the figure stands in: its group is lit / thing, lit2 / thing2, lit3 / thing3, so the
-    painting can lay the rows back to front with a gap between them."""
-    H = 28.0 * size; g = _grp(lit) + ("" if depth == 0 else str(depth + 1)); m = Mesh(name, g)
-    _ball(m, (0, 0, 0.915 * H), 0.082 * H, n=10, rings=4)
-    ring = lambda w, d, z, n=10: [(0.5 * w * math.cos(2 * math.pi * i / n), 0.5 * d * math.sin(2 * math.pi * i / n), z) for i in range(n)]
-    m.merge(loft([ring(0.22 * H, 0.11 * H, 0.45 * H), ring(0.27 * H, 0.12 * H, 0.60 * H), ring(0.30 * H, 0.12 * H, 0.80 * H), ring(0.24 * H, 0.10 * H, 0.84 * H)]))
+    """A pictogram person in the Isotype / Gerd Arntz manner (people): a round head one seventh of the height, no neck, rounded shoulders,
+    a torso wider at the chest than at the waist and hips, each arm hanging from the shoulder curve with a clear gap to the torso, two
+    legs clearly apart; a front view whose silhouette is the picture (no face, no pose: lit and unlit differ in colour only). Every part
+    is round (10 sides) so that Blender's pen draws the outline and no crease inside it. `depth` 0..2 is the row the figure stands in:
+    its group is lit / thing, lit2 / thing2, lit3 / thing3, so the painting can lay the rows back to front."""
+    H = 28.0 * size; g = _grp(lit) + ("" if depth == 0 else str(depth + 1)); m = Mesh(name, g); d = 0.05 * H
+    _ball(m, (0, 0, 0.926 * H), 0.0715 * H, n=10, rings=4)
+    # torso: hips, waist, chest, then the shoulder line rolled over into a dome (the half-widths, bottom to top)
+    prof = ((0.44, 0.098), (0.52, 0.090), (0.62, 0.098), (0.72, 0.120), (0.78, 0.132), (0.82, 0.134), (0.85, 0.125), (0.868, 0.098), (0.878, 0.050))
+    m.merge(loft([[(hw * H * math.cos(2 * math.pi * i / 12), d * math.sin(2 * math.pi * i / 12), z * H) for i in range(12)] for z, hw in prof]))
     for sx in (-1, 1):
-        m.merge(tube((sx * 0.205 * H, 0, 0.78 * H), (sx * 0.215 * H, 0, 0.46 * H), r=0.03 * H, n=8))        # an arm, a gap away from the torso
-        m.merge(tube((sx * 0.065 * H, 0, 0.47 * H), (sx * 0.07 * H, 0, 0.0), r=0.052 * H, n=8))             # a leg
+        # an arm: a rounded shoulder cap on the torso's curve, then a slightly tapered tube that swings clear of the body
+        _limb(m, [(sx * 0.140 * H, 0.866 * H, 0.014 * H, 0.012 * H), (sx * 0.152 * H, 0.852 * H, 0.030 * H, 0.028 * H), (sx * 0.163 * H, 0.822 * H, 0.036 * H, 0.032 * H), (sx * 0.176 * H, 0.74 * H, 0.032 * H, 0.030 * H),
+                  (sx * 0.186 * H, 0.60 * H, 0.028 * H, 0.027 * H), (sx * 0.190 * H, 0.48 * H, 0.025 * H, 0.025 * H), (sx * 0.190 * H, 0.456 * H, 0.014 * H, 0.014 * H)], n=8)
+        # a leg: from the hip, tapering to the ankle, a clear gap between the two
+        _limb(m, [(sx * 0.058 * H, 0.50 * H, 0.043 * H, 0.045 * H), (sx * 0.064 * H, 0.30 * H, 0.039 * H, 0.040 * H), (sx * 0.070 * H, 0.0, 0.035 * H, 0.037 * H)], n=8)
     return [m]
 
 

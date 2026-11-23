@@ -210,11 +210,12 @@ def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows
     """The members in rows over x0..x1 (the lit first), a unit each: the unit of position i is units[i % len(units)]; (items, rows, cols)."""
     L = TOPICS["layout"]; n = len(ordered)
     rows = rows or (1 if n <= L["rows_at"][0] else 2 if n <= L["rows_at"][1] else 3); cols = -(-n // rows)
+    U = TOPICS["units"][units[0]]      # a unit may set its own row spacing and stagger (people: rows far enough apart, each row half a step off the one before)
     step = min(36.0, (x1 - x0) / (cols + 0.5)); size = size_of(step); left = (x0 + x1) / 2 - step * cols / 2; items = []
     nl = sum(1 for m in ordered if m["code"] in lit)
     for i, m in enumerate(ordered):
         r, c = divmod(i, cols); on = m["code"] in lit; fn = units[i % len(units)]
-        items.append(unit_item(fn, left + step * (c + 0.5) + step * 0.34 * (r % 3), y0 + L["row_dy"] * r, size * (1.0 if on else L["unlit_k"]), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk, depth=r))
+        items.append(unit_item(fn, left + step * (c + 0.5) + step * U.get("stagger", 0.34) * (r % U.get("stagger_rows", 3)), y0 + L["row_dy"] * U.get("row_dy_k", 1.0) * r, size * (1.0 if on else U.get("unlit_k", L["unlit_k"])), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk, depth=r))
     return items, rows, cols
 
 
@@ -267,11 +268,13 @@ def layout_rank(units, subject, topic=None):
     unit = units[0]
     L = TOPICS["layout"]["rank"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c))
-    if len(order) > L["max"]: order = order[:L["max"] // 2] + order[-(L["max"] - L["max"] // 2):]
+    U = TOPICS["units"][unit]; mx = U.get("rank_max", L["max"])        # a unit with a body width shows fewer, so that each stands clear of the next
+    if len(order) > mx: order = order[:mx // 2] + order[-(mx - mx // 2):]
     top = val[order[0]]
     if top <= 0: refuse("subject: a ranking needs a highest above 0")
     x0, x1 = TOPICS["layout"]["x"]; step = (x1 - x0) / len(order); items = []
-    for i, c in enumerate(order): items.append(unit_item(unit, x0 + step * (i + 0.5), L["y"], max(L["size"] * max(val[c], 0) / top, L["floor"]), i == 0, mark=i == 0))
+    big = min(L["size"], step / ((1 + U["gap"]) * U["body_w"])) if "body_w" in U else L["size"]       # the tallest person's width plus the gap fits one step
+    for i, c in enumerate(order): items.append(unit_item(unit, x0 + step * (i + 0.5), L["y"], max(big * max(val[c], 0) / top, L["floor"]), i == 0, mark=i == 0))
     return items, dict(layout=f"rank-{len(order)}", objects=len(order), lit=1)
 
 

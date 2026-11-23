@@ -39,14 +39,15 @@ def paper_field(name, size, lo_sigma=None):
     return a
 
 
-def ground_jpeg3(pal):
+def ground_jpeg3(pal, calm=1.0):
+    """The paper ground; `calm` < 1 lowers the cloud and crumple contrast (a pictogram topic: the people must beat the texture)."""
     h, w = H * 2, W * 2; r = np.random.RandomState(4)
     crumple = paper_field("crumple.jpg", (w, h)); crumple = (crumple - ndi.gaussian_filter(crumple, 80)); crumple = ndi.gaussian_filter(crumple, 2.0); crumple /= crumple.std()
     tooth = paper_field("tooth.jpg", (w, h)); tooth = tooth - ndi.gaussian_filter(tooth, 6); tooth /= tooth.std()
     blob1 = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 110); blob1 /= blob1.std()
     blob2 = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 34); blob2 /= blob2.std()
     grain = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 0.9); grain /= grain.std()
-    t = np.clip(0.5 + 0.10 * blob1 + 0.06 * blob2 + 0.075 * crumple + 0.05 * tooth + 0.018 * grain, 0, 1)
+    t = np.clip(0.5 + calm * (0.10 * blob1 + 0.06 * blob2 + 0.075 * crumple + 0.05 * tooth) + 0.018 * grain, 0, 1)
     d, m, l = (np.array(pal[k], float) for k in ("dark", "mid", "light"))
     lo = np.clip(t * 2, 0, 1)[..., None]; hi = np.clip(t * 2 - 1, 0, 1)[..., None]
     img = np.where(t[..., None] < 0.5, d + (m - d) * lo, m + (l - m) * hi)
@@ -218,13 +219,13 @@ def flat_figures(lab, idx, pal, acc, style):
     only (the pen strokes of the picture, a faint paper fill under them), the lit ones the accent filled and outlined, the pen of the page-bottom strip."""
     grey = mix(pal["light"], (250, 248, 244), 0.72); out = []; halo = hexc(pal["mid"])
     for d in (2, 1, 0):
-        for base, col, op in (("thing", grey, 1.0 if style == "flat" else 0.28), ("lit", acc, 1.0)):
+        for base, col, op in (("thing", grey, 1.0 if style == "flat" else 0.5), ("lit", acc, 1.0)):
             i = idx(base + ("" if d == 0 else str(d + 1)))
             if i is None: continue
-            ps = [pd(p, (0, 0), 0.0) for p in polys(to_geom(ndi.binary_opening(lab == i, iterations=1), 0.8, 30))]
+            ps = [pd(p, (0, 0), 0.0 if style == "flat" else 0.6) for p in polys(to_geom(ndi.binary_opening(lab == i, iterations=1), 0.8, 30))]
             if not ps: continue
-            hl = f' stroke="{halo}" stroke-width="1.6" stroke-linejoin="round"' if style == "flat" else ""
-            out.append(f'<path d="{"".join(ps)}" fill="{hexc(col)}" opacity="{op}"{hl}/>')
+            hl = f' stroke="{halo}" stroke-width="1.6" stroke-linejoin="round"' if style == "flat" else f' stroke="{hexc(pal["line"])}" stroke-width="1.3" stroke-linejoin="round" stroke-opacity="0.75"'
+            out.append(f'<path d="{"".join(ps)}" fill="{hexc(col)}" fill-opacity="{op}"{hl}/>')
     return out
 
 
@@ -233,7 +234,7 @@ def build():
     names, lab = H2.load_labels(); idx = lambda n: names.index(n) if n in names else None
     shade = np.asarray(Image.open(os.path.join(IN, "shade.png")).convert("L").resize((W, H), Image.LANCZOS)).astype(float) / 255
     S = json.load(open(os.path.join(IN, "strokes.json"))); k = W / S["w"]
-    gj, tooth, crumple = ground_jpeg3(pal)
+    gj, tooth, crumple = ground_jpeg3(pal, 0.4 if FS else 1.0)
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
     body = []   # the background turbines and plants get a pale body under their ink, so they read as things, not as wires
@@ -277,6 +278,7 @@ def build():
             w = H2.WID[ls] * np.clip(1 + 0.40 * BR.smooth_noise(rng, len(pts), 10), 0.55, 1.5); widths[ls] += list(w)
             pth = ink_stroke_lf(xy, w, 26.0 if ls == "hero_out" else 14.0, 36.0 if ls == "hero_out" else 22.0)
             if not pth: continue
+            if ls == "hero_in" and FS: continue      # a pictogram is its silhouette: no crease inside it
             if ls == "hero_in": G[ls].append(pth); continue
             dx, dy = xy[-1][0] - xy[0][0], xy[-1][1] - xy[0][1]; n = math.hypot(dx, dy) or 1
             DIRS["h" if abs(dx) / n > 0.8 else "v" if abs(dy) / n > 0.8 else "d"].append(pth)

@@ -250,8 +250,8 @@ class Figures(unittest.TestCase):
         self.assertAlmostEqual(z1 - z0, H, delta=0.06 * H)                     # the whole height
         self.assertLess(x1 - x0, 0.5 * H); self.assertGreater(x1 - x0, 0.3 * H)  # shoulders, evenly proportioned, not a pin and not a star
         self.assertLess(y1 - y0, 0.2 * H, "a front view: nothing deep")
-        head = [v for v in on.v if v[2] > 0.84 * H]; hx = max(v[0] for v in head) - min(v[0] for v in head)
-        self.assertAlmostEqual(hx / (z1 - z0), 1 / 6, delta=0.02)               # the head is about a sixth of the height
+        head = [v for v in on.v if v[2] > 0.884 * H]; hx = max(v[0] for v in head) - min(v[0] for v in head)
+        self.assertAlmostEqual(hx / (z1 - z0), 1 / 7, delta=0.02)               # the head is about a seventh of the height
         self.assertGreater(len(on.v), 120, "head, torso, two arms, two legs")
 
     def test_a_crowd_row_has_its_own_paint_group(self):
@@ -263,7 +263,8 @@ class Figures(unittest.TestCase):
         self.assertEqual(depths, [0, 1, 2], "each row of the grid is a group")
 
     def test_both_styles_paint_the_same_facts(self):
-        a, b = R.resolve(req("pop_tally"))[0], R.resolve(req("pop_tally", people_style="line"))[0]
+        a, b = R.resolve(req("pop_tally", people_style="flat"))[0], R.resolve(req("pop_tally", people_style="line"))[0]
+        self.assertEqual(R.resolve(req("pop_tally"))[0]["figure_style"], "line", "line is the main look")
         self.assertEqual((a["figure_style"], b["figure_style"]), ("flat", "line")); self.assertEqual(a["items"], b["items"], "one fact-bound item list")
         self.assertEqual(a["composition"]["lit"], b["composition"]["lit"]); self.assertEqual(a["composition"]["lit"], 9)
         self.assertIsNone(a["shadow"]); self.assertIsNone(b["shadow"])
