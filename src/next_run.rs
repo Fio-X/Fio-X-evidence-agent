@@ -4001,6 +4001,10 @@ fn recipe_request(
         if let Ok(points) = catalogue.place_points(&members) {
             input["points"] = json!(points);
         }
+        // the members by M49 sub-region (the knowledge group's, with its overrides named), for the findings' named groups
+        if let Ok(groups) = catalogue.place_groups(&members) {
+            input["groups"] = groups;
+        }
         // a recipe that went without a condition takes the page only over its findings minimum (knobs.json
         // recipes[].without): the findings child scores the candidates now, as the findings step will (story_findings)
         if let (Some(passed), Some(w)) = (&shape.passed_over, &recipe.without) {
@@ -5336,8 +5340,10 @@ async fn story_findings(
             Err(why) => Err(stop("fill", format!("story findings: {why}"))),
         }
     };
+    // the question goes with the rows: a finding whose question words (the child's word table) it holds is scored first
     let mut asked = input.clone();
     asked["mode"] = json!("candidates");
+    asked["question"] = json!(question);
     let found = child(&asked)?;
     let candidates: Vec<&Value> = found["candidates"].as_array().into_iter().flatten().take(STORY_SHOWN).collect();
     let ids: Vec<String> = candidates
@@ -5379,6 +5385,7 @@ async fn story_findings(
     recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": picks, "by": by}))?;
     let mut asked = input.clone();
     asked["mode"] = json!("compose");
+    asked["question"] = json!(question);
     asked["picks"] = json!(picks);
     let page = child(&asked)?;
     story_page(fill, &input, &page).map_err(|why| stop("fill", format!("story findings: {why}")))

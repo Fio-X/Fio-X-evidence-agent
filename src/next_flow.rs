@@ -3496,6 +3496,11 @@ pub trait Catalogue: Sync {
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
         place_points_call(&Mutex::new(Vec::new()), codes)
     }
+    /// The codes grouped by M49 sub-region (the knowledge group's M49Groups, through its door): {"groups", "moved",
+    /// "missing"}, as data for a page that compares named groups.
+    fn place_groups(&self, codes: &[String]) -> Result<Value, String> {
+        place_groups_call(&Mutex::new(Vec::new()), codes)
+    }
     /// The iso3 code of each iso2 code by the knowledge group's name table (Iso3Of, through its door); a code it has none
     /// for is left out.
     fn iso3_of(&self, codes: &[String]) -> Result<BTreeMap<String, String>, String> {
@@ -3664,6 +3669,19 @@ fn place_points_call(
         next_visual::Request::PlacePoints { iso3: &iso3 },
     );
     place_points_reply(codes, &iso3_of, reply)
+}
+
+/// Catalogue::place_groups through the knowledge group's command, kept in `calls`.
+fn place_groups_call(calls: &Mutex<Vec<Value>>, codes: &[String]) -> Result<Value, String> {
+    match knowledge_call(
+        calls,
+        "m49_groups",
+        json!({"codes": codes}),
+        next_knowledge::Request::M49Groups { codes },
+    )? {
+        next_knowledge::Reply::M49Groups(groups) => Ok(groups),
+        _ => unreachable!("the knowledge group answered m49_groups with another reply"),
+    }
 }
 
 /// The words a refusal of the map points starts with when the table has no point for a code (an aggregate), the only
@@ -3850,6 +3868,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::TableZh(name)) => json!({"zh": name}),
         Ok(Reply::AskedIds(ids)) => json!({"asked": ids}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
+        Ok(Reply::M49Groups(groups)) => groups.clone(),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::AsksLowest(low)) => json!({"asks_lowest": low}),
         Ok(Reply::AsksTotal(total)) => json!({"asks_total": total}),
@@ -4763,6 +4782,10 @@ impl Catalogue for GroupCatalogue {
 
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
         place_points_call(&self.calls, codes)
+    }
+
+    fn place_groups(&self, codes: &[String]) -> Result<Value, String> {
+        place_groups_call(&self.calls, codes)
     }
 
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {

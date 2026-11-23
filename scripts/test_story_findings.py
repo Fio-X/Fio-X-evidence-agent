@@ -172,6 +172,12 @@ def compute(facts, rows, members):
             for r in rs:
                 if r["time"] == q["time"]: at[r["dims"][q["by"]]] = at.get(r["dims"][q["by"]], 0) + r["value"]
             f.update(v=1 + sum(1 for v in at.values() if v > at[q["code"]]))
+        elif op == "mean":
+            at = [r for r in sel(q) if r["time"].startswith(q["within"])]
+            assert at, f"{k}: no row within {q['within']}"
+            f.update(v=sum(r["value"] for r in at) / len(at), t=q.get("time"))
+        elif op == "n":
+            f.update(v=len({r["dims"][q["by"]] for r in sel(q) if r["time"] == q["time"]}))
         elif op == "group_change":
             rs = sel(q)
             val = lambda c, t: sum(r["value"] for r in rs if r["dims"][q["by"]] == c and r["time"] == t)
@@ -234,7 +240,8 @@ class Findings(unittest.TestCase):
     def test_eu_all_angles_and_best_year_short(self):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain"])  # the request carries no chain and no points
+        # the request carries no chain, no points and no groups; its nine members' paces all bend one way (no slower column)
+        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain", "pace", "groups"])
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
@@ -249,7 +256,8 @@ class Findings(unittest.TestCase):
     def test_wb_no_target_drops_path_and_need(self):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "tiles": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables"})
+        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "tiles": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables",
+                                                                  "pace": "every member changed pace the same way (one column would be empty)", "groups": "the request gives no groups of the members"})
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "overtake", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
@@ -262,7 +270,7 @@ class Findings(unittest.TestCase):
     def test_chain_three_tables_around_the_year_the_whole_moved_most(self):
         req, names = eu_chain_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual(dropped, [{"angle": "map", "why": "the request gives no points for the members"}, {"angle": "tiles", "why": "the request gives no points for the members"}])
+        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "pace", "groups"])
         chain = next(c for c in cands if c["id"] == "chain")
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
@@ -1291,6 +1299,190 @@ class Findings(unittest.TestCase):
         val = {c: 10.0 - 2 * pts[c][0] for c in EU27}
         rows = [dict(r, value=round(val[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU27 else r for r in req["rows"]]
         self.assertIn("西边的偏高", next(x for x in FN.compose({**req, "rows": rows, "picks": ["path", "tiles"]})["sections"] if x["id"] == "tiles")["title"])
+
+
+# ---------------------------------------------------------------- two periods (pace) and named groups (groups)
+
+M49 = json.load(open(os.path.join(HERE, "..", "runtime", "pi", "assets", "m49-regions.json"), encoding="utf-8"))
+M49_OVER = json.load(open(os.path.join(HERE, "..", "runtime", "pi", "assets", "m49-overrides.json"), encoding="utf-8"))
+ASKED = {"pace": "能源危机后欧盟可再生能源发展加快了吗", "groups": "欧盟南北可再生能源差距有多大", "none": "欧盟哪些国家拖了可再生能源的后腿"}
+CAUSE = ("危机", "战争", "疫情", "因为", "导致")
+# twenty-four economies over five continents (test-only values, not data): a level in 2005 and a pace before and after 2014
+WB24 = {"USA": (19.0, -0.2, -0.4), "CAN": (17.0, -0.1, -0.3), "MEX": (4.0, 0.05, 0.3), "BRA": (2.0, 0.04, 0.35), "ARG": (4.2, 0.03, -0.05),
+        "CHL": (3.8, 0.06, 0.4), "COL": (1.5, 0.02, 0.25), "PER": (1.3, 0.05, 0.02), "DEU": (10.0, -0.1, -0.25), "FRA": (6.2, -0.08, -0.15),
+        "NLD": (10.5, -0.05, -0.3), "BEL": (10.0, -0.1, -0.2), "CHE": (5.5, -0.07, -0.12), "AUT": (8.5, -0.04, -0.18), "CHN": (4.5, 0.4, 0.15),
+        "JPN": (9.5, -0.02, -0.15), "KOR": (10.0, 0.15, -0.05), "MNG": (6.0, 0.3, 0.2), "IND": (1.0, 0.06, 0.05), "PAK": (0.8, 0.02, 0.01),
+        "BGD": (0.3, 0.03, 0.3), "LKA": (0.6, 0.02, 0.03), "NGA": (0.6, 0.0, -0.01), "GHA": (0.4, 0.01, 0.02)}
+
+
+def m49_groups(codes):
+    """The knowledge group's M49Groups as this test reads the asset (next_knowledge m49_groups does it in Rust, its own test there):
+    Eurostat's EL is Greece, an override applies when the country stands alone in its sub-region among the codes."""
+    by2 = {c["iso2"]: c for c in M49["countries"]}; by3 = {c["iso3"]: c for c in M49["countries"]}
+    at = [(c, (by3.get(c) or by2.get({"EL": "GR"}.get(c, c)))["iso3"], (by3.get(c) or by2.get({"EL": "GR"}.get(c, c)))["sub_region"]) for c in codes]
+    moved = []
+    for o in M49_OVER["overrides"]:
+        hit = [i for i, a in enumerate(at) if a[1] == o["iso3"]]
+        if not hit: continue
+        i = hit[0]; frm = at[i][2]
+        if o.get("when_alone") and sum(1 for a in at if a[2] == frm) > 1: continue
+        moved.append({"code": at[i][0], "from_zh": M49["regions"][frm]["name_zh"], "to_zh": M49["regions"][o["sub_region"]]["name_zh"]})
+        at[i] = (at[i][0], at[i][1], o["sub_region"])
+    subs = sorted({a[2] for a in at})
+    return {"groups": [{"id": s_, "name_zh": M49["regions"][s_]["name_zh"], "members": [a[0] for a in at if a[2] == s_]} for s_ in subs], "moved": moved}
+
+
+def eu27_plain(question="", whole=False):
+    """The twenty-seven members with their groups and no target (the st3-st5 runs': no whole fetched), or with the whole."""
+    req, names = eu27_request()
+    if not whole:
+        req = {k: v for k, v in req.items() if k != "target"}
+        req["rows"] = [r for r in req["rows"] if r["dims"].get("geo") not in ("EU27_2020",) and r["table"] != "targets"]
+        req["main"] = {k: v for k, v in req["main"].items() if k != "whole"}
+    return {**req, "groups": m49_groups(req["main"]["members"]), "question": question}, names
+
+
+def wb24_request(question=""):
+    t = "EN.GHG.CO2.PC.CE.AR5"
+    rows = []
+    for c, (a, p0, p1) in WB24.items():
+        for y in range(2005, 2023):
+            v = a + p0 * (min(y, 2014) - 2005) + p1 * max(0, y - 2014) + 0.05 * math.sin(y + ord(c[0]))
+            rows.append({**row(t, {}, "country", c, y, v), "value": f"{v:.2f}"})
+    names = {c: c for c in WB24}
+    return {"rows": rows, "main": {"table": t, "by": "country"}, "fmts": FMTS, "fmt_defs": FMT_DEFS,
+            "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}, "groups": m49_groups(list(WB24)), "question": question}, names
+
+
+def words_of(composed):
+    """Every literal word a composed page holds (titles, texts, leaf segments)."""
+    return json.dumps(composed, ensure_ascii=False)
+
+
+class PaceAndGroups(unittest.TestCase):
+    SHAPES = (eu27_plain, wb24_request)
+
+    def cand(self, req, angle):
+        q, cands, dropped = FN.candidates(req)
+        return next((c for c in cands if c["id"] == angle), None), {d["angle"]: d["why"] for d in dropped}
+
+    def test_pace_stands_on_two_shapes_and_names_the_split_by_its_year_alone(self):
+        for mk in self.SHAPES:
+            req, names = mk(ASKED["pace"])
+            c, _ = self.cand(req, "pace")
+            self.assertIsNotNone(c, mk.__name__)
+            # the split: the year with the largest difference of the two paces, each window PACE_WIN years at least
+            q = FN.Req(req)
+            ys = FN.run_years({y: 1 for y in sorted(set.intersection(*(set(s_) for s_ in q.panel.values())))})
+            m = {y: sum(q.panel[x][y][0] for x in q.panel) / len(q.panel) for y in ys}
+            ok = [y for y in ys if int(y) - int(ys[0]) + 1 >= FN.PACE_WIN and int(ys[-1]) - int(y) + 1 >= FN.PACE_WIN]
+            diff = lambda s_: abs((m[ys[-1]] - m[s_]) / (int(ys[-1]) - int(s_)) - (m[s_] - m[ys[0]]) / (int(s_) - int(ys[0])))
+            best = max(ok, key=lambda y: (diff(y), -int(y)))
+            self.assertEqual((c["why"]["from"], c["why"]["to"], c["why"]["event"]), (best, best, None))
+            composed, facts, drawn = draw_all(self, req, names, ["pace", "rank"])
+            self.assertIn("{pc_to.t}以后", composed["title"])
+            for w in CAUSE: self.assertNotIn(w, words_of(composed), (mk.__name__, w))
+            self.assertIn(FN.WD.WORDS["story.risk.pace_split"], words_of(composed["leaves"]["risk_notes"]))
+            # the split years are facts of their own; the paces recompute from the rows the way the child read them
+            self.assertEqual((composed["facts"]["pc_from"]["time"], composed["facts"]["pc_to"]["time"]), (best, best))
+            self.assertAlmostEqual(facts["pc_a"]["v"], (m[best] - m[ys[0]]) / (int(best) - int(ys[0])), places=6)
+            self.assertAlmostEqual(facts["pc_b"]["v"], (m[ys[-1]] - m[best]) / (int(ys[-1]) - int(best)), places=6)
+            n_side = sum(1 for x in q.panel if (q.panel[x][ys[-1]][0] - q.panel[x][best][0]) / (int(ys[-1]) - int(best)) * (1 if facts["pc_b"]["v"] > facts["pc_a"]["v"] else -1)
+                         > (q.panel[x][best][0] - q.panel[x][ys[0]][0]) / (int(best) - int(ys[0])) * (1 if facts["pc_b"]["v"] > facts["pc_a"]["v"] else -1))
+            self.assertEqual((facts["pc_n"]["v"], facts["pc_all"]["v"]), (n_side, len(q.panel)))
+            self.assertIn("winners_losers", drawn)
+
+    def test_pace_with_an_event_splits_at_its_years_and_says_its_name(self):
+        for mk in self.SHAPES:
+            req, names = mk()
+            ys = sorted({r["time"] for r in req["rows"]})
+            ev = {"id": "test_event", "name_zh": "测试事件", "from": ys[6], "to": ys[7]}
+            c, _ = self.cand({**req, "events": [ev]}, "pace")
+            self.assertEqual((c["why"]["from"], c["why"]["to"], c["why"]["event"]), (ys[6], ys[7], "test_event"))
+            composed, facts, _ = draw_all(self, {**req, "events": [ev]}, names, ["pace", "rank"])
+            self.assertTrue(composed["title"].startswith("测试事件以后"), composed["title"])
+            self.assertEqual((composed["facts"]["pc_from"]["time"], composed["facts"]["pc_to"]["time"]), (ys[6], ys[7]))
+            self.assertIn("测试事件", words_of(composed["leaves"]["risk_notes"]))
+            # an event outside the years, or one that leaves a window short, is passed over: the split is the data's again
+            for far in ({**ev, "from": "1990", "to": "1991"}, {**ev, "from": ys[1], "to": ys[1]}):
+                c2, _ = self.cand({**req, "events": [far]}, "pace")
+                self.assertIsNone(c2["why"]["event"], far)
+                self.assertNotIn("测试事件", words_of(FN.compose({**req, "events": [far], "picks": ["pace", "rank"]})))
+
+    def test_pace_needs_eight_years_in_a_row(self):
+        for mk in self.SHAPES:
+            req, _ = mk()
+            ys = sorted({r["time"] for r in req["rows"]})
+            short = {**req, "rows": [r for r in req["rows"] if r["time"] in ys[-7:]]}
+            c, why = self.cand(short, "pace")
+            self.assertIsNone(c); self.assertIn("fewer than 8 years", why["pace"])
+
+    def test_groups_by_m49_sub_region_with_cyprus_in_southern_europe_and_said_so(self):
+        req, names = eu27_plain(ASKED["groups"])
+        g = {x["name_zh"]: x["members"] for x in req["groups"]["groups"]}
+        self.assertEqual(sorted(g), ["东欧", "北欧", "南欧", "西欧"])
+        self.assertIn("EL", g["南欧"]); self.assertIn("CY", g["南欧"])   # EL is Greece; Cyprus placed by the override
+        self.assertEqual(req["groups"]["moved"], [{"code": "CY", "from_zh": "西亚", "to_zh": "南欧"}])
+        composed, facts, drawn = draw_all(self, req, names, ["groups", "rank"])
+        self.assertEqual(composed["facts"]["gp_039"]["filter"]["geo"], sorted(g["南欧"]))
+        notes = composed["leaves"]["risk_notes"]["items"]
+        self.assertIn([{"name": "CY"}, {"w": "按联合国地理分区属"}, {"w": "西亚"}, {"w": "，本页归入"}, {"w": "南欧"}], notes)
+        self.assertIn([{"w": FN.WD.WORDS["story.risk.simple_mean"]}], notes)
+        # every number is a fact recomputed from the rows: each group's simple mean, the gap of the highest over the lowest
+        at = {c: float(r["value"]) for r in req["rows"] for c in [r["dims"]["geo"]] if r["time"] == "2024"}
+        means = {x["id"]: sum(at[c] for c in x["members"]) / len(x["members"]) for x in req["groups"]["groups"]}
+        for gid, v in means.items(): self.assertAlmostEqual(facts[f"gp_{gid}"]["v"], v, places=6)
+        self.assertAlmostEqual(facts["gp_gap"]["v"], max(means.values()) - min(means.values()), places=6)
+        self.assertAlmostEqual(facts["gp_all"]["v"], sum(at.values()) / len(at), places=6)
+        self.assertIn("winners_losers", drawn)
+
+    def test_groups_on_a_world_bank_shape_are_the_continents_sub_regions(self):
+        req, names = wb24_request(ASKED["groups"])
+        c, _ = self.cand(req, "groups")
+        self.assertIsNotNone(c)
+        composed, facts, _ = draw_all(self, req, names, ["groups", "ends"])
+        kept = {x["id"] for x in req["groups"]["groups"] if len(x["members"]) >= FN.GROUP_MEMBERS}
+        self.assertEqual({k[3:] for k in composed["facts"] if re.fullmatch(r"gp_\d{3}", k)}, kept)
+        self.assertEqual(c["why"]["groups"], len(kept))
+        left = sorted(x for g in req["groups"]["groups"] if len(g["members"]) < FN.GROUP_MEMBERS for x in g["members"])
+        self.assertTrue(left, "the shape keeps a small group out")
+        self.assertIn([{"name": x} if i % 2 == 0 else {"w": FN.WD.WORDS["story.join"]} for i, x in enumerate(sum(([l, None] for l in left), [])[:-1])][0], composed["leaves"]["risk_notes"]["items"][-2])
+        self.assertEqual(req["groups"]["moved"], [])
+
+    def test_groups_need_two_groups_of_three_members(self):
+        for mk in self.SHAPES:
+            req, _ = mk()
+            members = sorted({x for g in req["groups"]["groups"] for x in g["members"]})
+            one = {"groups": [{"id": "001", "name_zh": "甲组", "members": members}], "moved": []}
+            c, why = self.cand({**req, "groups": one}, "groups")
+            self.assertIsNone(c); self.assertIn("fewer than 2 groups", why["groups"])
+            twos = {"groups": [{"id": f"{i:03d}", "name_zh": "甲组", "members": members[i:i + 2]} for i in range(0, len(members), 2)], "moved": []}
+            c, why = self.cand({**req, "groups": twos}, "groups")
+            self.assertIsNone(c); self.assertIn("fewer than 2 groups", why["groups"])
+            c, why = self.cand({k: v for k, v in req.items() if k != "groups"}, "groups")
+            self.assertIsNone(c); self.assertIn("no groups", why["groups"])
+
+    def test_the_question_words_raise_the_finding_they_name(self):
+        for mk in self.SHAPES:
+            for asked, angle in (("pace", "pace"), ("groups", "groups")):
+                req, _ = mk(ASKED[asked])
+                _, cands, _ = FN.candidates(req)
+                self.assertEqual(cands[0]["id"], angle, (mk.__name__, asked))
+            req, _ = mk(ASKED["none"])
+            _, cands, _ = FN.candidates(req)
+            self.assertTrue(all(c["why"].get("asked") is None for c in cands if c["id"] in ("pace", "groups")))
+            self.assertEqual(len(cands), len({c["id"] for c in cands}))
+
+    def test_two_picks_on_one_leaf_keep_the_first_and_the_arcs(self):
+        req, _ = eu27_plain()
+        got = FN.compose({**req, "picks": ["groups", "pace", "rank"]})
+        self.assertEqual(got["arc"]["id"], "lagging")
+        self.assertNotIn("pace", got["arc"]["picks"]); self.assertIn("pace dropped", got["arc"]["why"])
+        self.assertEqual(len([s_ for s_ in got["sections"] if s_["layer"] == "winners_losers"]), 1)
+        got = FN.compose({**req, "picks": ["pace", "groups"]})
+        self.assertEqual(got["arc"]["id"], "happened")
+        self.assertEqual(len({s_["layer"] for s_ in got["sections"]}), len(got["sections"]))
+        self.assertEqual((FN.ARC_OF["pace"], FN.ARC_OF["groups"]), ("happened", "lagging"))
 
 
 if __name__ == "__main__":

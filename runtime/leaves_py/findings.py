@@ -54,6 +54,18 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               each, the page's measure not one of them), the one year the whole moved most shaded across
                               them: what moved around that year, told in order and never as a cause; needs the request's
                               "chain" (two to five tables) and a whole.
+  * pace   (winners_losers): the members' simple mean over two windows of the years they all share, each window's pace a year
+                              (per_year of the mean at its ends), the split year chosen by the program: the request's first
+                              event whose years both windows leave PACE_WIN years at least on each side (named by the event's
+                              words), else the split with the largest difference of the two paces (named by its year alone, no
+                              cause word); the rows are the mean and the members whose pace changed most each way (before →
+                              after), and how many members were faster after (an n fact over them). Needs PACE_MIN years.
+  * groups (winners_losers): the members grouped by the request's "groups" (the knowledge group's M49 sub-regions), each group's
+                              simple mean at the last year they share against the mean of every grouped member, the gap of the
+                              highest group over the lowest, and the group with the widest spread inside it named by its highest
+                              and lowest member. Needs GROUPS_MIN groups of GROUP_MEMBERS members at least.
+  pace and groups draw on winners_losers until their own leaves are wired; a page's picks that name one leaf twice keep the first.
+  A finding whose question words (words.zh.json story.ask.<angle>) the request's "question" holds is scored ASKED_BOOST higher.
 Chain rules. Years: the longest run of consecutive years, ending at the last, that every chain table and the whole have
 (at least CHAIN_YEARS). A chain table is read at the dims its "filter" names (one row a year, else the angle is dropped).
 Panel kind: the item's "kind" ("flow" = bars, "stock" = line) when it gives one, else bars when every value of the run is 0
@@ -90,7 +102,10 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
                                                                  # companion tables (knowledge group's chain_companions), their
                                                                  # place and years the main's; "fmt" absent: taken by size (below)
-   "chain_fmts": {"<table>_d0|d1|d2": {"scale", "dec", "suffix"}}?}   # the formats a chain item with no "fmt" takes by size
+   "chain_fmts": {"<table>_d0|d1|d2": {"scale", "dec", "suffix"}}?,   # the formats a chain item with no "fmt" takes by size
+   "groups": {"groups": [{"id", "name_zh", "members": [code]}], "moved": [{"code", "from_zh", "to_zh"}]}?,  # knowledge group
+   "events": [{"id", "name_zh", "from": year, "to": year}]?,   # registered events over the table's years (none today)
+   "question": text?}                                          # the question asked (raises the findings it names)
 Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "summary"}...], "dropped": [{"angle", "why"}]}, best first;
 "summary" is the one-line English summary the model reads (no number of its own: a finding is picked by its number in the list).
 
@@ -114,7 +129,7 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 11           # the candidates the child gives (one a finding: there are eleven angles; the flow shows the model its best few)
+TOP_K = 13           # the candidates the child gives (one a finding: there are thirteen angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
 MAP_MIN, MAP_CALL = 8, 3   # members with a point a map needs at least; the highest and the lowest this many are called out
@@ -123,6 +138,9 @@ RANK_MIN, RANK_MAX = 5, 40   # members a ranking needs at least, and shows at mo
 DOTS_MIN, DOTS_MAX = 6, 16   # members a change-dots picture needs at least; with more it keeps the DOTS_MAX / 2 largest rises and the DOTS_MAX / 2 largest falls
 SLOPE_MIN, SLOPE_MAX = 6, 30   # places a rank slope needs at least, and draws at most (the whole among them)
 TILE_MIN, TILE_MAX = 10, 40   # members with a point a tile map needs at least, and draws at most
+PACE_MIN, PACE_WIN = 8, 4     # years in a row the members share a two-period pace needs, and years each window holds at least (the windows may share the split year)
+GROUPS_MIN, GROUP_MEMBERS = 2, 3   # groups a group comparison needs at least, each with this many members at least
+ASKED_BOOST = 1.0             # added to the score of a finding the question's words name, so it is shown first
 
 
 class Refused(Exception):
@@ -220,19 +238,23 @@ def segs(parts):
     return out
 
 
-TEMPLATE = re.compile(r"\{([fynl]):(\w+)\}")
+TEMPLATE = re.compile(r"\{([fynlg]):(\w+)\}")
 
 
 def T(key, **bind):
     """A word-table template (words.zh.json story.*) as parts: {f:k} a fact's number, {y:k} its year, {n:v} a place's name,
-    {l:v} a list of places' names joined by the table's join word; a slot's name is looked up in `bind` first (a place's
+    {l:v} a list of places' names joined by the table's join word, {g:v} plain words the request gave (a group's or an event's
+    name, never with a digit); a slot's name is looked up in `bind` first (a place's
     code, a list of codes, or another fact key), else it is the fact key itself. The file holds no word of its own."""
     text, out, at = WD.WORDS[key], [], 0
     for mo in TEMPLATE.finditer(text):
         if mo.start() > at: out.append(("w", text[at:mo.start()]))
         kind, name = mo.groups()
         v = bind.get(name, name)
-        if kind == "l":
+        if kind == "g":
+            if not isinstance(v, str) or not v or any(ch.isdigit() for ch in v): raise Refused(f"the words {v!r} are no plain words")
+            out.append(("w", v))
+        elif kind == "l":
             for i, c in enumerate(v):
                 if i: out.append(("w", WD.WORDS["story.join"]))
                 out.append(("n", c))
@@ -294,6 +316,24 @@ class Req:
         q.panel = {c: series(q.rows, q.table, q.by, c, q.fixed) for c in q.members}
         q.panel = {c: s for c, s in q.panel.items() if s}
         q.wseries = series(q.rows, q.table, q.by, q.whole, q.fixed) if q.whole else {}
+        g = r.get("groups") if isinstance(r.get("groups"), dict) else {}
+        q.groups = [x for x in (g.get("groups") or []) if isinstance(x, dict) and x.get("id") and x.get("name_zh") and isinstance(x.get("members"), list)]
+        q.moved = [x for x in (g.get("moved") or []) if isinstance(x, dict) and x.get("code") and x.get("from_zh") and x.get("to_zh")]
+        q.events = [x for x in (r.get("events") or []) if isinstance(x, dict) and x.get("name_zh") and x.get("from") and x.get("to")]
+        q.question = r.get("question") if isinstance(r.get("question"), str) else ""
+
+    def asked(q, angle):
+        """The first of the angle's question words (words.zh.json story.ask.<angle>, "|" between them) the question holds, or None."""
+        return next((w for w in WD.WORDS.get(f"story.ask.{angle}", "").split("|") if w and w in q.question), None)
+
+    def mean(q, codes, year, fmt=None):
+        """The members' simple mean at a year (next_facts mean over a list of codes); its time names the year a rate reads."""
+        return {"op": "mean", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "within": year, "time": year,
+                "fmt": fmt or q.fmts["value"]}
+
+    def count(q, codes, year):
+        """How many of the codes the rows hold at a year (next_facts n)."""
+        return {"op": "n", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "by": q.by, "time": year, "fmt": "n"}
 
     def filt(q, code):
         return {**q.fixed, q.by: code}
@@ -923,7 +963,157 @@ def angle_tiles(q):
             "summary": "the members as equal tiles laid by direction, filled by value: which side holds the high ones"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_movers, angle_overtake, angle_tiles, angle_chain]
+def printed(q, x, fmt):
+    """x as its format prints it (scale, places), for telling two printed numbers apart."""
+    d = q.defs.get(fmt, {})
+    return round(x * float(d.get("scale", 1)), int(d.get("dec", 0)))
+
+
+def pace_split(q, ys, m):
+    """(from, to, event or None) of the pace's two windows over the years ys and the mean m: the first request event whose years
+    lie inside and leave PACE_WIN years on each side, else the shared split year with the largest difference of the two paces
+    (the earlier on a tie); None when no split leaves PACE_WIN years on each side."""
+    y0, y1 = int(ys[0]), int(ys[-1])
+    for ev in q.events:
+        a, b = str(ev["from"]), str(ev["to"])
+        if a in ys and b in ys and int(a) <= int(b) and int(a) - y0 + 1 >= PACE_WIN and y1 - int(b) + 1 >= PACE_WIN:
+            return a, b, ev
+    best = None
+    for s_ in ys:
+        s = int(s_)
+        if s - y0 + 1 < PACE_WIN or y1 - s + 1 < PACE_WIN: continue
+        d = abs((m[ys[-1]] - m[s_]) / (y1 - s) - (m[s_] - m[ys[0]]) / (s - y0))
+        if best is None or d > best[0]: best = (d, s_)
+    return (best[1], best[1], None) if best else None
+
+
+def angle_pace(q):
+    if len(q.panel) < DOTS_MIN: return None, f"fewer than {DOTS_MIN} members"
+    common = set.intersection(*(set(s_) for s_ in q.panel.values()))
+    ys = run_years({y: 1 for y in sorted(common)}) if common else []
+    if len(ys) < PACE_MIN: return None, f"the members share fewer than {PACE_MIN} years in a row"
+    pool = sorted(q.panel)
+    m = {y: sum(q.panel[c][y][0] for c in pool) / len(pool) for y in ys}
+    split = pace_split(q, ys, m)
+    if not split: return None, f"no split leaves {PACE_WIN} years on each side"
+    a_, b_, ev = split
+    y0, y1 = ys[0], ys[-1]
+    rate = lambda v, x, y: (v[y] - v[x]) / (int(y) - int(x))
+    pa, pb = rate(m, y0, a_), rate(m, b_, y1)
+    dch = {c: rate({y: q.panel[c][y][0] for y in ys}, b_, y1) - rate({y: q.panel[c][y][0] for y in ys}, y0, a_) for c in pool}
+    paces = {c: (rate({y: q.panel[c][y][0] for y in ys}, y0, a_), rate({y: q.panel[c][y][0] for y in ys}, b_, y1)) for c in pool}
+    fast = [c for c in pool if paces[c][1] > paces[c][0]]
+    slow = [c for c in pool if paces[c][1] < paces[c][0]]
+    up = pb > pa
+    side = fast if up else slow
+    if not side: return None, "no member changed pace the way the mean did"
+    f = {"pc_m0": q.mean(pool, y0), "pc_ma": q.mean(pool, a_), "pc_mb": q.mean(pool, b_), "pc_m1": q.mean(pool, y1),
+         "pc_a": {"op": "per_year", "a": "pc_ma", "b": "pc_m0", "fmt": q.change},
+         "pc_b": {"op": "per_year", "a": "pc_m1", "b": "pc_mb", "fmt": q.change},
+         "pc_d": {"op": "minus", "a": "pc_b", "b": "pc_a", "fmt": q.change},
+         # the windows' years as facts of their own (the split's two years: the era band a later layer shades reads them)
+         "pc_y0": q.value(pool[0], y0), "pc_from": q.value(pool[0], a_), "pc_to": q.value(pool[0], b_), "pc_y1": q.value(pool[0], y1),
+         "pc_n": q.count(side, y1), "pc_all": q.count(pool, y1)}
+    if a_ == b_: f["pc_mb"] = f["pc_ma"]
+    cols = {"up": [], "down": []}
+    if printed(q, pa, q.change) != printed(q, pb, q.change):   # the mean's own row, in its column
+        cols["up" if up else "down"].append({"label": SW(WD.WORDS["story.pace.mean_row"]), "a": "fact:pc_a", "b": "fact:pc_b",
+                                             "change": [{"src": "fact:pc_d"}]})
+    for col, cs in (("up", sorted(fast, key=lambda c: (-dch[c], c))), ("down", sorted(slow, key=lambda c: (dch[c], c)))):
+        for c in cs:
+            if len(cols[col]) >= ROWS_MAX: break
+            ra, rb = paces[c]
+            if printed(q, ra, q.change) == printed(q, rb, q.change): continue   # the leaf reads the direction off the printed numbers
+            k = c.lower()
+            for y in (y0, a_, b_, y1): f[f"pv_{k}_{y}"] = q.value(c, y)
+            f[f"pa_{k}"] = {"op": "per_year", "a": f"pv_{k}_{a_}", "b": f"pv_{k}_{y0}", "fmt": q.change}
+            f[f"pb_{k}"] = {"op": "per_year", "a": f"pv_{k}_{y1}", "b": f"pv_{k}_{b_}", "fmt": q.change}
+            f[f"pd_{k}"] = {"op": "minus", "a": f"pb_{k}", "b": f"pa_{k}", "fmt": q.change}
+            cols[col].append({"label": [{"name": c}], "a": f"fact:pa_{k}", "b": f"fact:pb_{k}", "change": [{"src": f"fact:pd_{k}"}]})
+    if not cols["up"] or not cols["down"]:
+        return None, "every member changed pace the same way (one column would be empty)"
+    tone = ("fast" if up else "slow") if pa >= 0 and pb >= 0 else "plain"
+    bind = {"ev": ev["name_zh"]} if ev else {}
+    title = T(f"story.pace.title_ev_{tone}" if ev else f"story.pace.title_{tone}", **bind)
+    text = T(f"story.pace.text_{'fast' if up else 'slow'}" if tone != "plain" else f"story.pace.text_{'up' if up else 'down'}")
+    data = {"up": {"title": ST("story.pace.up"), "rows": cols["up"]}, "down": {"title": ST("story.pace.down"), "rows": cols["down"]},
+            "footnote": ST("story.pace.foot")}
+    risks = [ST("story.risk.pace_event", **bind) if ev else ST("story.risk.pace_split"), ST("story.risk.simple_mean")]
+    size = clamp(abs(pb - pa) / max(abs(pa), abs(pb), 1e-9))
+    surprise = clamp(0.3 + 1.4 * min(len(fast), len(slow)) / len(pool))
+    sturdy = clamp(len(ys) / 15) * clamp(len(pool) / 12)
+    asked = q.asked("pace")
+    score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
+    return {"angle": "pace", "layer": "winners_losers", "kicker": T("story.pace.kicker"), "title": title, "text": text, "facts": f,
+            "data": data, "claim": {"num": "fact:pc_b", "head": T("story.pace.claim_ev" if ev else "story.pace.claim", **bind)},
+            "notes": [], "risks": risks, "members": True, "last": "pc_y1",
+            "anns": [note("pc_d", "story.note.pace.diff"), note("pc_n", "story.note.pace.n_fast" if up else "story.note.pace.n_slow")],
+            "score": round(score, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "from": a_, "to": b_,
+                    "event": ev.get("id") if ev else None, "faster": len(fast), "slower": len(slow), "asked": asked},
+            "summary": "the members' average pace a year before and after a split year: did it speed up or slow down, and how many members did"}, None
+
+
+def angle_groups(q):
+    if not q.groups: return None, "the request gives no groups of the members"
+    kept, left = {}, []
+    for g in q.groups:
+        cs = [c for c in g["members"] if c in q.panel]
+        if len(cs) >= GROUP_MEMBERS: kept[g["id"]] = (g["name_zh"], cs)
+        else: left += cs
+    if len(kept) < GROUPS_MIN: return None, f"fewer than {GROUPS_MIN} groups of {GROUP_MEMBERS} members or more"
+    pool = sorted(c for _, cs in kept.values() for c in cs)
+    years = set.intersection(*(set(q.panel[c]) for c in pool))
+    if not years: return None, "no year in which every grouped member has a value"
+    y = max(years)
+    at = {c: q.panel[c][y][0] for c in pool}
+    gm = {gid: sum(at[c] for c in cs) / len(cs) for gid, (_, cs) in kept.items()}
+    allm = sum(at.values()) / len(at)
+    hi = max(gm, key=lambda g: (gm[g], g)); lo = min(gm, key=lambda g: (gm[g], g))
+    if gm[hi] <= gm[lo]: return None, "every group holds the same mean"
+    rng = {gid: max(at[c] for c in cs) - min(at[c] for c in cs) for gid, (_, cs) in kept.items()}
+    wide = max(rng, key=lambda g: (rng[g], g))
+    wcs = kept[wide][1]
+    whi = max(wcs, key=lambda c: (at[c], c)); wlo = min(wcs, key=lambda c: (at[c], c))
+    gk = lambda gid: f"gp_{gid.lower()}"
+    f = {gk(gid): q.mean(cs, y) for gid, (_, cs) in kept.items()}
+    f["gp_all"] = q.mean(pool, y)
+    f["gp_gap"] = {"op": "minus", "a": gk(hi), "b": gk(lo), "fmt": q.change}
+    f["gp_y"] = q.value(pool[0], y)
+    f["gp_vhi"], f["gp_vlo"] = q.value(whi, y), q.value(wlo, y)
+    cols = {"up": [], "down": []}
+    for gid in sorted(kept, key=lambda g: (-gm[g], g)):
+        if printed(q, gm[gid], q.fmts["value"]) == printed(q, allm, q.fmts["value"]): continue
+        f[f"gd_{gid.lower()}"] = {"op": "minus", "a": gk(gid), "b": "gp_all", "fmt": q.change}
+        col = "up" if gm[gid] > allm else "down"
+        if len(cols[col]) < ROWS_MAX:
+            cols[col].append({"label": SW(kept[gid][0]), "a": "fact:gp_all", "b": f"fact:{gk(gid)}", "change": [{"src": f"fact:gd_{gid.lower()}"}]})
+    if not cols["up"] or not cols["down"]: return None, "no group stands apart from the members' mean (one column would be empty)"
+    names = {"hi": kept[hi][0], "lo": kept[lo][0], "wide": kept[wide][0]}
+    bind = dict(names, ghi=gk(hi), glo=gk(lo), whi=whi, wlo=wlo, vhi="gp_vhi", vlo="gp_vlo")
+    data = {"up": {"title": ST("story.groups.up"), "rows": cols["up"]}, "down": {"title": ST("story.groups.down"), "rows": cols["down"]},
+            "footnote": ST("story.groups.foot")}
+    risks = [ST("story.risk.simple_mean")]
+    risks += [ST("story.risk.groups_moved", c=m["code"], **{"from": m["from_zh"], "to": m["to_zh"]}) for m in q.moved if m["code"] in pool]
+    if left: risks.append(ST("story.risk.groups_left", left=sorted(left)))
+    values = list(at.values())
+    span = max(values) - min(values)
+    size = clamp((gm[hi] - gm[lo]) / span) if span > 0 else 0.0
+    surprise = clamp(0.3 + 0.7 * min(1.0, rng[wide] / max(gm[hi] - gm[lo], 1e-9) / 2))
+    sturdy = clamp(len(kept) / 4) * clamp(len(pool) / 20)
+    asked = q.asked("groups")
+    score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
+    return {"angle": "groups", "layer": "winners_losers", "kicker": T("story.groups.kicker"), "title": T("story.groups.title", **bind),
+            "text": T("story.groups.text", **bind), "facts": f, "data": data,
+            "claim": {"num": "fact:gp_gap", "head": T("story.groups.claim", **bind)}, "notes": [], "risks": risks, "members": True, "last": "gp_y",
+            "anns": [note("gp_gap", "story.note.groups.gap"), note("gp_vlo", "story.note.groups.wide", **bind)],
+            "score": round(score, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "groups": len(kept),
+                    "highest": hi, "lowest": lo, "widest": wide, "asked": asked},
+            "summary": "the members compared by named region groups: each group's average, the gap between the highest and the lowest group, and the spread inside a group"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_movers, angle_overtake, angle_tiles, angle_chain, angle_pace, angle_groups]
 
 
 # ---------------------------------------------------------------- the header's big numbers
@@ -1022,7 +1212,7 @@ def candidates(r):
             dropped.append({"angle": name, "why": why}); continue
         c["id"] = name
         out.append(c)
-    # one per layer by construction (each angle names its own); best first, the angle's order breaks a tie
+    # best first, the angle's order breaks a tie (two angles may name one leaf: compose keeps the first picked)
     out.sort(key=lambda c: -c["score"])
     return q, out[:TOP_K], dropped
 
@@ -1037,14 +1227,29 @@ def candidates(r):
 #   in_time   will it be in time: the need or path finding leads, the other of the two next; who lags; then the rest
 #   lagging   who is dragging: a spread, rank, ends, members, movers, overtake, map or tiles finding leads; the other comparisons; the whole last
 ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
-          "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging"}
-ARC_ORDER = {"happened": ["chain", "spread", "rank", "members", "ends", "movers", "overtake", "map", "tiles", "path", "need"],
-             "in_time": ["need", "path", "rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
-             "lagging": ["spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "chain", "need", "path"]}
+          "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging",
+          "pace": "happened", "groups": "lagging"}
+ARC_ORDER = {"happened": ["chain", "pace", "spread", "rank", "members", "ends", "movers", "overtake", "groups", "map", "tiles", "path", "need"],
+             "in_time": ["need", "path", "pace", "rank", "spread", "groups", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
+             "lagging": ["groups", "spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "pace", "chain", "need", "path"]}
 # the findings an arc needs besides its lead (any one of them): the outlook, who lags, the comparison among the members
-ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles"),
-             "lagging": ("spread", "rank", "movers", "overtake")}
+ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles", "groups"),
+             "lagging": ("spread", "rank", "movers", "overtake", "groups")}
 MAX_PICKS = 4
+
+
+def one_leaf_each(picks, by_id, cands):
+    """(picks, why): a leaf stands once on a page, so of two picks that name one leaf the later goes (the why names it); with
+    fewer than two left, the best candidate whose leaf no pick names is added."""
+    out, used, gone = [], set(), []
+    for p in picks:
+        if by_id[p]["layer"] in used: gone.append(p); continue
+        out.append(p); used.add(by_id[p]["layer"])
+    if len(out) < 2:
+        free = [c for c in cands if c["layer"] not in used and c["id"] not in out]
+        if not free: raise Refused("findings: the picks draw one leaf and no other finding stands")
+        out.append(max(free, key=lambda c: c["score"])["id"])
+    return out, (f"{'|'.join(gone)} dropped: its leaf is a pick's before it" if gone else None)
 
 
 def plan_arc(picks, cands):
@@ -1055,7 +1260,8 @@ def plan_arc(picks, cands):
     order = ARC_ORDER[arc]
     out, why = list(picks), None
     if not any(p in ARC_NEEDS[arc] for p in out):
-        pool = [c for c in cands if c["id"] in ARC_NEEDS[arc] and c["id"] not in out]
+        layer = {c["id"]: c["layer"] for c in cands}
+        pool = [c for c in cands if c["id"] in ARC_NEEDS[arc] and c["id"] not in out and c["layer"] not in {layer.get(p) for p in out}]
         if pool:
             add = max(pool, key=lambda c: c["score"])["id"]
             if len(out) >= MAX_PICKS: out = sorted(out[1:], key=order.index)[:MAX_PICKS - 2]; out.insert(0, picks[0])
@@ -1089,7 +1295,9 @@ def compose(r):
     if len(set(picks)) != len(picks): raise Refused("findings: a finding is picked twice")
     for p in picks:
         if p not in by_id: raise Refused(f"findings: {p!r} is not a candidate of this request")
+    picks, twice = one_leaf_each(picks, by_id, cands)
     arc, picks, arc_why = plan_arc(picks, cands)
+    if twice: arc_why = "; ".join(w for w in (twice, arc_why) if w)
     chosen = [by_id[p] for p in picks]
     facts, leaves, sections = {}, {}, []
     for c in chosen:
@@ -1103,7 +1311,7 @@ def compose(r):
     # the claims alone, and the lead's own section is headed by its claim (the words, then its number) with no text of its own
     leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
                                  for c in chosen]}
-    big = header(q, arc)
+    big = header(q, arc if arc != "happened" or "chain" in picks else None)
     if big:  # the header's three numbers, a row over the thesis
         for k, v in big[0].items():
             if k in facts and facts[k] != v: raise Refused(f"findings: the fact {k} is declared two ways by two findings")
@@ -1121,6 +1329,9 @@ def compose(r):
             sections.append({"id": c["id"], "layer": c["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
                              "text": wording(c["text"])})
     items = [ST("story.notes.scenario")] if any("scenario" in c["notes"] for c in chosen) else []
+    for c in chosen:   # a finding's own caveats (its basis, its split), each once, as many as the list holds beside the last line
+        for r_ in c.get("risks", []):
+            if r_ not in items and len(items) < 5: items.append(r_)
     last = max(chosen, key=lambda c: c["facts"][c["last"]]["time"])["last"]
     items.append(ST("story.notes.last", last=last))
     leaves[NOTES] = {"title": ST("story.notes.title"), "items": items}

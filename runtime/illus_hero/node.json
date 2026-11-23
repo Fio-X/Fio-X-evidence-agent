@@ -859,7 +859,9 @@
    "movers": "steps",
    "overtake": "lineup",
    "tiles": "atlas",
-   "chain": "sequence"
+   "chain": "sequence",
+   "pace": "sequence",
+   "groups": "atlas"
   },
   "angle_arcs": {
    "movers": "lagging"
