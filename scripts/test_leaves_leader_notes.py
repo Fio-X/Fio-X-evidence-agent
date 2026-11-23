@@ -1316,15 +1316,22 @@ class OutsideNotes(unittest.TestCase):
         for k, v in NEW_NOTE_WORDS.items():
             self.assertEqual(K.WD.WORDS[k], v, k); self.assertFalse(re.search(r"[0-9０-９]", v), k)
 
-    def test_the_outside_candidates_come_before_the_mean_ones_and_read_only_registered_words_and_conditions(self):
+    def test_the_registry_holds_no_note_over_the_whole_or_the_target_and_reads_only_registered_words_and_conditions(self):
+        # ordinary pages say only how far an end is from the year before: the whole and the target candidates (and the
+        # selects that held their place codes) are not in the registry, whatever the page input holds
         kinds = {"sign", "prints_nonzero", "prints_above", "width_at_most", "count_at_least", "unit_adds_up", "covers_whole", "gap_printable", "page_is", "row_above", "layer_before"}
         for recipe, ends in (("column", ("hi", "lo")), ("change", ("first", "last"))):
+            decl = NOTE_DECL[recipe]
+            self.assertFalse({"whole", "target_at"} & {s["id"] for s in decl.get("selects", [])}, recipe)
             for end in ends:
-                cs = NOTE_DECL[recipe]["candidates"][end]
-                outside = [i for i, c in enumerate(cs) if any(p in json.dumps(c) for p in OUTSIDE)]
+                cs = decl["candidates"][end]
+                self.assertFalse(any(p in json.dumps(c) for c in cs for p in ("$shape.whole", "$shape.target")), (recipe, end))
+                outside = [i for i, c in enumerate(cs) if "$shape.prev" in json.dumps(c)]
                 mean = [i for i, c in enumerate(cs) if "vs_mean" in c.get("value_text", "")]
-                self.assertTrue(outside and outside == list(range(len(outside))), (recipe, end))
-                self.assertTrue(not mean or max(outside) < min(mean), (recipe, end))
+                # the last-year notes come first, before the mean ones, and only on a column page
+                self.assertEqual(bool(outside), recipe == "column", (recipe, end))
+                self.assertTrue(not outside or outside == list(range(len(outside))), (recipe, end))
+                self.assertTrue(not mean or not outside or max(outside) < min(mean), (recipe, end))
                 for i in outside:
                     c = cs[i]
                     self.assertLessEqual({w["if"] for w in c["when"]}, kinds)
@@ -1332,8 +1339,6 @@ class OutsideNotes(unittest.TestCase):
                     for seg in c["text"]:
                         if "word" in seg: self.assertIn(seg["word"], K.WD.WORDS)
                         self.assertNotIn("w", seg)
-                # no previous-period note on a change page (it compares t0 with the year already)
-                if recipe == "change": self.assertFalse(any("$shape.prev" in json.dumps(cs[i]) for i in outside))
         # every fact key two candidates declare is declared one way
         seen = {}
         for recipe in ("column", "change"):
@@ -1347,35 +1352,15 @@ class OutsideNotes(unittest.TestCase):
             self.assertFalse(any(p in json.dumps(picked[1]) for p in ("EU27_2020", "tgt", "2022")), picked[1]["value_text"])
         self.assertEqual([p[1]["value_text"] for p in self.column_notes({})], ["fact:vs_mean", "fact:lo_vs_mean"])
 
-    def test_a_column_page_compares_its_ends_with_the_whole(self):
-        hi, lo = self.column_notes(WHOLE_IN)
-        self.assertEqual((hi[1]["value_text"], lo[1]["value_text"]), ("fact:hi_vs_whole", "fact:lo_vs_whole"))
-        self.assertAlmostEqual(hi[2]["hi_vs_whole"], 66.4 - 24.5); self.assertAlmostEqual(lo[2]["lo_vs_whole"], 24.5 - 11.6)
-        (n1, v1), (n2, v2) = self.note("SE", hi), self.note("LU", lo)
-        lines = self.drawn([dict(n1, at=POINT["SWE"]), dict(n2, at=POINT["LUX"])], {**v1, **v2})
-        self.assertEqual(sorted(lines), sorted([f"{ZH2['SE']} 高出欧盟 41.9 个百分点", f"{ZH2['LU']} 低于欧盟 12.9 个百分点"]))
-        # the whole held, a target and a previous year too: the whole still comes first
-        self.assertEqual([p[1]["value_text"] for p in self.column_notes({**WHOLE_IN, **TARGET_IN, **PREV_IN})], ["fact:hi_vs_whole", "fact:lo_vs_whole"])
-
-    def test_a_sum_whole_above_every_member_gives_no_whole_note(self):
-        # a whole above the highest member (a sum, never a rate's middle): neither end compares with it
-        page = note_page(**WHOLE_IN)
-        for r in page["rows"]:
-            if r["dims"]["geo"] == "EU27_2020" and r["time"] == "2023": r["value"] = "900"
-        ranked = sorted(VALUES, key=lambda c: -VALUES[c]); got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}
-        got.update(held_selects(WHOLE_IN))
-        self.assertEqual([pick_note("column", e, page, got, got[s])[1]["value_text"] for e, s in (("hi", "end_first"), ("lo", "end_last"))],
-                         ["fact:vs_mean", "fact:lo_vs_mean"])
-
-    def test_a_column_page_says_how_far_its_ends_are_from_the_target_and_its_year(self):
-        hi, lo = self.column_notes(TARGET_IN)
-        self.assertEqual((hi[1]["value_text"], lo[1]["value_text"]), ("fact:hi_over_target", "fact:lo_to_target"))
-        self.assertAlmostEqual(lo[2]["lo_to_target"], 42.5 - 11.6)
-        (n1, v1), (n2, v2) = self.note("SE", hi), self.note("LU", lo)
-        lines = self.drawn([dict(n1, at=POINT["SWE"]), dict(n2, at=POINT["LUX"])], {**v1, **v2})
-        self.assertEqual(sorted(lines), sorted([f"{ZH2['SE']} 高出欧盟2030 年目标 23.9 个百分点", f"{ZH2['LU']} 低于欧盟2030 年目标 30.9 个百分点"]))
-        # the year is the target fact's own period entry, never a digit in the words
-        self.assertIn({"src": "fact:target_v.t.y"}, lo[1]["text"])
+    def test_a_column_page_holding_the_whole_or_the_target_gets_neither_note(self):
+        # the input may still carry them (the core reads the coordinates): the ends keep the notes they had without them
+        for shape in (WHOLE_IN, TARGET_IN, {**WHOLE_IN, **TARGET_IN}):
+            picked = self.column_notes(shape)
+            self.assertEqual([p[1]["value_text"] for p in picked], ["fact:vs_mean", "fact:lo_vs_mean"], shape)
+            for p in picked:
+                self.assertFalse(any(w in json.dumps(p[1]) for w in ("whole", "target", "EU27_2020", "tgt")), p[1])
+        # with the year before held too, it is the only comparison a note draws
+        self.assertEqual([p[1]["value_text"] for p in self.column_notes({**WHOLE_IN, **TARGET_IN, **PREV_IN})], ["fact:hi_vs_prev", "fact:lo_vs_prev"])
 
     def test_a_column_page_compares_its_ends_with_the_previous_year(self):
         hi, lo = self.column_notes(PREV_IN)
@@ -1392,23 +1377,12 @@ class OutsideNotes(unittest.TestCase):
         self.assertEqual((c["text"], c["value_text"]), ([{"word": "column.note.whole_below"}, {"word": "column.note.last_year_name"}], "fact:hi_prev_drop"))
         self.assertAlmostEqual(vals["hi_prev_drop"], 70.0 - 66.4)
 
-    def test_a_change_page_compares_its_ends_changes_with_the_whole_s_and_never_the_previous_year(self):
-        first, last = self.change_notes({**WHOLE_IN, **PREV_IN})
-        self.assertEqual((first[1]["value_text"], last[1]["value_text"]), ("fact:first_vs_whole", "fact:last_vs_whole"))
-        moved = {c: VALUES[c] - EARLIER[c] for c in VALUES}; ranked = sorted(VALUES, key=lambda c: -moved[c])
-        self.assertAlmostEqual(first[2]["first_vs_whole"], moved[ranked[0]] - (24.5 - 21.3))
-        self.assertAlmostEqual(last[2]["last_vs_whole"], (24.5 - 21.3) - moved[ranked[-1]])
-        self.assertEqual(first[1]["text"], [{"word": "column.note.rise_most"}, {"word": "column.note.whole_above_after"}, {"name": "EU27_2020", "kind": "place"}])
-        (n1, v1), (n2, v2) = self.note(ranked[0], first), self.note(ranked[-1], last)
-        lines = self.drawn([dict(n1, at=POINT[ISO3[ranked[0]]]), dict(n2, at=POINT[ISO3[ranked[-1]]])], {**v1, **v2})
-        self.assertEqual(sorted(lines), sorted([f"{ZH2[ranked[0]]} 升幅最大，高出欧盟 {v1['first_vs_whole']:.1f} 个百分点",
-                                                f"{ZH2[ranked[-1]]} 降幅最大，低于欧盟 {v2['last_vs_whole']:.1f} 个百分点"]))
-        # with a target only, the level at the page year below it (the first, above it, keeps its plain note: a change page
-        # says only how far a place still is from the target)
-        first, last = self.change_notes(TARGET_IN)
-        self.assertGreater(VALUES[ranked[0]], 42.5)
-        self.assertEqual((first[1]["value_text"], last[1]["value_text"]), ("fact:vs_mean", "fact:last_to_target"))
-        self.assertAlmostEqual(last[2]["last_to_target"], 42.5 - VALUES[ranked[-1]])
+    def test_a_change_page_holding_the_whole_the_target_or_the_year_before_gets_the_plain_notes(self):
+        for shape in (WHOLE_IN, TARGET_IN, PREV_IN, {**WHOLE_IN, **TARGET_IN, **PREV_IN}):
+            first, last = self.change_notes(shape)
+            self.assertEqual((first[1]["value_text"], last[1]["value_text"]), ("fact:vs_mean", "fact:vs_lo"), shape)
+            for p in (first, last):
+                self.assertFalse(any(w in json.dumps(p[1]) for w in ("whole", "target", "EU27_2020", "tgt", "2022")), (shape, p[1]))
 
 
 if __name__ == "__main__":

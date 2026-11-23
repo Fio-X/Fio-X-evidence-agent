@@ -4048,6 +4048,32 @@ fn in_input_order(rows: &[J], input: &[J]) -> Vec<J> {
     out
 }
 
+/// A data code as the page tree schema takes it (Code): letters, digits and . _ @ : > - only, and not a select reference.
+fn code_ok(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with("select:")
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._@:>-".contains(c))
+}
+
+/// The page's tables as the tree's facts hold them: a table whose id is no data code (a law's clause, which the footer marks
+/// as a reference by its words and digits) is named by its key there, which is the table's id; the request keeps the clause.
+fn tree_tables(tables: &J) -> J {
+    J::Obj(
+        tables
+            .obj()
+            .iter()
+            .map(|(k, t)| {
+                let id = st(t.g("id"));
+                match code_ok(&id) {
+                    true => (k.clone(), t.clone()),
+                    false => (k.clone(), J::obj_of(vec![("id", J::str(k))])),
+                }
+            })
+            .collect(),
+    )
+}
+
 /// The page tree the core checks and asks the external layers over, from the page input and the finished fill.
 pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Result<J, String> {
     let (sels, given) = selects_of(page_in, reg)?;
@@ -4209,7 +4235,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
             J::obj_of(
                 vec![
                     ("kind", J::str("Facts")),
-                    ("tables", spec.g("tables").clone()),
+                    ("tables", tree_tables(spec.g("tables"))),
                     ("facts", facts),
                     ("fmts", fmts),
                     (

@@ -30148,13 +30148,11 @@ for line in sys.stdin:
     }
 
 
-    /// I36, declared only (the frozen rust notes never had them, so the parity tests' page inputs carry no coordinate and
-    /// these candidates are left out there): on EU rows with the whole, the column page's ends compare with the whole; with
-    /// the whole missing at the year and a registered target, with the target, its year printed from the target fact's own
-    /// period entry; with neither, with the year before. Every row a chosen note's facts read is a row of the page, and the
-    /// whole and the target's place are named.
+    /// I36: an ordinary column page's ends say only how far they are from the year before. The page input still carries the
+    /// whole and the registered target when its rows hold them (external_coords: the story pages read them), but the notes
+    /// over them are not in the registry: with the whole, with a target, the ends take the notes they had without them.
     #[test]
-    fn column_notes_compare_with_the_whole_the_target_and_the_year_before_when_the_input_holds_them() {
+    fn column_notes_compare_only_with_the_year_before_whether_or_not_the_input_holds_the_whole_or_the_target() {
         let value = |g: &str, t: &str| match (g, t) {
             ("DE", "2024") => "30",
             ("DE", _) => "28",
@@ -30214,27 +30212,22 @@ for line in sys.stdin:
         let srcs = |fill: &Value| -> Vec<String> {
             fill["rows"].as_array().unwrap().iter().map(|r| r["src"].as_str().unwrap().to_string()).collect()
         };
-        // the whole at the page's year: the top above it, the bottom below it
-        let (words, fill) = notes_of("whole", &main, &[]);
-        assert_eq!(
-            words,
-            ["column.note.whole_above+name:EU27_2020", "column.note.whole_below+name:EU27_2020"],
-            "whole"
+        // the whole at the page's year, a registered target too: neither is named by a note, no row of either is read
+        let (words, fill) = notes_of("whole", &main, std::slice::from_ref(&target));
+        assert_eq!(words.len(), 2, "whole: {words:?}");
+        assert!(words.iter().all(|w| !w.contains("EU27_2020") && !w.contains("target")), "whole: {words:?}");
+        assert!(
+            srcs(&fill).iter().all(|s| !s.contains("EU27_2020") && !s.starts_with("target:")),
+            "whole: {:?}",
+            srcs(&fill)
         );
-        assert!(srcs(&fill).contains(&"series:ren/EU27_2020:2024:OBS_VALUE".to_string()));
-        assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
-        // no whole at the year, a registered target: both ends below it, the year from the target fact's period entry
+        // no whole at the year, a registered target: the same
         let mut no_whole = main.clone();
         no_whole.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
         let (words, fill) = notes_of("target", &no_whole, std::slice::from_ref(&target));
-        let want = "column.note.whole_below+name:EU27_2020+fact:target_v.t.y+story.year+story.target";
-        assert_eq!(words, [want, want], "target");
-        assert!(srcs(&fill).contains(&"target:ren-EU27_2020-2030".to_string()));
-        assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
-        let (spec, read, _) = crate::next_facts::stored_request(&fill);
-        let facts = crate::next_facts::compute(&spec, &read).unwrap();
-        let ledger = crate::next_facts::leaf_ledger(&spec, &read, &facts).unwrap();
-        assert_eq!(ledger.get("fact:target_v.t.y").map(String::as_str), Some("2030"));
+        assert_eq!(words.len(), 2, "target: {words:?}");
+        assert!(words.iter().all(|w| !w.contains("EU27_2020") && !w.contains("target")), "target: {words:?}");
+        assert!(srcs(&fill).iter().all(|s| !s.starts_with("target:")), "target: {:?}", srcs(&fill));
         // members alone: the year before
         let mut members = main.clone();
         members.retain(|r| r["dims"]["geo"] != "EU27_2020");
@@ -30264,9 +30257,8 @@ for line in sys.stdin:
             let lines = spec["source"].as_array().unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
             assert_eq!(lines.last().unwrap(), "欧盟法规第三条", "{name}: the law's line is last");
             assert_eq!(spec["tables"]["targets_ren"], json!({"id": "2023/2413"}), "{name}");
-            // the notes over the whole and the target are drawn: their facts name codes a select holds (the page that held
-            // the whole once stopped in draw_nodes, "fact filter geo=EU27_2020: no select holds the code")
-            let (html, ..) = group_published_by(fill.clone(), name, "whole and target notes");
+            // a page whose input holds the whole and the target draws: no note reads them
+            let (html, ..) = group_published_by(fill.clone(), name, "whole and target in the input");
             assert!(html.contains(r#"data-layer="leader_notes""#), "{name}");
             // no target registered: the table's own line, no law line, no clause table
             REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());

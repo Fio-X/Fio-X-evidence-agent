@@ -68,7 +68,9 @@ def records(path):
     return list(csv.DictReader(open(os.path.join(D, path), encoding="utf-8")))
 
 def load(spec):
-    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"]}
+    # a spec table the request holds no row of is a reference only (a law's clause the footer names): nothing to load; a fact
+    # that reads it still stops, at T[q["table"]]
+    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"] if name in TABLES}
     T = {}
     for name, t in spec["tables"].items():
         rows = [r for r in csv.DictReader(open(os.path.join(D, t["csv"]))) if r.get("OBS_VALUE") not in ("", None)]
