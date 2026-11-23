@@ -1234,6 +1234,16 @@ class Findings(unittest.TestCase):
         bad = self._page(req, names, ["overtake", "movers"], edit=edit, refused=True)
         self.assertTrue(bad and "is not the rank its cell gives" in str(bad[0]), bad)
 
+    def test_the_three_new_angles_lead_the_lagging_arc_and_stand_in_its_order(self):
+        req, _ = eu27_request()
+        for lead in ("movers", "overtake", "tiles"):
+            got = FN.compose({**req, "picks": [lead, "tiles" if lead != "tiles" else "movers", "path"]})
+            self.assertEqual(got["arc"]["id"], "lagging", lead)
+            self.assertEqual(got["sections"][2]["id"], lead)
+        got = FN.compose({**req, "picks": ["need", "tiles", "movers", "overtake"]})
+        self.assertEqual(got["arc"]["id"], "in_time")
+        self.assertEqual([x["id"] for x in got["sections"] if x["id"] in FN.ARC_ORDER["in_time"]], ["need", "movers", "overtake", "tiles"])
+
     def test_tiles_title_says_which_side_is_higher(self):
         req, _ = eu27_request()
         pts = req["points"]

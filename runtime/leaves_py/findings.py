@@ -1033,14 +1033,15 @@ def candidates(r):
 # header's numbers and the closing line, what the page ends on.
 #   happened  what happened: the chain finding leads; what moved and who with it; the outlook (path or need) last
 #   in_time   will it be in time: the need or path finding leads, the other of the two next; who lags; then the rest
-#   lagging   who is dragging: a spread, rank, ends, members or map finding leads; the other comparisons; the whole last
+#   lagging   who is dragging: a spread, rank, ends, members, movers, overtake, map or tiles finding leads; the other comparisons; the whole last
 ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
-          "members": "lagging", "map": "lagging"}
-ARC_ORDER = {"happened": ["chain", "spread", "rank", "members", "ends", "map", "path", "need"],
-             "in_time": ["need", "path", "rank", "spread", "members", "ends", "map", "chain"],
-             "lagging": ["spread", "rank", "ends", "members", "map", "chain", "need", "path"]}
+          "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging"}
+ARC_ORDER = {"happened": ["chain", "spread", "rank", "members", "ends", "movers", "overtake", "map", "tiles", "path", "need"],
+             "in_time": ["need", "path", "rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
+             "lagging": ["spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "chain", "need", "path"]}
 # the findings an arc needs besides its lead (any one of them): the outlook, who lags, the comparison among the members
-ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "map"), "lagging": ("spread", "rank")}
+ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles"),
+             "lagging": ("spread", "rank", "movers", "overtake")}
 MAX_PICKS = 4
 
 
