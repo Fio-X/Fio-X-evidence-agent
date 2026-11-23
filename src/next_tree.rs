@@ -1954,7 +1954,12 @@ fn sum_rows<'a>(rows: impl IntoIterator<Item = &'a J>) -> Result<f64, String> {
 }
 
 fn py_fixed(x: f64, dec: usize) -> String {
-    format!("{x:.dec$}")
+    let s = format!("{x:.dec$}");
+    // a value that rounds to 0 prints without its minus, as next_facts::fixed prints it
+    match s.strip_prefix('-') {
+        Some(rest) if rest.bytes().all(|b| b == b'0' || b == b'.') => rest.to_string(),
+        _ => s,
+    }
 }
 
 /// A fixed-point number with its whole part grouped by thousands with commas, as Python's format spec `,.{dec}f` writes
@@ -11999,7 +12004,8 @@ mod tests {
             (112310.0, 0, "112,310"),
             (552658.77, 2, "552,658.77"),
             (-1234567.5, 1, "-1,234,567.5"),
-            (-0.04, 1, "-0.0"),
+            (-0.04, 1, "0.0"),
+            (-0.05, 1, "-0.1"),
         ] {
             assert_eq!(py_grouped(&py_fixed(x, dec)), py, "{x} at {dec}");
         }

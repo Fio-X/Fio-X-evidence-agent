@@ -221,7 +221,8 @@ def run_years(s):
 # ---------------------------------------------------------------- ticks as next_facts::ticks works them out
 
 def fixed_text(x, dec):
-    return f"{x:,.{dec}f}"
+    s = f"{x:,.{dec}f}"
+    return s[1:] if s.startswith("-") and not any(c in "123456789" for c in s) else s   # a value that rounds to 0 has no minus
 
 
 def ticks(top_value, fmt_def):

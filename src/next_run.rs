@@ -16028,13 +16028,13 @@ mod tests {
         main
     }
 
-    /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
-    /// request's ledger, refs, spec, rows and facts.
     thread_local! {
         /// The notes the last page `published` laid out dropped, as the publication lists them.
         static LAST_DROPPED: std::cell::RefCell<Vec<(String, String)>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
+    /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
+    /// request's ledger, refs, spec, rows and facts.
     fn published(name: &str, mut fill: Value, at: &str) -> PublishedPage {
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");

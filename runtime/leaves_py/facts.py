@@ -181,13 +181,17 @@ def compute(spec, T):
         F[key] = {"v": v, "fmt": q["fmt"], "src": q}
     return F
 
+def unsigned_zero(s):
+    """A number that rounded to 0 prints without its minus ("-0.0" is "0.0"), as next_facts::fixed prints it."""
+    return s[1:] if s.startswith("-") and not any(c in "123456789" for c in s) else s
+
 def fmt(spec, f, bare=False):
     """bare: the number without its unit suffix, for layouts that state the unit once."""
     m = spec["fmts"].get(f["fmt"], {})
     if f["fmt"] == "pct": return f'{abs(f["v"]) * 100:.0f}' + ("" if bare else "%")
-    if f["fmt"] == "n": return f'{f["v"]:.0f}'
-    if f["fmt"] == "x": return f'{f["v"]:.1f}'
-    s = f'{f["v"] * m.get("scale", 1):,.{m.get("dec", 0)}f}'
+    if f["fmt"] == "n": return unsigned_zero(f'{f["v"]:.0f}')
+    if f["fmt"] == "x": return unsigned_zero(f'{f["v"]:.1f}')
+    s = unsigned_zero(f'{f["v"] * m.get("scale", 1):,.{m.get("dec", 0)}f}')
     return s if bare else s + m.get("suffix", "")
 
 def unit(spec, f):

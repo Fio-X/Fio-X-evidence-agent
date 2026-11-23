@@ -414,9 +414,9 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
 }
 
 /// `x` with `dec` places, rounded once on its exact value with a tie to the even digit (GB/T 8170), a minus on a
-/// negative value even when it rounds to 0, and a comma between thousands when `sep`: `fixed` on the exact value.
+/// negative value unless it rounds to 0 (a printed "-0.0" says a sign no reader can use), and a comma between thousands
+/// when `sep`: `fixed` on the exact value.
 fn fixed_exact(x: Exact, dec: usize, sep: bool) -> Option<String> {
-    let sign = if x.n < 0 { "-" } else { "" };
     let a = x.abs();
     let scaled =
         a.n.checked_mul(10i128.checked_pow(u32::try_from(dec).ok()?)?)?;
@@ -426,6 +426,7 @@ fn fixed_exact(x: Exact, dec: usize, sep: bool) -> Option<String> {
     if twice > a.d || (twice == a.d && q % 2 == 1) {
         q += 1;
     }
+    let sign = if x.n < 0 && q != 0 { "-" } else { "" };
     let digits = format!("{q:0>width$}", width = dec + 1);
     let (int, frac) = digits.split_at(digits.len() - dec);
     let int = if sep { thousands(int) } else { int.to_string() };
@@ -1480,9 +1481,9 @@ fn scaled(f: &Fact, fmts: &Value, k: &str) -> Result<(f64, usize, String), Strin
 }
 
 /// A number with `dec` places, rounded on its exact decimal expansion with a tie to the even digit, a minus on a negative
-/// value even when it rounds to 0, and a comma between thousands when `sep`: what Python's `f"{x:,.{dec}f}"` prints.
+/// value unless it rounds to 0, and a comma between thousands when `sep`: what Python's `f"{x:,.{dec}f}"` prints, but for the
+/// minus of a value that rounds to 0 (a printed "-0.0" says a sign no reader can use).
 fn fixed(x: f64, dec: usize, sep: bool) -> String {
-    let sign = if x.is_sign_negative() { "-" } else { "" };
     // an f64 has at most 1074 binary places, so 1100 decimal places print it exactly
     let exact = format!("{:.1100}", x.abs());
     let (whole, places) = exact.split_once('.').unwrap_or((exact.as_str(), ""));
@@ -1515,6 +1516,7 @@ fn fixed(x: f64, dec: usize, sep: bool) -> String {
             }
         }
     }
+    let sign = if x.is_sign_negative() && digits.iter().any(|d| *d != 0) { "-" } else { "" };
     let cut = digits.len() - dec;
     let mut int: String = digits[..cut].iter().map(|d| char::from(b'0' + d)).collect();
     if sep {
@@ -2927,7 +2929,9 @@ mod tests {
             (0.125, 2, false, "0.12"),
             (0.375, 2, false, "0.38"),
             (2.675, 2, false, "2.67"),
-            (-0.4, 0, false, "-0"),
+            (-0.4, 0, false, "0"),
+            (-0.04, 1, false, "0.0"),
+            (-0.05, 1, false, "-0.1"),
             (999.5, 0, true, "1,000"),
             (1234567.891, 0, true, "1,234,568"),
             (-1234.5, 1, true, "-1,234.5"),
