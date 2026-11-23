@@ -16,7 +16,8 @@ Parts, layout slots, heroes, palettes and knob ranges are data in node.json (the
 scene_node.py under Blender (headless, three passes) and hero_node.py (the painting), and returns the svg. It makes no number and no word: the picture is only shapes."""
 import copy, json, os, shutil, subprocess, sys, tempfile, time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)      # (python -I puts no script directory on the path)
+import frame as FR  # noqa: E402
 REG = json.load(open(os.path.join(HERE, "node.json")))
 TAG_ORDER = ["hydro", "solar", "wind", "coal", "gas", "grid"]
 BLENDER_DEADLINE = 40.0     # seconds for the Blender process; the whole picture must be back inside 55 s (the caller's deadline is 60)
@@ -206,16 +207,29 @@ def unit_item(fn, x, y, size, lit, mark=None, dz=-0.3, kk="row_k", depth=None):
     return it
 
 
-def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows=None, kk="tally_k"):
+def row_ys(U, y0, rows, camera):
+    """The ground depth of each row. A unit with persp_rows widens the spacing of the rows that stand further from the camera by the inverse
+    of their perspective scale (the depth of the row before over the depth of the first row, the camera's own numbers), so the back rows,
+    drawn smaller, do not close up on each other and on the front row; other units keep an even spacing."""
+    L = TOPICS["layout"]; dy = L["row_dy"] * U.get("row_dy_k", 1.0); ys = [y0]
+    for r in range(1, rows):
+        k = FR.depth_of(camera, 0.0, ys[-1]) / FR.depth_of(camera, 0.0, y0) if U.get("persp_rows") and camera else 1.0
+        ys.append(ys[-1] + dy * k)
+    return ys
+
+
+def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows=None, kk="tally_k", camera=None):
     """The members in rows over x0..x1 (the lit first), a unit each: the unit of position i is units[i % len(units)]; (items, rows, cols)."""
     L = TOPICS["layout"]; n = len(ordered)
     rows = rows or (1 if n <= L["rows_at"][0] else 2 if n <= L["rows_at"][1] else 3); cols = -(-n // rows)
     U = TOPICS["units"][units[0]]      # a unit may set its own row spacing and stagger (people: rows far enough apart, each row half a step off the one before)
-    step = min(36.0, (x1 - x0) / (cols + 0.5)); size = size_of(step); left = (x0 + x1) / 2 - step * cols / 2; items = []
+    step = min(36.0, (x1 - x0) / (cols + 0.5)); size = size_of(step); left = (x0 + x1) / 2 - step * cols / 2; items = []; ys = row_ys(U, y0, rows, camera)
     nl = sum(1 for m in ordered if m["code"] in lit)
     for i, m in enumerate(ordered):
         r, c = divmod(i, cols); on = m["code"] in lit; fn = units[i % len(units)]
-        items.append(unit_item(fn, left + step * (c + 0.5) + step * U.get("stagger", 0.34) * (r % U.get("stagger_rows", 3)), y0 + L["row_dy"] * U.get("row_dy_k", 1.0) * r, size * (1.0 if on else U.get("unlit_k", L["unlit_k"])), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk, depth=r))
+        u = TOPICS["units"][fn]; sz = size * (1.0 if on else U.get("unlit_k", L["unlit_k"]))
+        if "body_w" in u: sz = min(sz, step / ((1 + u.get("gap", 0.1)) * u["body_w"] * u["k"] * u[kk]))      # a unit with a registered width stands clear of its neighbour
+        items.append(unit_item(fn, left + step * (c + 0.5) + step * U.get("stagger", 0.34) * (r % U.get("stagger_rows", 3)), ys[r], sz, on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk, depth=r))
     return items, rows, cols
 
 
@@ -224,8 +238,8 @@ def order_members(ms, lit): return sorted(ms, key=lambda m: (m["code"] not in li
 
 def layout_tally(units, subject, topic):
     L = TOPICS["layout"]; ms = members_of(subject); lit = lit_codes(subject)
-    items, rows, cols = grid(units, order_members(ms, lit), lit, *L["x"], L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]))
-    return items, dict(layout=f"tally-{rows}x{cols}", objects=len(ms), lit=len(lit))
+    items, rows, cols = grid(units, order_members(ms, lit), lit, *L["x"], L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]), camera=TOPICS["cameras"]["tally"])
+    return items, dict(layout=f"tally-{rows}x{cols}", objects=len(ms), lit=len(lit), omitted=0)
 
 
 def layout_groups(units, subject, topic):
@@ -243,13 +257,13 @@ def layout_groups(units, subject, topic):
         for m in ms:
             if m["code"] in seen: refuse(f"subject.groups: {m['code']} is in two groups")
             seen.add(m["code"])
-        its, rows, cols = grid(units, order_members(ms, lit), lit, x0, x1, L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]), dz=G["slab"]["h"] - 0.3, mark_last=False, rows=G["rows"], kk="groups_k")
+        its, rows, cols = grid(units, order_members(ms, lit), lit, x0, x1, L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]), dz=G["slab"]["h"] - 0.3, mark_last=False, rows=TOPICS["units"][units[0]].get("groups_rows", G["rows"]), kk="groups_k", camera=TOPICS["cameras"]["groups"])
         items += its
         w = x1 - x0 + G["slab"]["pad"] * 0.8; depth = L["row_dy"] * (rows - 1) + 22 + G["slab"]["pad"]
         items.append({"part": "plinth", "kind": "at_ground", "fn": "plinth", "at": [round((x0 + x1) / 2 + L["row_dy"] * 0.17 * (rows - 1), 2), round(L["y0"] + L["row_dy"] * (rows - 1) / 2, 2)], "dz": -0.3,
                       "args": {"height": G["slab"]["h"], "width": round(w, 1), "depth": round(depth, 1)}})
         out.append(dict(key=g["key"], name=g.get("name"), lit=len(lit), total=len(ms)))
-    return items, dict(layout="groups-" + "+".join(f"{o['lit']}of{o['total']}" for o in out), objects=sum(o["total"] for o in out), lit=sum(o["lit"] for o in out), groups=out)
+    return items, dict(layout="groups-" + "+".join(f"{o['lit']}of{o['total']}" for o in out), objects=sum(o["total"] for o in out), lit=sum(o["lit"] for o in out), groups=out, omitted=0)
 
 
 def layout_pair(units, subject, topic=None):
@@ -261,21 +275,51 @@ def layout_pair(units, subject, topic=None):
     items = [unit_item(unit, L["hi_x"], L["y"], big, True, mark=True), unit_item(unit, L["lo_x"], L["y"], small, False)]
     rest = order[1:-1][:L["back_max"]]; x0, x1 = TOPICS["layout"]["x"]
     for i, c in enumerate(rest): items.append(unit_item(unit, x0 + (x1 - x0) * (i + 0.5) / len(rest), L["back_y"], max(L["back_size"] * val[c] / val[hi], L["back_floor"]), False))
-    return items, dict(layout=f"pair-{len(rest)}", objects=len(items), lit=1)
+    return items, dict(layout=f"pair-{len(rest)}", objects=len(items), lit=1, omitted=0)
+
+
+def row_slots(U, ratios, x0, x1, cap, floor, gap_after=None, gap_w=0.0):
+    """One row of units, each as large as its ratio (value over the highest) times `big`, side by side over x0..x1; (sizes, centres).
+    A unit of a registered body width (body_w, scene units at size 1; gap: clear space as a share of it) gets a slot as wide as itself and
+    `big` is the largest that fits the row (the small ones close up, the big ones are as big as the row allows, never over cap); a unit
+    without a width gets an even slot at the cap. `gap_after`: the index after which a slot of gap_w scene units is left (the omission mark);
+    (sizes, centres, the centre of that slot or None)."""
+    n = len(ratios); room = (x1 - x0) - (gap_w if gap_after is not None else 0.0)
+    if "body_w" not in U:
+        step = room / n; sizes = [max(cap * r, floor) for r in ratios]; w = [step] * n
+    else:
+        big = cap; bw = U["body_w"] * (1 + U.get("gap", 0.1))
+        for _ in range(8):
+            sizes = [max(big * r, floor) for r in ratios]; need = sum(s * bw for s in sizes)
+            if need <= room + 1e-6: break
+            big *= room / need
+        w = [s * bw for s in sizes]; x0 += (room - sum(w)) / 2        # a row that is not full is centred
+    xs = []; cur = x0; gc = None
+    for i in range(n):
+        xs.append(cur + w[i] / 2); cur += w[i]
+        if gap_after is not None and i == gap_after - 1: gc = cur + gap_w / 2; cur += gap_w
+    return sizes, xs, gc
 
 
 def layout_rank(units, subject, topic=None):
+    """The members by value, each unit as large as its value (against the highest); a unit that is wide shows only the ends of the ranking
+    (rank_max of them: the top and the bottom half), and the place where the middle is left out holds the omission mark; `omitted` is the
+    number of members the request had and the picture does not draw (the page prints its own caption from it)."""
     unit = units[0]
     L = TOPICS["layout"]["rank"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c))
-    U = TOPICS["units"][unit]; mx = U.get("rank_max", L["max"])        # a unit with a body width shows fewer, so that each stands clear of the next
-    if len(order) > mx: order = order[:mx // 2] + order[-(mx - mx // 2):]
-    top = val[order[0]]
+    U = TOPICS["units"][unit]; mx = U.get("rank_max", L["max"]); cut = None
+    if len(order) > mx: cut = mx // 2; order = order[:cut] + order[-(mx - mx // 2):]
+    omitted = len(ms) - len(order); top = val[order[0]]
     if top <= 0: refuse("subject: a ranking needs a highest above 0")
-    x0, x1 = TOPICS["layout"]["x"]; step = (x1 - x0) / len(order); items = []
-    big = min(L["size"], step / ((1 + U["gap"]) * U["body_w"])) if "body_w" in U else L["size"]       # the tallest person's width plus the gap fits one step
-    for i, c in enumerate(order): items.append(unit_item(unit, x0 + step * (i + 0.5), L["y"], max(big * max(val[c], 0) / top, L["floor"]), i == 0, mark=i == 0))
-    return items, dict(layout=f"rank-{len(order)}", objects=len(order), lit=1)
+    x0, x1 = L.get("x", TOPICS["layout"]["x"]); O = TOPICS["omitted"]
+    sizes, xs, gc = row_slots(U, [max(val[c], 0) / top for c in order], x0, x1, L["size"], L["floor"], cut if omitted else None, O["slot"])
+    items = [unit_item(unit, xs[i], L["y"], sizes[i], i == 0, mark=i == 0) for i in range(len(order))]
+    if omitted:
+        near = (sizes[cut - 1] + sizes[cut]) / 2 * U["mark_z"]
+        items.append({"part": "ellipsis_mark", "kind": "at_ground", "fn": "ellipsis_mark", "at": [round(gc, 2), L["y"]], "dz": -0.3,
+                      "args": {"r": round(min(O["r_frac"] * near, 0.45 * O["slot"] / (1 + O["gap"])), 2), "gap": O["gap"], "z": round(O["z_frac"] * near, 2)}})      # the three dots (6r + 2r wide) stay inside the slot
+    return items, dict(layout=f"rank-{len(order)}", objects=len(order), lit=1, omitted=omitted)
 
 
 def layout_path(units, subject, topic=None):
@@ -289,7 +333,7 @@ def layout_path(units, subject, topic=None):
         items.append(unit_item(unit, x0 + (x1 - x0) * i / (k - 1), L["y"], s0 + (s1 - s0) * i / (k - 1), i < passed, mark=passed > 0 and i == passed - 1))
     items.append({"part": "target_flag", "kind": "at_ground", "fn": "target_flag", "at": list(L["flag_at"]), "dz": -0.3, "args": {"height": 34, "cloth": 14, "wave": 0.18, "yaw": 0}})
     items.append({"part": "track", "kind": "track", "args": {"points": [[x0 - 40, L["track_y"]], [-60, L["track_y"] - 2], [60, L["track_y"] - 2], [x1 + 40, L["track_y"]]], "width": 7}})
-    return items, dict(layout=f"path-{passed}of{k}", objects=k, lit=passed)
+    return items, dict(layout=f"path-{passed}of{k}", objects=k, lit=passed, omitted=0)
 
 
 def layout_series(units, subject, topic=None):
@@ -311,10 +355,10 @@ def layout_series(units, subject, topic=None):
     if not lit or len(lit) == len(ys): refuse("subject.split: it must leave years before it and from it on")
     top = max(y["value"] for y in ys)
     if top <= 0: refuse("subject.series: the highest value must be above 0")
-    x0, x1 = TOPICS["layout"]["x"]; step = (x1 - x0) / len(ys); items = []
+    x0, x1 = L.get("x", TOPICS["layout"]["x"]); sizes, xs, _ = row_slots(TOPICS["units"][unit], [max(y["value"], 0) / top for y in ys], x0, x1, L["size"], L["floor"]); items = []
     for i, y in enumerate(ys):
-        on = y["t"] >= split; items.append(unit_item(unit, x0 + step * (i + 0.5), L["y"], max(L["size"] * max(y["value"], 0) / top, L["floor"]), on, mark=y["t"] == split))
-    return items, dict(layout=f"series-{len(ys)}-{len(lit)}", objects=len(ys), lit=len(lit))
+        on = y["t"] >= split; items.append(unit_item(unit, xs[i], L["y"], sizes[i], on, mark=y["t"] == split))
+    return items, dict(layout=f"series-{len(ys)}-{len(lit)}", objects=len(ys), lit=len(lit), omitted=0)
 
 
 LAYOUTS = {"tally": layout_tally, "groups": layout_groups, "series": layout_series, "pair": layout_pair, "rank": layout_rank, "path": layout_path}
@@ -362,7 +406,7 @@ def compose_subject(inp):
         fs = inp.get("people_style", sc["figure_style"]["default"])
         if fs not in sc["figure_style"]["values"]: refuse(f"people_style {fs!r} is none of {'|'.join(sc['figure_style']['values'])}")
     elif "people_style" in inp: refuse(f"people_style: the {topic} topic draws no people")
-    cam = copy.deepcopy(TOPICS["cameras"].get(kind, TOPICS["cameras"]["default"])); mirror = c["reading_order"] == "right_to_left"
+    cam = copy.deepcopy(TOPICS["cameras"][TOPICS["units"][units[0]]["camera"]] if kind not in ("tally", "groups") and "camera" in TOPICS["units"][units[0]] else TOPICS["cameras"].get(kind, TOPICS["cameras"]["default"])); mirror = c["reading_order"] == "right_to_left"
     for it in items:
         if "mark" in it: it["mark"] = {"at": list(it["at"]), "z": float(it["mark"]["z"]), "rise": it["mark"]["rise"]}
     if mirror:
@@ -423,7 +467,7 @@ def serve():
         if not isinstance(inp, dict): raise Refused("the request is not an object")
         with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
             svg, w, h, secs, name, comp = build(inp, work)
-        reply = {"svg": svg, "w": w, "h": h, "dropped": [], "scene": name, "seconds": secs, **({"composition": comp} if comp else {})}
+        reply = {"svg": svg, "w": w, "h": h, "dropped": [], "scene": name, "seconds": secs, **({"composition": comp, "omitted": comp.get("omitted", 0), "omitted_label_key": TOPICS["omitted"]["label_key"]} if comp else {})}
     except Refused as e: reply = {"refused": [str(e)]}
     except Unavailable as e: reply = {"unavailable": str(e)}
     except json.JSONDecodeError as e: reply = {"refused": [f"the request is not JSON: {e}"]}

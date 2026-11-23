@@ -408,22 +408,33 @@ def figure_unit(size=1.0, lit=False, name="figure", depth=0):
 
 
 def solar_unit(size=1.0, lit=False, name="solar"):
-    """A solar panel on a post (energy): the tilted panel is the lit part."""
-    S = 24.0 * size; p = Mesh(name + "_panel", _grp(lit)); f = Mesh(name + "_post", "thing")
-    p.merge(box((0, 0, 0.66 * S), (1.5 * S, 0.9 * S, 0.07 * S), rot=rot_x(-32)))
-    for k in (-0.35, 0.0, 0.35): p.merge(box((k * S * 1.5, 0, 0.66 * S), (0.05 * S, 0.95 * S, 0.1 * S), rot=rot_x(-32)))
-    f.merge(tube((0, 0.05 * S, 0), (0, 0.05 * S, 0.6 * S), r=0.05 * S, n=6)); f.merge(box((0, 0, 0.03 * S), (0.8 * S, 0.5 * S, 0.06 * S)))
+    """A solar array (energy): a framed photovoltaic panel on two legs, tilted back so that its face turns to the viewer and up, the face cut by
+    a grid (cell lines both ways: raised strips the pen draws); the panel is the lit part. About 1.05 S tall and 1.4 S wide (S = 24 scene units)."""
+    S = 24.0 * size; p = Mesh(name + "_panel", _grp(lit)); f = Mesh(name + "_post", "thing"); tilt = 36.0; W, L, T = 1.4 * S, 1.15 * S, 0.07 * S
+    zc = 0.46 * S + 0.5 * L * math.sin(math.radians(tilt)); R = rot_x(tilt)
+    p.merge(box((0, 0, zc), (W, L, T), rot=R))
+    for k in (-0.375, -0.125, 0.125, 0.375):       # cell columns
+        c = mulv(R, (k * W, 0, 0.5 * T + 0.02 * S)); p.merge(box((c[0], c[1], zc + c[2]), (0.045 * S, L * 0.96, 0.05 * S), rot=R))
+    for k in (-0.25, 0.25):                         # cell rows
+        c = mulv(R, (0, k * L, 0.5 * T + 0.02 * S)); p.merge(box((c[0], c[1], zc + c[2]), (W * 0.96, 0.05 * S, 0.05 * S), rot=R))
+    tn = math.tan(math.radians(tilt))
+    for sx in (-0.34, 0.34):
+        for y in (-0.2, 0.25): f.merge(tube((sx * W, y * S, 0), (sx * W, y * S, zc + y * S * tn - 0.03 * S), r=0.045 * S, n=6))
+    f.merge(box((0, 0.2 * S, 0.025 * S), (1.3 * S, 0.5 * S, 0.05 * S)))
     return [p, f]
 
 
 def dam_unit(size=1.0, lit=False, name="dam"):
-    """A concrete dam wall with its crest and a slab of reservoir behind it (energy, hydro); the wall is the lit part."""
-    S = 24.0 * size; w = Mesh(name + "_wall", _grp(lit)); r = Mesh(name + "_lake", "thing")
-    w.merge(frustum((0, 0, 0), 0.8 * S, 0.8 * S, 0.1 * S, n=4, rot_phase=math.pi / 4)); w.merge(box((0, 0, 0.42 * S), (1.7 * S, 0.34 * S, 0.8 * S)))
-    w.merge(box((0, 0, 0.84 * S), (1.9 * S, 0.5 * S, 0.08 * S)))
-    for k in (-0.5, 0.0, 0.5): w.merge(box((k * S, -0.22 * S, 0.3 * S), (0.1 * S, 0.14 * S, 0.6 * S)))
-    r.merge(box((0, 0.7 * S, 0.3 * S), (1.8 * S, 0.9 * S, 0.5 * S)))
-    return [w, r]
+    """An arch dam seen from downstream (energy, hydro), the wall of the hero dam (arch_dam) at the unit's scale: a curved concrete wall with
+    gate piers along its crest and a ribbon of spillway water down its face (the spill group: vertical hatching), the reservoir as a slab of
+    water standing against its upstream side a little under the crest and widening away from it (so that, seen from a raised camera, it lies
+    beyond the crest), and a pool at its foot. The wall is the lit part, the waters the water group. About 0.95 S tall and 1.5 S wide
+    (S = 24 scene units), the lake reaching 1.1 S back; centred on x = 0."""
+    S = 24.0 * size; wall, spill = arch_dam(0.0, 0.0, 0.0, height=0.95 * S, width=1.5 * S, base_t=0.30 * S, crest_t=0.10 * S, arc_deg=85.0, name=name + "_wall")
+    wall.group = _grp(lit); lake = Mesh(name + "_lake", "water")
+    lz = 0.88 * 0.95 * S; lake.add([(-0.70 * S, 0.12 * S, lz), (0.70 * S, 0.12 * S, lz), (0.85 * S, 1.15 * S, lz), (-0.85 * S, 1.15 * S, lz)], [(0, 1, 2, 3)], outward=False)
+    pool = Mesh(name + "_pool", "water"); pool.add([(-0.45 * S, -0.30 * S, 0.02 * S), (0.45 * S, -0.30 * S, 0.02 * S), (0.60 * S, -0.80 * S, 0.02 * S), (-0.60 * S, -0.80 * S, 0.02 * S)], [(0, 1, 2, 3)], outward=False)
+    return [wall, spill, lake, pool]
 
 
 def pylon_unit(size=1.0, lit=False, name="pylon"):
@@ -434,11 +445,14 @@ def pylon_unit(size=1.0, lit=False, name="pylon"):
 
 
 def biomass_unit(size=1.0, lit=False, name="biomass"):
-    """A stack of logs, three, two, one (energy, biomass and heating); the logs are the lit part."""
-    S = 24.0 * size; m = Mesh(name, _grp(lit)); rad = 0.2 * S
-    for row, n in enumerate((3, 2, 1)):
-        for i in range(n):
-            m.merge(frustum((0, 0, 0), rad, rad, 1.5 * S, n=8, rot=rot_y(90)), loc=(-0.75 * S, (i - (n - 1) / 2) * 2.05 * rad, rad + row * 1.75 * rad))
+    """A stack of cut logs seen end-on (energy, biomass and heating): round log ends, two across and three high with one nested on top, each
+    end cut by two growth rings (raised discs the pen draws as circles); the logs are the lit part. About 31 scene units tall and 16 wide at size 1 (r = 4 per log)."""
+    m = Mesh(name, _grp(lit)); r = 4.0 * size; ln = 1.5 * r; rows = ((-1, 1), (-1, 1), (-1, 1), (0,))
+    for k, row in enumerate(rows):
+        for sx in row:
+            z = r + 2 * r * k if k < 3 else r + 2 * r * 2 + 1.732 * r
+            m.merge(frustum((0, 0, 0), r, r, ln, n=12, rot=rot_x(90)), loc=(sx * r, 0.5 * ln, z))
+            for rr, out in ((0.62, 0.05), (0.26, 0.10)): m.merge(frustum((0, 0, 0), rr * r, rr * r, out * r, n=12, rot=rot_x(90)), loc=(sx * r, -0.5 * ln + 0.0, z))
     return [m]
 
 
@@ -458,6 +472,14 @@ def waypoint_unit(size=1.0, lit=False, name="waypoint"):
     m.merge(frustum((0, 0, 0), 1.6 * r, r, 0.78 * H, n=6)); m.merge(box((0, 0, 0.03 * H), (0.34 * H, 0.26 * H, 0.06 * H)))
     m.merge(frustum((0.0, 0, 0.84 * H), 0.2 * H, 0.0, 0.34 * H, n=6, rot=rot_y(90)), loc=(-0.12 * H, 0, 0))
     m.merge(box((0.02 * H, 0, 0.84 * H), (0.3 * H, 0.07 * H, 0.07 * H)))
+    return [m]
+
+
+def ellipsis_mark(r=1.5, gap=3.2, z=10.0, name="omit"):
+    """The omission mark '...' (three round dots in a row, spaced gap * r apart, centre z high): the same pen as the pictures, for the place
+    where a ranking leaves members out. Not a unit: it carries no fact."""
+    m = Mesh(name, "thing")
+    for k in (-1, 0, 1): _ball(m, (k * gap * r, 0.0, z), r, n=10, rings=4)
     return [m]
 
 

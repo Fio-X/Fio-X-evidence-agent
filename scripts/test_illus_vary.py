@@ -15,6 +15,7 @@ ROOT = os.path.join(HERE, "..")
 HERO = os.path.join(ROOT, "runtime", "illus_hero")
 sys.path.insert(0, HERO)
 import run_hero as R  # noqa: E402
+import frame as FR  # noqa: E402
 
 SPECS = json.load(open(os.path.join(ROOT, "fixtures", "illus-vary-specs.json")))
 FAMILIES = json.load(open(os.path.join(ROOT, "runtime", "pi", "assets", "measure-families.json")))["families"]
@@ -235,7 +236,7 @@ class EnergyObjects(unittest.TestCase):
         for fn in fns: self.assertTrue(callable(getattr(P, fn)), fn); self.assertIn(fn, T["units"], fn)
         for key in ob["family"].values(): self.assertTrue(key == "mix" or key in ob["measure"], key)
         self.assertEqual(set(ob["mix"]), set(R.LAYOUTS))
-        self.assertEqual(set(T["cameras"]) - {"default"}, {"tally", "groups"}); self.assertTrue(set(ob["family"]) <= set(T["families"]))
+        self.assertEqual(set(T["cameras"]) - {"default"}, {"tally", "groups", "raised"}); self.assertTrue(set(ob["family"]) <= set(T["families"]))
         for fn, u in T["units"].items(): self.assertTrue(u["mark_z"] > 0 and 0.3 < u["k"] <= 1 and 0.3 < u["tally_k"] <= 1 and 0.3 < u["row_k"] <= 1 and 0.5 <= u["groups_k"] <= 2, fn)
         src = open(os.path.join(HERO, "scene_node.py")).read()
         for fn in T["units"]: self.assertIn(f'"{fn}": "size"', src, f"{fn} casts no shadow: scene_node SHADOW_H")
@@ -319,6 +320,101 @@ class Compositions(unittest.TestCase):
     def test_the_old_request_without_a_subject_is_unchanged(self):
         s, *_ = R.resolve({"tags": ["wind", "grid"], "hero": "wind", "width": 1140, "ground": "warm", "accent": "#1a9a6c", "lead": "rank"})
         self.assertEqual(s["scene"], "lineup"); self.assertNotIn("composition", s)
+
+
+def members_req(n, family="co2", lead="rank", top=60.0):
+    return {"family": family, "lead": lead, "width": 1140, "subject": {"members": [{"code": f"M{i:02d}", "value": top - i} for i in range(n)]}}
+
+
+class Omission(unittest.TestCase):
+    def test_a_ranking_that_leaves_members_out_reports_how_many_and_marks_the_gap(self):
+        s, *_ = R.resolve(members_req(14, family="pop65"))
+        drawn = [i for i in s["items"] if i["fn"] == "figure_unit"]; dots = [i for i in s["items"] if i["fn"] == "ellipsis_mark"]
+        self.assertEqual((len(drawn), s["composition"]["omitted"]), (10, 4)); self.assertEqual(s["composition"]["omitted"], 14 - len(drawn), "counted from the rows")
+        self.assertEqual(len(dots), 1); xs = sorted(i["at"][0] for i in drawn)
+        self.assertTrue(xs[4] < dots[0]["at"][0] < xs[5], "the mark stands between the top five and the bottom five")
+        self.assertEqual(sum(1 for i in drawn if i["args"]["lit"]), 1)
+
+    def test_a_ranking_that_leaves_nothing_out_has_no_mark(self):
+        s, *_ = R.resolve(members_req(10, family="pop65"))
+        self.assertEqual(s["composition"]["omitted"], 0); self.assertEqual([i for i in s["items"] if i["fn"] == "ellipsis_mark"], [])
+        self.assertEqual(sum(1 for i in s["items"] if i["fn"] == "figure_unit"), 10)
+
+    def test_the_story_ranking_of_dams_counts_its_omitted_members_from_the_rows(self):
+        s, *_ = R.resolve(req("st2")); n = len(SPECS["st2"]["subject"]["members"]); drawn = sum(1 for i in s["items"] if i["fn"] == "dam_unit")
+        self.assertEqual(s["composition"]["omitted"], n - drawn); self.assertGreater(s["composition"]["omitted"], 0)
+
+    def test_the_mark_is_three_dots_in_the_pictures_own_pen_and_carries_no_fact(self):
+        import parts as P
+        (m,) = P.ellipsis_mark(r=1.5, gap=3.0, z=10.0); self.assertEqual(m.group, "thing")
+        xs = sorted(v[0] for v in m.v); clusters = 1 + sum(1 for p, q in zip(xs, xs[1:]) if q - p > 0.5)      # the dots are 3.0 apart centre to centre, 1.5 in radius: they touch
+        self.assertGreaterEqual(clusters, 1); self.assertAlmostEqual(max(xs) - min(xs), 2 * (3.0 * 1.5 + 1.5), delta=0.5, msg="three dots in a row")
+        self.assertTrue(all(abs(v[1]) <= 1.5 + 1e-6 for v in m.v), "all in one plane")
+        self.assertEqual(T["omitted"]["label_key"], "rank_omitted_middle")
+
+    def test_every_other_layout_reports_none_omitted(self):
+        for n in ("st1", "st3", "st4", "st5", "pop_tally", "em_pair"): self.assertEqual(R.resolve(req(n))[0]["composition"]["omitted"], 0, n)
+
+
+class PerspectiveRows(unittest.TestCase):
+    def rows(self, scene):
+        ys = sorted({i["at"][1] for i in scene["items"] if i.get("fn") == "figure_unit"}); return ys
+
+    def test_rows_that_stand_further_back_are_spaced_wider_by_the_inverse_of_their_scale(self):
+        s, *_ = R.resolve(req("pop_tally")); ys = self.rows(s); self.assertEqual(len(ys), 3)
+        cam = s["camera"]; d = [FR.depth_of(cam, 0.0, y) for y in ys]
+        self.assertGreater(ys[2] - ys[1], ys[1] - ys[0], "the back gap is wider than the front gap")
+        self.assertAlmostEqual((ys[2] - ys[1]) / (ys[1] - ys[0]), d[1] / d[0], places=3, msg="by the camera's own depth ratio")
+
+    def test_the_rows_do_not_close_up_on_the_screen(self):
+        s, *_ = R.resolve(req("pop_tally")); ys = self.rows(s); proj = FR.projector(s["camera"], s["w"], s["h"], 560.0)
+        feet = [proj(0.0, y, 4.0)[1] for y in ys]; heads = [proj(0.0, y, 4.0 + 28.0 * 0.5)[1] for y in ys]     # (the ground height is about 4 here)
+        gaps = [feet[0] - feet[1], feet[1] - feet[2]]; height = [f - h for f, h in zip(feet, heads)]
+        self.assertGreater(gaps[1] / height[1], 0.85 * gaps[0] / height[0], "a back gap keeps its share of the figure's height")
+        self.assertEqual(sum(1 for i in s["items"] if i["args"].get("lit")), 9); self.assertEqual(s["composition"]["objects"], 27)
+
+    def test_units_without_the_flag_keep_even_rows(self):
+        s, *_ = R.resolve(req("st4")); ys = sorted({i["at"][1] for i in s["items"] if "lit" in i.get("args", {})})
+        self.assertAlmostEqual(ys[1] - ys[0], ys[2] - ys[1], places=6)
+
+
+class UnitSize(unittest.TestCase):
+    def test_the_drawn_units_stand_at_least_four_tenths_of_the_pictures_height(self):
+        for n in ("st1", "st2", "st3", "st4", "st5"):
+            s, *_ = R.resolve(req(n)); f = FR.unit_height_fraction(s)
+            self.assertGreaterEqual(f, T["size_floor"], f"{n}: the units stand {f:.3f} of the picture's height")
+            top, bottom, left, right = FR.unit_extent(s); self.assertTrue(top >= 0 and bottom <= 560 and left >= 0 and right <= 1440, f"{n} stays inside the frame {FR.unit_extent(s)}")
+
+    def test_wide_units_stand_clear_of_each_other_in_a_ranking_and_a_series(self):
+        for n in ("st2", "st3"):
+            s, *_ = R.resolve(req(n)); us = sorted((i for i in s["items"] if "lit" in i.get("args", {})), key=lambda i: i["at"][0])
+            for a, b in zip(us, us[1:]):
+                ua, ub = T["units"][a["fn"]], T["units"][b["fn"]]
+                self.assertLessEqual(a["at"][0] + a["args"]["size"] * ua["body_w"] / 2, b["at"][0] - b["args"]["size"] * ub["body_w"] / 2 + 1e-6, f"{n}: two units overlap")
+
+    def test_the_three_wide_units_state_their_width_and_the_parts_keep_it(self):
+        import parts as P
+        for fn in ("dam_unit", "biomass_unit", "solar_unit"):
+            ms = getattr(P, fn)(size=1.0, lit=True); xs = [v[0] for m in ms for v in m.v if m.group != "water"]
+            self.assertLessEqual(max(xs) - min(xs), T["units"][fn]["body_w"] * 1.02, fn)
+
+
+class Objects(unittest.TestCase):
+    def test_a_dam_is_a_wall_with_a_crest_a_lake_behind_it_and_water_over_its_face(self):
+        import parts as P
+        ms = P.dam_unit(size=1.0, lit=True); g = {m.group for m in ms}
+        self.assertEqual(g, {"lit", "spill", "water"}); wall = next(m for m in ms if m.group == "lit"); lake = next(m for m in ms if m.name.endswith("_lake"))
+        top = max(v[2] for v in wall.v); self.assertGreater(top, 20.0, "tall enough to read")
+        self.assertTrue(all(v[1] > 0 for v in lake.v), "the lake lies behind the wall (away from the viewer)"); self.assertLess(max(v[2] for v in lake.v), top, "its surface under the crest")
+        self.assertGreater(len({round(v[1], 1) for v in lake.v}), 1); self.assertGreater(max(v[1] for v in lake.v) - min(v[1] for v in lake.v), 20.0, "a slab you can see, not a film")
+
+    def test_biomass_is_a_pile_of_log_ends_with_rings_and_solar_a_tilted_gridded_panel(self):
+        import parts as P
+        (pile,) = P.biomass_unit(size=1.0, lit=False)
+        ys = [v[1] for v in pile.v]; self.assertGreater(len(pile.v), 6 * 12 * 2 * 2, "logs, each with its rings"); self.assertLess(min(ys), -2.0, "rings stand out of the log ends, toward the viewer")
+        panel, post = P.solar_unit(size=1.0, lit=True); self.assertEqual((panel.group, post.group), ("lit", "thing"))
+        zs = [v[2] for v in panel.v]; ys = [v[1] for v in panel.v]; self.assertGreater(max(zs) - min(zs), 12.0, "tilted: the panel rises"); self.assertGreater(len(panel.v), 8 * 6, "a frame and grid lines")
+        lo = min(panel.v, key=lambda v: v[2]); hi = max(panel.v, key=lambda v: v[2]); self.assertLess(lo[1], hi[1], "its top edge leans away from the viewer, its face to the viewer")
 
 
 if __name__ == "__main__":

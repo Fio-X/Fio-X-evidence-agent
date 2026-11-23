@@ -844,7 +844,8 @@
    "tones",
    "hero_bbox_area_pct"
   ],
-  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame"
+  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame",
+  "omitted": "run_hero's reply carries `omitted` (an integer: the members of the request the picture does not draw, 0 when all are drawn) and `omitted_label_key` (topics.omitted.label_key, the key of the caption the page prints, e.g. 'N left out in the middle'); the same number is in composition.omitted. The picture itself has no text."
  },
  "stories": {
   "doc": "The opening picture follows the page's story, not its table: the caller names the lead finding's angle (findings.py ANGLES, the page's first titled section) as `lead`, and the scene it maps to here is drawn: its hero (placed, sized and framed by the scene), its own layout of the request's tags (a tag the scene has no slot for is left out), and the parts it always places. An angle with no scene, a scene whose tags or hero the request lacks, or no lead keeps the panorama (heroes + slots). Same input, same picture: nothing is random or read from words.",
@@ -2504,7 +2505,11 @@
     "max": 14,
     "size": 1.7,
     "floor": 0.3,
-    "y": 46
+    "y": 46,
+    "x": [
+     -124,
+     124
+    ]
    },
    "path": {
     "milestones": 10,
@@ -2529,7 +2534,11 @@
     "max": 30,
     "y": 44,
     "size": 1.6,
-    "floor": 0.3
+    "floor": 0.3,
+    "x": [
+     -124,
+     124
+    ]
    },
    "groups": {
     "x": [
@@ -2900,6 +2909,19 @@
      22
     ],
     "lens": 30
+   },
+   "raised": {
+    "loc": [
+     0,
+     -176,
+     130
+    ],
+    "target": [
+     0,
+     140,
+     -14
+    ],
+    "lens": 30
    }
   },
   "units": {
@@ -2914,15 +2936,22 @@
     "mark_z": 26,
     "k": 0.46,
     "tally_k": 1.0,
-    "groups_k": 1.25,
-    "row_k": 1.0
+    "groups_k": 1.4,
+    "row_k": 1.0,
+    "groups_rows": 3,
+    "body_w": 33.6,
+    "row_dy_k": 1.2
    },
    "dam_unit": {
     "mark_z": 22,
-    "k": 0.5,
+    "k": 1.0,
     "tally_k": 1.0,
     "groups_k": 1.0,
-    "row_k": 0.5
+    "row_k": 1.0,
+    "body_w": 36.0,
+    "gap": 0.12,
+    "rank_max": 6,
+    "camera": "raised"
    },
    "pylon_unit": {
     "mark_z": 40,
@@ -2933,10 +2962,12 @@
    },
    "biomass_unit": {
     "mark_z": 18,
-    "k": 0.66,
+    "k": 1.0,
     "tally_k": 1.0,
     "groups_k": 1.0,
-    "row_k": 0.5
+    "row_k": 1.0,
+    "body_w": 16.0,
+    "gap": 0.1
    },
    "stack_unit": {
     "mark_z": 40,
@@ -2958,7 +2989,8 @@
     "stagger": 0.5,
     "stagger_rows": 2,
     "gap": 0.5,
-    "rank_max": 10
+    "rank_max": 10,
+    "persp_rows": true
    },
    "container_unit": {
     "mark_z": 22,
@@ -2982,6 +3014,17 @@
     "row_k": 1.0
    }
   },
-  "units_doc": "mark_z: how high the leader mark stands over a unit of size 1; k: the unit's footprint against the turbine's, so a wide unit (a dam) is drawn smaller and rows of it do not overlap. tally_k, groups_k, row_k: the extra scale of the unit in a tally, in a groups panel and in the size-coded layouts (rank, series, pair), so a wide unit does not run into its neighbour."
+  "units_doc": "mark_z: how high the leader mark stands over a unit of size 1; k: the unit's footprint against the turbine's, so a wide unit (a dam) is drawn smaller and rows of it do not overlap. tally_k, groups_k, row_k: the extra scale of the unit in a tally, in a groups panel and in the size-coded layouts (rank, series, pair), so a wide unit does not run into its neighbour.",
+  "omitted": {
+   "doc": "Where a ranking leaves members out (a wide unit shows only the top and the bottom of it) the picture draws an omission mark (three dots, the picture's own pen) between the two groups and reports `omitted`, the members of the request not drawn (members - drawn, counted from the rows), in its composition and as the reply's top-level `omitted`. The caption ('N left out in the middle') is printed by the page from that number under the key `label_key`; the picture holds no text. r_frac, gap, z_frac: the dots' radius as a share of the neighbours' height, the spacing in radii, the height of their centre as a share of that height. slot: the width in scene units left between the two groups for the mark.",
+   "label_key": "rank_omitted_middle",
+   "r_frac": 0.11,
+   "gap": 3.0,
+   "z_frac": 0.5,
+   "slot": 14.0
+  },
+  "cameras_doc": "raised: a camera standing above the ground the units stand on, so that a unit's far side (a reservoir behind a dam) shows; a unit names it in its `camera` field and it takes the size-coded layouts (rank, series, path, pair); tally and groups keep their own.",
+  "size_floor": 0.4,
+  "size_floor_doc": "The drawn units (lit and unlit together) must stand at least this share of the picture's height (their projected bounding box over the 560-px frame, frame.py unit_height_fraction, computed from the placed sizes and the scene's own camera); the tests hold the five story pictures to it."
  }
 }
