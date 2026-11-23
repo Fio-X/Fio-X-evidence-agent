@@ -3601,7 +3601,8 @@ mod tests {
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
         // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
         // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them, change dots 7, rank slope 7 and tile map 6, then unit grid, glyph row and dot strip last)
-        assert_eq!((t.nodes.len(), knobs), (58, 334));
+        // and 2 more for the one focal point: accent_n of the big numbers and of the thesis claims.
+        assert_eq!((t.nodes.len(), knobs), (58, 336));
         let reserve: Vec<_> = t
             .nodes
             .iter()
