@@ -490,7 +490,7 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story .notes{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:12px}"
        ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
        "border-left:3px solid var(--accent);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
-       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--accent);flex:none}"
+       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:color-mix(in srgb,var(--accent) 85%,#000);flex:none}"  # the accent a shade darker: 5.3:1 on the card's tint (the accent itself 4.1:1, under the 4.5 floor at this size)
        ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
        ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
        ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"
