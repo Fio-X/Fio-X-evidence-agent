@@ -3969,10 +3969,28 @@ fn recipe_request(
     }
     // a page that runs against a target names the law it is set in, last (the knowledge group's source line, which ends with
     // the clause): the clause is the target table's id, so the footer marks it as a ref and takes its digits, no other
-    if let Some((table, place, year)) = &shape.target {
-        let row = target_rows.get(table).into_iter().flatten().find(|r| {
+    // a page whose input carries the registered target as an external coordinate (external_coords) names the law the same way:
+    // its notes may print the target's value and year, so the footer must say where they come from
+    let coord_target = match (&shape.target, page_in.as_ref()) {
+        (None, Some(p)) => p["shape"]
+            .get("target")
+            .map(|t| (t["table"].as_str(), t["place"].as_str(), t["time"].as_str()))
+            .and_then(|(t, pl, y)| Some((t?.to_string(), pl?.to_string(), y?.to_string()))),
+        _ => None,
+    };
+    if let Some((table, place, year)) = shape.target.as_ref().or(coord_target.as_ref()) {
+        let found = |r: &&Value| {
             r["time"].as_str() == Some(year) && r["dims"][&shape.place].as_str() == Some(place)
-        });
+        };
+        let row = match (&shape.target, &page_in) {
+            (None, Some(p)) => p["rows"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|r| r["table"].as_str() == Some(table))
+                .find(found),
+            _ => target_rows.get(table).into_iter().flatten().find(found),
+        };
         let (Some(line), Some(clause)) = (
             row.and_then(|r| r["source_line"].as_str()),
             row.and_then(|r| r["source_ref"].as_str()),
@@ -15684,6 +15702,14 @@ mod tests {
         fn asks_position(&self, question_zh: &str) -> bool {
             crate::answer_plan::asks_position(question_zh)
         }
+        fn targets(&self, _main: &str) -> Vec<Value> {
+            REGISTERED_TARGETS.with(|t| t.borrow().clone())
+        }
+    }
+
+    thread_local! {
+        /// The target rows the Groups catalogue's `targets` answers with (none unless a test sets them).
+        static REGISTERED_TARGETS: std::cell::RefCell<Vec<Value>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
@@ -30219,5 +30245,39 @@ for line in sys.stdin:
             "prev"
         );
         assert!(srcs(&fill).contains(&"series:ren/DE:2023:OBS_VALUE".to_string()));
+    }
+
+    /// An ordinary column or change page whose input carries the registered target (external_coords) names the law the
+    /// target is set in, last in the footer, with the clause marked as a table id: a page that may print the target's value
+    /// and year never prints them with no source. With no target registered the footer is the table's line alone.
+    #[test]
+    fn an_ordinary_page_with_a_target_in_its_input_names_the_law_in_the_footer() {
+        let target = json!({"src": "target:sdg_07_40-EU27_2020-2030", "main": "sdg_07_40", "table": "targets_ren",
+            "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5",
+            "source_line": "欧盟法规第三条", "source_ref": "2023/2413"});
+        let main = || group_rows(&["DE", "FR", "IT", "EU27_2020"], &["2023", "2024"]);
+        for (name, chart) in [("column", "horizontal_bar"), ("change", "horizontal_bar")] {
+            REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![target.clone()]);
+            let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let spec = &fill["knobs"]["spec"];
+            let lines = spec["source"].as_array().unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
+            assert_eq!(lines.last().unwrap(), "欧盟法规第三条", "{name}: the law's line is last");
+            assert_eq!(spec["tables"]["targets_ren"], json!({"id": "2023/2413"}), "{name}");
+            // no target registered: the table's own line, no law line, no clause table
+            REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
+            let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name} without: {e:?}"));
+            assert!(fill["knobs"]["spec"]["source"].is_string(), "{name}: one line without a target");
+            assert!(fill["knobs"]["spec"]["tables"].get("targets_ren").is_none(), "{name}");
+        }
+        // a target row with no source line or clause stops the page, never prints a target with no source
+        let mut bare = target.clone();
+        bare.as_object_mut().unwrap().remove("source_line");
+        REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![bare]);
+        let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), ("column", "horizontal_bar"));
+        let err = fill.unwrap_err();
+        assert!(err.1.contains("names no source line and clause"), "{err:?}");
+        REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
     }
 }
