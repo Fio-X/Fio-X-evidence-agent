@@ -239,17 +239,20 @@ class EndToEnd(unittest.TestCase):
         doc = minidom.parseString(f'<svg xmlns="http://www.w3.org/2000/svg">{r["svg"]}</svg>')
         names = {e.tagName for e in doc.getElementsByTagName("*")} - {"svg"}
         self.assertLessEqual(names, self.ALLOWED); self.assertTrue(r["svg"].startswith('<g transform="scale('))
+        # the program's hero gate (src/next_leaf.rs) takes a path's d only of digits, space, comma, point, minus, e and the commands
+        # M C L Q T Z H V (either case): an arc command (a leader dot drawn with one) stops the page, as st1 did on 11-23
+        for d in re.findall(r'<path d="([^"]*)"', r["svg"]): self.assertRegex(d, r"^[0-9 ,.\-eEMCLQTZHVmclqtzhv]*$")
 
     def test_renewables_picture(self): self.check(self.draw(RENEW), 1140)
     def test_gas_picture(self): self.check(self.draw(GAS), 1140)
 
     def test_three_more_leads_three_more_pictures(self):
         """The stair, the pair and the atlas are drawn end to end too: shapes only (no text element), each its own picture, a leader
-        line's dot (an arc path) in each, inside the deadline."""
+        line's dot (four curves, no arc command) in each, inside the deadline."""
         seen = set()
         for lead, scene in (("need", "steps"), ("ends", "pair"), ("map", "atlas")):
             r = self.draw({**RENEW, "lead": lead}); self.check(r, 1140); self.assertEqual(r["scene"], scene)
-            self.assertIn("a4.6,4.6 0 1,0", r["svg"]); self.assertLess(r["seconds"]["total"], R.TOTAL_DEADLINE); seen.add(r["svg"])
+            self.assertRegex(r["svg"], r'd="M[0-9.,]+C[0-9.,]+C'); self.assertLess(r["seconds"]["total"], R.TOTAL_DEADLINE); seen.add(r["svg"])
         self.assertEqual(len(seen), 3)
 
     def test_two_leads_two_pictures(self):

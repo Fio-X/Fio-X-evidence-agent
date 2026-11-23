@@ -181,8 +181,12 @@ def paint_blades(mask, shade, hub, pal):
 
 
 def dot(x, y, r):
-    """A plain round marker as a path (two half arcs): no circle element, no text."""
-    return f"M{x - r:.1f},{y:.1f}a{r},{r} 0 1,0 {2 * r},0a{r},{r} 0 1,0 {-2 * r},0Z"
+    """A plain round marker as a path of four cubic curves (the hero gate lets a path use M C L Q T Z H V and their lower cases, no arc
+    command): no circle element, no text."""
+    k = 0.5523 * r
+    f = lambda *v: ",".join(f"{a:.2f}" for a in v)
+    return (f"M{f(x + r, y)}C{f(x + r, y + k, x + k, y + r, x, y + r)}C{f(x - k, y + r, x - r, y + k, x - r, y)}"
+            f"C{f(x - r, y - k, x - k, y - r, x, y - r)}C{f(x + k, y - r, x + r, y - k, x + r, y)}Z")
 
 
 def leader_marks(line, acc):
