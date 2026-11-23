@@ -1271,16 +1271,27 @@ TARGET_IN = {"target": {"table": "tgt", "time": "2030", "place": "EU27_2020"}}
 PREV_IN = {"prev": "2022"}
 
 
+def held_selects(shape):
+    """The selects the registry declares over the outside coordinates (`whole`, `target_at`, given from the page input and
+    made only when it holds the key): each holds that one place code."""
+    got = {}
+    if "whole" in shape: got["whole"] = [shape["whole"]]
+    if "target" in shape: got["target_at"] = [shape["target"]["place"]]
+    return got
+
+
 class OutsideNotes(unittest.TestCase):
     def column_notes(self, shape):
         ranked = sorted(VALUES, key=lambda c: -VALUES[c]); got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}
         page = note_page(**shape)
+        got.update(held_selects(shape))
         return [pick_note("column", e, page, got, got[s]) for e, s in (("hi", "end_first"), ("lo", "end_last"))]
 
     def change_notes(self, shape):
         moved = {c: VALUES[c] - EARLIER[c] for c in VALUES}; ranked = sorted(VALUES, key=lambda c: -moved[c])
         got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1], "next_first": ranked[1], "prev_last": ranked[-2]}
         page = note_page(**shape)
+        got.update(held_selects(shape))
         return [pick_note("change", e, page, got, got[s]) for e, s in (("first", "end_first"), ("last", "end_last"))]
 
     def drawn(self, notes, values):
@@ -1352,6 +1363,7 @@ class OutsideNotes(unittest.TestCase):
         for r in page["rows"]:
             if r["dims"]["geo"] == "EU27_2020" and r["time"] == "2023": r["value"] = "900"
         ranked = sorted(VALUES, key=lambda c: -VALUES[c]); got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}
+        got.update(held_selects(WHOLE_IN))
         self.assertEqual([pick_note("column", e, page, got, got[s])[1]["value_text"] for e, s in (("hi", "end_first"), ("lo", "end_last"))],
                          ["fact:vs_mean", "fact:lo_vs_mean"])
 
