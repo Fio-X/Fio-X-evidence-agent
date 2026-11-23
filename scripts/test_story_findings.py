@@ -1548,6 +1548,9 @@ class PaceAndGroups(unittest.TestCase):
                 picks = [lead, "rank" if lead != "rank" else "groups"]
                 composed, facts, bodies, page_html = Findings._page(self, req, names, picks)
                 layers = [s_["layer"] for s_ in composed["sections"]]
+                # no page prints a count layer 1 cannot recompute: no n or count fact, no unit grid count
+                self.assertFalse([k for k, v in composed["facts"].items() if v.get("op") in ("n", "count")], (mk.__name__, lead))
+                self.assertNotIn("count", composed["leaves"].get("unit_grid", {}))
                 for s_ in composed["sections"]:
                     if s_.get("title"): self.assertIn(f'data-module-id="{s_["id"]}"', page_html, (mk.__name__, lead, s_["id"]))
                 seen |= set(layers)

@@ -23,7 +23,7 @@ hero.data (the data shape this leaf eats; on a story page, the hero's leaves.uni
   "rule": {"op": "ge"|"gt"|"le"|"lt", "ref": ledger src}   # a member is lit when its value op the threshold the entry prints
         | {"op": "bottom"|"top", "k": int},         # ... or when it is among the k lowest / highest by value
   "scale": number?,                                 # the ledger's format scale over the series' unit (default 1)
-  "count": {"src": ledger src, "words": segs},      # the number of lit members as printed (big, in the accent) and what it counts
+  "count": {"src": ledger src, "words": segs}?,     # the number of lit members as printed (big, in the accent) and what it counts
   "total": ledger src?,                             # the number of members as printed, when the words print it
   "fill_ref": ledger src?,                          # fill mode: the reference a full cell stands for (default the rule's ref)
   "key": {"lit": segs, "unlit": segs?, "fill": segs?},   # the key's words: a lit glyph, a grey one, a full cell (fill mode)
@@ -120,7 +120,7 @@ class Frame:
             if not isinstance(fl, bool): raise Refused(f"unit_grid: member {m['code']}'s flag {fl!r} is no true or false")
             if fl != (m["code"] in f.lit): raise Refused(f"unit_grid: member {m['code']}'s flag {fl} is not the rule over its cell ({m['code'] in f.lit})")
         cnt = d.get("count")
-        if rule is not None and not isinstance(cnt, dict): raise Refused("unit_grid: a rule needs its count (count.src, count.words)")
+        # a rule may go without its count (a page that prints no number layer 1 cannot recompute); the flags are checked either way
         f.count = None
         if cnt is not None:
             if not isinstance(cnt, dict) or not isinstance(cnt.get("src"), str): raise Refused("unit_grid: count is {src, words}")

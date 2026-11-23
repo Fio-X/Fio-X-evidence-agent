@@ -327,11 +327,6 @@ class Req:
         """The first of the angle's question words (words.zh.json story.ask.<angle>, "|" between them) the question holds, or None."""
         return next((w for w in WD.WORDS.get(f"story.ask.{angle}", "").split("|") if w and w in q.question), None)
 
-    def count(q, codes, year):
-        """How many of the codes the rows hold at a year (next_facts n): only where a leaf recomputes the codes from the cells and
-        a rule (unit_grid), never a count the page cannot check."""
-        return {"op": "n", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "by": q.by, "time": year, "fmt": "n"}
-
     def mean(q, codes, year, fmt=None):
         """The members' simple mean at a year (next_facts mean over a list of codes); its time names the year a rate reads."""
         return {"op": "mean", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "within": year, "time": year,
@@ -1015,30 +1010,30 @@ def strip_two(q, y0, y1, kicker_key, lead):
 
 def grid_part(q, y, members):
     """A unit_grid section (an extra part): one glyph a member at year y, lit when the member is under the registered target
-    (rule lt, the target's bare number) when some are and some are not, else among the five lowest (rule bottom 5); the count of
-    lit glyphs a fact (op n over them) the leaf recomputes from the cells and the rule. None with fewer than eight members."""
+    (rule lt, the target's bare number) when some are and some are not, else among the five lowest (rule bottom 5). No count of
+    the lit glyphs is printed (no op of layer 1 recomputes it; the leaf rechecks each flag against its cell and the rule): the title
+    leans on the lowest member's value and, under a target, its gap to it. None with fewer than eight members."""
     at = {c: q.panel[c][y][0] for c in members if y in q.panel[c]}
     if len(at) < 8: return None
     g, tr = q.goal(), q.target_ref()
     scale = float(q.defs.get(q.fmts["value"], {}).get("scale", 1))
-    f = {"ug_y": q.value(sorted(at)[0], y)}
     lo = min(at, key=lambda c: (at[c], c))
+    f = {"ug_lo": q.value(lo, y)}
     if g and tr and any(v < g[0] for v in at.values()) and any(v >= g[0] for v in at.values()):
         lit = sorted(c for c, v in at.items() if v < g[0])
         f.update(tr[0])
-        rule, words = {"op": "lt", "ref": "fact:goal.n"}, ST("story.grid.below", w=(q.target or {}).get("filter", {}).get(q.by))
-        key, title = {"lit": ST("story.grid.lit_below"), "unlit": ST("story.grid.unlit")}, T("story.grid.title_below", w=(q.target or {}).get("filter", {}).get(q.by))
+        f["ug_gap"] = {"op": "minus", "a": "goal", "b": "ug_lo", "fmt": q.change}
+        rule = {"op": "lt", "ref": "fact:goal.n"}
+        key, title = {"lit": ST("story.grid.lit_below"), "unlit": ST("story.grid.unlit")}, T("story.grid.title_below", lo=lo, w=(q.target or {}).get("filter", {}).get(q.by))
     else:
         order = sorted(at, key=lambda c: (at[c], c))
         if at[order[4]] == at[order[5]]: return None   # the cut falls inside a tie
         lit = sorted(order[:5])
-        f["ug_lo"] = q.value(lo, y)
-        rule, words = {"op": "bottom", "k": 5}, ST("story.grid.bottom")
+        rule = {"op": "bottom", "k": 5}
         key, title = {"lit": ST("story.grid.lit_bottom"), "unlit": ST("story.grid.unlit")}, T("story.grid.title_bottom", lo=lo)
-    f["ug_n"] = q.count(lit, y)
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)], "rule": rule,
-            "count": {"src": "fact:ug_n.n", "words": words}, "key": key}
+            "key": key}
     return f, {"layer": "unit_grid", "data": data, "style": {"unit_grid": {"sort": "flag_first"}}, "kicker": T("story.grid.kicker"),
                "title": title, "text": T("story.grid.text")}
 

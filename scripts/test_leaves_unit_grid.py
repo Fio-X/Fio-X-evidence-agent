@@ -113,6 +113,23 @@ class Picture(unittest.TestCase):
             self.assertEqual(sorted(c for c, _ in got), sorted(vals), n)
             self.assertEqual({c for c, l in got if l}, lit, n)
 
+    def test_a_rule_without_a_count_draws_the_cells_and_prints_no_count(self):
+        """A page that prints no number layer 1 cannot recompute leaves the count out: the cells are lit by the rule and every flag is
+        still checked against its cell; no count entry is printed (two shapes)."""
+        for shape in (eu(), wb()):
+            rows, data, names = shape
+            data = {k: v for k, v in data.items() if k not in ("count", "total")}
+            svg = draw((rows, data, names))
+            svg = svg[0] if isinstance(svg, tuple) else svg
+            self.assertNotIn("fact:n_lit", svg); self.assertNotIn('tag="count"', svg)
+            self.assertTrue(re.search(r'data-lit="1"', svg))
+        rows, data, names = eu()
+        data = {k: v for k, v in data.items() if k != "count"}
+        data["members"][0] = {**data["members"][0], "flag": not data["members"][0]["flag"]}
+        K.setup(rows, names, run.tables)
+        with self.assertRaisesRegex(Refused, "is not the rule over its cell"):
+            unit_grid.draw({"data": data, "style": {"unit_grid": {}}})
+
     def test_the_lit_turbines_are_as_many_as_the_printed_count(self):
         svg = self.out["eu_turbine"][0]
         count = re.search(r'<tspan data-src="fact:n_lit">([0-9]+)</tspan>', svg)
