@@ -1226,6 +1226,10 @@
    "group": "visual",
    "note": "New route: the energy piece set's description (its pieces, cell widths and the tables it fits), read by next_visual.rs (include_str) to pick a set for the page; the set names its module for illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/leaves_js/pieces-people.json": {
+   "group": "visual",
+   "note": "New route: the people piece set's description (the tables it fits and the hero block that sends them to the people renderer), read by next_visual.rs (include_str) to pick a set for the page; its strip falls back to the energy module. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/leaves_js/roughjs-4.6.6.cjs.js": {
    "group": "visual",
    "note": "Vendored rough.js 4.6.6 (the sketchy line style of the illustration strip), the file in the package whose integrity the lock holds. Read only by illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
