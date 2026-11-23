@@ -147,10 +147,16 @@ def compute(spec, T):
             if q.get("to"): ser = {t: v for t, v in ser.items() if t <= q["to"]}
             t = max(ser, key=ser.get) if op == "peak" else min(ser, key=ser.get) if op == "low" else max(ser)
             F[key] = {"v": ser[t], "t": t, "fmt": q["fmt"], "src": q}; continue
-        if op == "count":  # members whose a-share of b is above a threshold, at one time
-            num = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["a"]), q["time"])}
-            den = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
-            hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
+        if op == "count":  # members whose a-share of b is above a threshold, or (below, no b) whose own value is under a line, at one time
+            by = q.get("by") or "geo"
+            num = {r[by]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["a"]), q["time"])}
+            if "below" in q and "b" not in q:
+                gone = [g for g in members() if g not in num]
+                if gone: raise Refused(f"{key}: count has no row of a at {q['time']} for {', '.join(gone)}")
+                hit = sorted(g for g in members() if num[g] < q["below"])
+            else:
+                den = {r[by]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
+                hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
             F[key] = {"v": len(hit), "fmt": "n", "who": hit, "src": q}; continue
         if op == "n":  # how many codes of `by` the rows hold at one time (the places a chart draws)
             F[key] = {"v": len({r[q["by"]] for r in _sel(rows, q["time"])}), "fmt": q["fmt"], "src": q}; continue
