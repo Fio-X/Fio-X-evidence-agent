@@ -425,6 +425,8 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             hero_dir.display()
         )
     })?;
+    crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/line"))
+        .with_context(|| "failed to create the line drawing runtime directory".to_string())?;
     crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/assets"))
         .with_context(|| {
             format!(
@@ -468,6 +470,27 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (
             runtime_dir.join("illus_hero/world.py"),
             include_str!("../runtime/illus_hero/world.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/frame.py"),
+            include_str!("../runtime/illus_hero/frame.py"),
+        ),
+        // the hand-drawn line drawing the hero child imports for a topic whose renderer is "line" (run_hero.py)
+        (
+            runtime_dir.join("illus_hero/line/draw.py"),
+            include_str!("../runtime/illus_hero/line/draw.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/line/pen.py"),
+            include_str!("../runtime/illus_hero/line/pen.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/line/units.py"),
+            include_str!("../runtime/illus_hero/line/units.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/line/line.json"),
+            include_str!("../runtime/illus_hero/line/line.json"),
         ),
     ] {
         write_if_changed(artifact_dir, &path, text)?;

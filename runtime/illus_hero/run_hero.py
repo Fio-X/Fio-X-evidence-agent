@@ -14,7 +14,7 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
        | {"unavailable": why}                          Blender or a python package is missing, or it took too long (the caller falls back to the page-bottom strip)
 Parts, layout slots, heroes, palettes and knob ranges are data in node.json (the registry); this file validates the input against it, resolves it into a scene (scene.json), runs
 scene_node.py under Blender (headless, three passes) and hero_node.py (the painting), and returns the svg. It makes no number and no word: the picture is only shapes."""
-import copy, json, os, shutil, subprocess, sys, tempfile, time
+import copy, json, os, re, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)      # (python -I puts no script directory on the path)
 import frame as FR  # noqa: E402
@@ -467,22 +467,36 @@ def renderer_of(inp):
     return TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"]
 
 
+def page_colours(names):
+    """{variable: hex} of the page palette's own tokens (runtime/leaves_py/tokens.css, next to this folder in the run's runtime): a
+    hero may paint in hex only (the page's own check), so the line drawing's colour variables are resolved here, once, from the
+    palette the page itself uses. A name the palette lacks, or holds in no hex, is refused: no colour of the child's own."""
+    css = open(os.path.join(HERE, "..", "leaves_py", "tokens.css"), encoding="utf-8").read(); got = {}
+    for n in names:
+        m = re.search(re.escape(n) + r":\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])", css)
+        if not m: refuse(f"the page palette has no hex colour for {n}")
+        h = m.group(1).lower(); got[n] = "#" + (h if len(h) == 6 else "".join(c * 2 for c in h))
+    return got
+
+
 def build_line(inp):
-    """The same reply the 3D path gives, drawn by runtime/illus_line (pure SVG in the page's colour variables, no Blender). The composition is
-    resolve's own (renderer 'line': the ranking's head and tail of the registry); a request the line drawing cannot draw is refused, never sent to 3D."""
+    """The same reply the 3D path gives, drawn by runtime/illus_hero/line (pure SVG in the page's colour variables, no Blender). The composition is
+    resolve's own (renderer 'line': the ranking's head and tail of the registry); a layout or a unit the line drawing does not draw is `unavailable` (the page's strip stands in), a wrong request is refused, nothing is sent to 3D."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
     resolved = resolve(inp, renderer="line")
-    sys.path.insert(0, os.path.join(HERE, "..", "illus_line"))
+    sys.path.insert(0, os.path.join(HERE, "line"))
     import draw as LD
     kind = resolved[0]["scene"].split(".")[1]
-    if kind not in LD.REG["kinds"]: refuse(f"line: the {kind!r} layout is not drawn by the line renderer")
+    if kind not in LD.REG["kinds"]: raise Unavailable(f"line: the {kind!r} layout is not drawn by the line renderer")     # the page's strip stands in
     miss = sorted({i["fn"] for i in resolved[0]["items"] if "lit" in i.get("args", {}) and i["fn"] not in LD.UN.DRAW})
-    if miss: refuse(f"line: no line drawing for {', '.join(miss)}")
+    if miss: raise Unavailable(f"line: no line drawing for {', '.join(miss)}")
     d = LD.draw(resolved)
+    inner = d["inner"]; cols = page_colours(sorted(set(re.findall(r"var\((--[a-z0-9-]+)\)", inner))))
+    inner = re.sub(r"var\((--[a-z0-9-]+)\)", lambda m: cols[m.group(1)], inner)
     k = width / float(LD.CW); h = round(LD.CH * k, 2)
-    return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+    return f'<g transform="scale({k:.5f})">{inner}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
 def serve():

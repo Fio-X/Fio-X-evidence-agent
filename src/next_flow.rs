@@ -3976,9 +3976,13 @@ pub(crate) fn visual_call<'a>(
         Request::IllusHero {
             tables,
             lead,
+            subject,
             width,
             runtime,
-        } => format!("{kind} {tables:?} {lead:?} {width} {}", runtime.display()),
+        } => format!(
+            "{kind} {tables:?} {lead:?} {subject:?} {width} {}",
+            runtime.display()
+        ),
         Request::Story { request, runtime } => format!("{kind} {request} {}", runtime.display()),
         Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
         Request::NodeDraw {

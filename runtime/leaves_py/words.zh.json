@@ -131,6 +131,7 @@
  "story.chain.link": "随后",
  "story.chain.foot": "图中只呈现时间上的先后，不代表每一环都由上一环单独造成",
  "story.year": " 年",
+ "story.hero.left_out": "中间各国略",
  "story.path.claim": "照最好一年的速度，到 {y:goal}",
  "story.need.claim": "达标所需速度是过去平均的几倍",
  "story.spread.claim_low": "起点最低几地的平均涨幅",

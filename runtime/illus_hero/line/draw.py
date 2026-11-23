@@ -19,7 +19,7 @@ COL = REG["colour"]
 
 
 def _resolve(r):
-    sys.path.insert(0, os.path.join(HERE, "..", "illus_hero"))
+    sys.path.insert(0, os.path.join(HERE, ".."))
     import run_hero as R
     return R.resolve(r, renderer="line")
 

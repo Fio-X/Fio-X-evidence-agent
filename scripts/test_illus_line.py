@@ -1,4 +1,4 @@
-"""The line version of the story hero (runtime/illus_line): the same composition as the 3D path resolves (run_hero.resolve), drawn as hand-style
+"""The line version of the story hero (runtime/illus_hero/line): the same composition as the 3D path resolves (run_hero.resolve), drawn as hand-style
 line pictograms in pure SVG. For the five story questions st1..st5 (fixtures/illus-vary-specs.json): the lit units in the picture are the lit count the
 rows give; the units fill at least the registered share of the picture height, measured on the drawn geometry; the units of one row do not overlap;
 `omitted` is the members the request had minus the units drawn; the picture holds no digit-bearing text; the SVG is well-formed XML and
@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
-sys.path.insert(0, os.path.join(ROOT, "runtime", "illus_line"))
+sys.path.insert(0, os.path.join(ROOT, "runtime", "illus_hero", "line"))
 sys.path.insert(0, os.path.join(ROOT, "runtime", "illus_hero"))
 import draw as D  # noqa: E402
 import run_hero as R  # noqa: E402
@@ -100,9 +100,18 @@ class LineHero(unittest.TestCase):
 ALLOWED_PAINT = {"var(--t-title)", "var(--accent)", "var(--bg)", "none"}
 
 
-def page_faults(svg):
-    """The shape next_leaf::hero_faults takes (elements g and path only, the attributes it lists, d of path characters, numbers), with the one
-    difference the Rust side must take in: a colour is one of the page's variables (ALLOWED_PAINT), never a hex."""
+def page_hex():
+    """The page palette's own colours the child resolves its variables to (runtime/leaves_py/tokens.css): hex, 6 digits."""
+    css = open(os.path.join(ROOT, "runtime", "leaves_py", "tokens.css"), encoding="utf-8").read(); out = {"none"}
+    for n in ("--t-title", "--accent", "--bg"):
+        h = re.search(re.escape(n) + r":#([0-9a-fA-F]{3,6})", css).group(1).lower(); out.add("#" + (h if len(h) == 6 else "".join(c * 2 for c in h)))
+    return out
+
+
+def page_faults(svg, allowed=None):
+    """The shape next_leaf::hero_faults takes (elements g and path only, the attributes it lists, d of path characters, numbers); a colour is
+    one of `allowed` (the page's variables for the drawing itself, their hex values for what the child sends)."""
+    allowed = ALLOWED_PAINT if allowed is None else allowed
     off = []
     ok_g = {"fill", "stroke", "stroke-width", "stroke-linejoin", "opacity", "transform", "mask"}
     ok_path = ok_g | {"d"}
@@ -114,7 +123,7 @@ def page_faults(svg):
         if tag not in ("g", "path"): off.append(f"element {tag}"); continue
         for k, v in el.attrib.items():
             if k not in (ok_path if tag == "path" else ok_g): off.append(f"{tag} {k}")
-            elif k in ("fill", "stroke") and v not in ALLOWED_PAINT: off.append(f"{tag} {k}={v}")
+            elif k in ("fill", "stroke") and v not in allowed: off.append(f"{tag} {k}={v}")
             elif k == "opacity" and not num(v): off.append(f"opacity {v}")
             elif k == "d" and not all(c.isdigit() or c in " ,.-eEMCLQTZHVmclqtzhv" for c in v): off.append("d chars")
             elif k == "transform" and not (v.startswith("scale(") and v.endswith(")") and num(v[6:-1])): off.append(f"transform {v}")
@@ -147,11 +156,14 @@ class DefaultPath(unittest.TestCase):
             self.assertIsInstance(rep["seconds"]["total"], float)
         self.assertEqual(self.rep["st2"]["omitted"], len(SPECS["st2"]["subject"]["members"]) - 10)
 
-    def test_the_picture_is_only_g_and_path_in_the_page_colour_variables(self):
+    def test_what_the_child_sends_is_only_g_and_path_in_the_page_palette_s_own_hex(self):
+        # the page's hero check takes hex only: the child resolves the drawing's variables from the page palette (tokens.css)
+        hexes = page_hex()
         for n, rep in self.rep.items():
-            self.assertEqual(page_faults(rep["svg"]), [], n)
-            self.assertIsNone(re.search(r"#[0-9a-fA-F]{3,8}\b", rep["svg"]), f"{n}: a hex colour")
-            used = set(re.findall(r'fill="([^"]*)"', rep["svg"])); self.assertTrue(used <= ALLOWED_PAINT, f"{n}: {used - ALLOWED_PAINT}")
+            self.assertEqual(page_faults(rep["svg"], hexes), [], n)
+            self.assertNotIn("var(", rep["svg"], n)
+            used = set(re.findall(r'(?:fill|stroke)="([^"]*)"', rep["svg"])); self.assertTrue(used <= hexes, f"{n}: {used - hexes}")
+            self.assertIn("#c93f2b", rep["svg"], n)     # the accent: every story picture lights something
             self.assertNotIn("<rect", rep["svg"]); self.assertNotIn("fill-opacity", rep["svg"]); self.assertNotIn("class=", rep["svg"])
 
     def test_the_accent_is_the_lit_units_alone_and_the_mark(self):
@@ -175,6 +187,11 @@ class DefaultPath(unittest.TestCase):
         self.assertEqual(list(child(bad)), ["refused"])
         bad = req("st4"); bad["subject"] = {**bad["subject"], "measure": "tidal"}
         self.assertEqual(list(child(bad)), ["refused"])
+
+    def test_a_layout_the_line_drawing_does_not_draw_is_unavailable_so_the_page_keeps_its_strip(self):
+        # an energy page led by ends or spread (the pair layout): not refused (that stops the page) but unavailable (the strip stands in)
+        pair = {"family": "renewable_share", "lead": "ends", "width": 1140, "subject": {"members": SPECS["st2"]["subject"]["members"]}}
+        rep = child(pair); self.assertEqual(list(rep), ["unavailable"]); self.assertIn("pair", rep["unavailable"])
 
     def test_people_rank_keeps_ten_figures_in_3d(self):
         s = R.resolve(req_pop())[0]; self.assertEqual((sum(1 for i in s["items"] if i["fn"] == "figure_unit"), s["composition"]["omitted"]), (10, len(SPECS["pop_rank"]["subject"]["members"]) - 10))
