@@ -2117,6 +2117,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "tree_gen::filter_codes",
             "tree_gen::reads_absent",
             "tree_gen::present_candidates",
+            "tree_gen::path_held",
         ],
     ),
     (
