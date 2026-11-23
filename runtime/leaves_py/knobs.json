@@ -577,6 +577,121 @@
     }
    ]
   },
+  "dot_strip": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 40,
+     "min": 24,
+     "max": 80,
+     "step": 1,
+     "what": "distance between the two period rows, or two group rows, in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 4.5,
+     "min": 2.5,
+     "max": 7,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "periods",
+     "default": 1,
+     "min": 1,
+     "max": 2,
+     "step": 1,
+     "what": "period rows drawn: 1 the later period only, 2 the earlier period as a second row above it"
+    },
+    {
+     "name": "ghost_period",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "with two period rows: on draws the earlier dots hollow, each joined to its later dot by a thin line; off draws them grey with no join"
+    },
+    {
+     "name": "refs",
+     "default": "all",
+     "options": [
+      "all",
+      "target",
+      "mean",
+      "none"
+     ],
+     "what": "the reference marks drawn: every one the data gives, the target only, the members' average only, or none"
+    },
+    {
+     "name": "lead_set",
+     "default": "both",
+     "options": [
+      "top",
+      "bottom",
+      "both",
+      "given"
+     ],
+     "what": "the dots named on leaders: the k highest, the k lowest, both, or the data's lead list"
+    },
+    {
+     "name": "lead_k",
+     "default": 3,
+     "min": 1,
+     "max": 6,
+     "step": 1,
+     "what": "k of lead_set top, bottom and both"
+    },
+    {
+     "name": "leader_side",
+     "default": "auto",
+     "options": [
+      "auto",
+      "left",
+      "right",
+      "alternate"
+     ],
+     "what": "the side of its leader a label stands on: auto left on the axis's upper half and right on its lower half, or always left, always right, or turn about"
+    },
+    {
+     "name": "levels",
+     "default": 4,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "label tiers tried on each side of the strip before refusing"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "dumbbell": {
    "reserve": false,
    "knobs": [
@@ -2921,7 +3036,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "change": [
    "bignums",
@@ -2950,7 +3066,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "flow": [
    "bignums",
@@ -2979,7 +3096,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "composition": [
    "bignums",
@@ -3008,7 +3126,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "ranked_bars": [
    "bignums",
@@ -3037,7 +3156,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "change_bars": [
    "bignums",
@@ -3066,7 +3186,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "block_ranks": [
    "bignums",
@@ -3095,7 +3216,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "composition_steps": [
    "bignums",
@@ -3124,7 +3246,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "one_line": [
    "bignums",
@@ -3153,7 +3276,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "dot_strip"
   ],
   "page_story": [
    "thesis_claims",
@@ -3168,6 +3292,7 @@
    "change_dots",
    "rank_slope",
    "tile_map",
+   "dot_strip",
    "risk_notes",
    "bignums"
   ],
@@ -3308,6 +3433,7 @@
     "change_dots",
     "rank_slope",
     "tile_map",
+    "dot_strip",
     "risk_notes"
    ],
    "eats": [
