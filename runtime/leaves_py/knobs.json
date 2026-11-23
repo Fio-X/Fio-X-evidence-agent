@@ -2673,6 +2673,109 @@
    "reserve": false,
    "knobs": []
   },
+  "unit_grid": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "count_size",
+     "default": 24,
+     "min": 16,
+     "max": 40,
+     "step": 1,
+     "what": "the count's size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 300,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "cols",
+     "default": 9,
+     "min": 3,
+     "max": 30,
+     "step": 1,
+     "what": "glyphs in a row"
+    },
+    {
+     "name": "glyph",
+     "default": "cell",
+     "options": [
+      "cell",
+      "turbine"
+     ],
+     "what": "a member's glyph: a rounded square, or a small turbine, a tower and three blades (flag mode only)"
+    },
+    {
+     "name": "sort",
+     "default": "given",
+     "options": [
+      "given",
+      "value",
+      "flag_first"
+     ],
+     "what": "glyph order: as given, by value highest first, or the lit ones first (then by value)"
+    },
+    {
+     "name": "accent_when",
+     "default": "flag",
+     "options": [
+      "flag",
+      "none"
+     ],
+     "what": "the lit glyphs in the accent, or in ink (no accent in the picture)"
+    },
+    {
+     "name": "cell",
+     "default": 40,
+     "min": 16,
+     "max": 80,
+     "step": 2,
+     "what": "a glyph's size in px"
+    },
+    {
+     "name": "gap",
+     "default": 16,
+     "min": 2,
+     "max": 48,
+     "step": 1,
+     "what": "space between two glyphs in px"
+    },
+    {
+     "name": "show_names",
+     "default": "auto",
+     "options": [
+      "auto",
+      "all",
+      "lit"
+     ],
+     "what": "names under every glyph when they all fit (auto; all refuses when not), or only under the lit ones"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "waffle": {
    "reserve": false,
    "knobs": [
@@ -2921,7 +3024,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "change": [
    "bignums",
@@ -2950,7 +3054,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "flow": [
    "bignums",
@@ -2979,7 +3084,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "composition": [
    "bignums",
@@ -3008,7 +3114,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "ranked_bars": [
    "bignums",
@@ -3037,7 +3144,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "change_bars": [
    "bignums",
@@ -3066,7 +3174,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "block_ranks": [
    "bignums",
@@ -3095,7 +3204,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "composition_steps": [
    "bignums",
@@ -3124,7 +3234,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "one_line": [
    "bignums",
@@ -3153,7 +3264,8 @@
    "member_map",
    "change_dots",
    "rank_slope",
-   "tile_map"
+   "tile_map",
+   "unit_grid"
   ],
   "page_story": [
    "thesis_claims",
@@ -3168,6 +3280,7 @@
    "change_dots",
    "rank_slope",
    "tile_map",
+   "unit_grid",
    "risk_notes",
    "bignums"
   ],
@@ -3308,6 +3421,7 @@
     "change_dots",
     "rank_slope",
     "tile_map",
+    "unit_grid",
     "risk_notes"
    ],
    "eats": [

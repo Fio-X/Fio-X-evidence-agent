@@ -204,6 +204,7 @@
 "story.legend.members": "淡线是整体，虚线是目标，各格共用一条纵轴",
 "story.legend.map": "颜色越深，值越大",
 "story.legend.rank": "红色的一行是要看的那一方",
+"grid.legend": "一格一个成员，亮的格是图里说的那一类，灰的是其余",
 "story.mv.kicker": "谁动得最多",
 "story.mv.title": "{y:y0}至{y:y1}，{n:big}从 {f:abig} 变到 {f:bbig}，动得最多",
 "story.mv.text": "每行是一个成员：空心点是{y:y0}的值，实心点是{y:y1}的值，连线越长变化越大，按变化从大到小排开。",
