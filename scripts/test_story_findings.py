@@ -220,7 +220,7 @@ def draw_all(test, req, names, picks):
     for layer, data in composed["leaves"].items():
         if layer == "bignums": continue  # html, drawn by the page child (test_header_*)
         mod = __import__(layer)
-        svg = mod.draw({"data": data, "style": {layer: {}}})
+        svg = mod.draw({"data": data, "style": {layer: dict(composed.get("style", {}).get(layer, {}))}})
         svg = svg[0] if isinstance(svg, tuple) else svg
         words = re.sub(r"<[^>]+>", "", re.sub(r'<tspan data-src="[^"]*">[^<]*</tspan>', "", str(svg)))
         test.assertFalse(re.search(r"[0-9]", words), f"{layer}: a digit outside a ledger run: {words[:80]!r}")
@@ -241,8 +241,8 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
         # the request carries no chain, no points and no groups; its nine members' paces all bend one way (no slower column)
-        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain", "pace", "groups"])
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
+        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain", "groups"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
         self.assertEqual(path["title"][0], ("w", "就算每年都像 "))  # even the best year falls short of 42.5
@@ -257,7 +257,7 @@ class Findings(unittest.TestCase):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "tiles": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables",
-                                                                  "pace": "every member changed pace the same way (one column would be empty)", "groups": "the request gives no groups of the members"})
+                                                                  "pace": "every member changed pace the same way and a pace is below 0 (no picture stands)", "groups": "the request gives no groups of the members"})
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "overtake", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
@@ -270,7 +270,7 @@ class Findings(unittest.TestCase):
     def test_chain_three_tables_around_the_year_the_whole_moved_most(self):
         req, names = eu_chain_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "pace", "groups"])
+        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "groups"])
         chain = next(c for c in cands if c["id"] == "chain")
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
@@ -433,7 +433,7 @@ class Findings(unittest.TestCase):
         rows, facts = ledger(req, composed, names)
         spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
-                "hero": {"data": {}, "leaves": composed["leaves"], "style": style or {}}}
+                "hero": {"data": {}, "leaves": composed["leaves"], "style": {**composed.get("style", {}), **(style or {})}}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
                                         "knobs": {"spec": spec, "labels": names, "shapes": SHAPES}, **kv}, ensure_ascii=False)
         layers = [x["layer"] for x in composed["sections"]]
@@ -1088,7 +1088,7 @@ class Findings(unittest.TestCase):
         got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
         out = [json.loads(x) for x in got.stdout.splitlines()]
         self.assertEqual(len(out), 3)
-        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
         # the in-time arc needs a finding on who lags: the best of the members' comparisons is added (the spread, here)
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"])
@@ -1257,7 +1257,8 @@ class Findings(unittest.TestCase):
         for mk in (eu27_request, wb12_request):
             req, names = mk()
             composed, facts, bodies, page_html = self._page(req, names, ["movers", "overtake", "tiles"])
-            self.assertEqual([x["layer"] for x in composed["sections"]], ["bignums", "thesis_claims", "change_dots", "rank_slope", "tile_map", "risk_notes"])
+            # the movers' extra part, the members at both years on one axis (dot_strip), after the three pictures
+            self.assertEqual([x["layer"] for x in composed["sections"]], ["bignums", "thesis_claims", "change_dots", "rank_slope", "tile_map", "dot_strip", "risk_notes"])
             for sid in ("movers", "overtake", "tiles"): self.assertIn(f'data-module-id="{sid}"', page_html)
             for layer in ("change_dots", "rank_slope", "tile_map"):
                 self.assertTrue(bodies[layer].startswith("<g transform="), layer)   # a picture the page places at its own position
@@ -1388,7 +1389,7 @@ class PaceAndGroups(unittest.TestCase):
             self.assertAlmostEqual(facts["pc_a"]["v"], (m[best] - m[ys[0]]) / (int(best) - int(ys[0])), places=6)
             self.assertAlmostEqual(facts["pc_b"]["v"], (m[ys[-1]] - m[best]) / (int(ys[-1]) - int(best)), places=6)
             # no count of members is printed or declared (no op checks a member's two paces); the ratio only when both paces are above 0
-            self.assertFalse([k for k, v in composed["facts"].items() if v.get("op") in ("n", "count")], mk.__name__)
+            self.assertFalse([k for k, v in c["facts"].items() if v.get("op") in ("n", "count")], mk.__name__)
             self.assertNotIn("个成员国里", words_of(composed))
             if facts["pc_a"]["v"] > 0 and facts["pc_b"]["v"] > 0: self.assertAlmostEqual(facts["pc_x"]["v"], facts["pc_b"]["v"] / facts["pc_a"]["v"], places=6)
             else: self.assertNotIn("pc_x", facts)
@@ -1436,7 +1437,10 @@ class PaceAndGroups(unittest.TestCase):
         for gid, v in means.items(): self.assertAlmostEqual(facts[f"gp_{gid}"]["v"], v, places=6)
         self.assertAlmostEqual(facts["gp_gap"]["v"], max(means.values()) - min(means.values()), places=6)
         self.assertAlmostEqual(facts["gp_all"]["v"], sum(at.values()) / len(at), places=6)
-        self.assertIn("winners_losers", drawn)
+        self.assertEqual([s_["layer"] for s_ in composed["sections"]][2:5], ["glyph_row", "rankbar", "dot_strip"])   # the means, the rank, then the members by group
+        self.assertEqual([i["code"] for i in composed["leaves"]["glyph_row"]["items"]], sorted(means, key=lambda g: -means[g]))
+        self.assertEqual([g["id"] for g in composed["leaves"]["dot_strip"]["groups"]], sorted(means, key=lambda g: -means[g]))
+        self.assertTrue({"glyph_row", "dot_strip"} <= set(drawn))
 
     def test_groups_on_a_world_bank_shape_are_the_continents_sub_regions(self):
         req, names = wb24_request(ASKED["groups"])
@@ -1476,8 +1480,9 @@ class PaceAndGroups(unittest.TestCase):
             self.assertEqual(len(cands), len({c["id"] for c in cands}))
 
     def test_reference_labels_come_from_the_words_and_the_target_row(self):
-        """A mean reference reads 成员国简单平均, a target one '<place> <year> 年整体目标' from the request's target row (EU27_2020 at
-        2030 here); a World Bank shape with no target has no target reference."""
+        """The groups' glyph row has the members' mean as its ghost glyph, labelled 成员国简单平均 (story.ref.mean); its dot strip draws
+        the mean with the leaf's own word (dot.mean, the same words) and the target labelled '<place> <year> 年整体目标' from the request's
+        target row (EU27_2020 at 2030 here); a World Bank shape with no target has no target reference."""
         def say(segs, rows):
             led = {r["src"]: r["text"] for r in rows if "text" in r}
             out = []
@@ -1488,29 +1493,74 @@ class PaceAndGroups(unittest.TestCase):
                 else: out.append(led[K.name_row(s_["name"], "place")])
             return "".join(out)
         req, names = eu27_request()
-        req = {**req, "groups": m49_groups([c for c in req["main"]["members"]])}
-        for picks in (["groups", "rank"], ["pace", "rank"]):
-            if picks[0] == "pace": req = {**req, "rows": [r for r in req["rows"] if r["dims"].get("geo") != "EU27_2020" or r["table"] == "targets"]}
-            composed = FN.compose({**req, "picks": picks})
-            rows, _ = ledger(req, composed, names)
-            refs = {r["kind"]: say(r["label"], rows) for r in composed["leaves"]["winners_losers"]["refs"]}
-            self.assertEqual(refs["mean"], "成员国简单平均", picks)
-            if picks[0] == "groups": self.assertEqual(refs["target"], "欧盟 2030 年整体目标")
-            else: self.assertNotIn("target", refs)   # a pace is no level: the target is no reference of it
+        req = {**req, "groups": m49_groups(list(req["main"]["members"]))}
+        composed = FN.compose({**req, "picks": ["groups", "rank"]})
+        rows, _ = ledger(req, composed, names)
+        self.assertEqual(say(composed["leaves"]["glyph_row"]["ref"]["label"], rows), "成员国简单平均")
+        refs = {r["kind"]: r for r in composed["leaves"]["dot_strip"]["refs"]}
+        self.assertNotIn("label", refs["mean"]); self.assertEqual(FN.WD.WORDS["dot.mean"], "成员国简单平均")
+        self.assertEqual(say(refs["target"]["label"], rows), "欧盟 2030 年整体目标")
+        n = 0
         for mk in (wb24_request, wb12_request):
             wreq, wnames = mk()
             wreq = {**wreq, "groups": m49_groups(sorted({r["dims"]["country"] for r in wreq["rows"]}))}
-            c, _ = next(((x, None) for x in FN.candidates(wreq)[1] if x["id"] == "groups"), (None, None))
+            c = next((x for x in FN.candidates(wreq)[1] if x["id"] == "groups"), None)
             if c is None: continue
-            kinds = [r["kind"] for r in c["data"]["refs"]]
-            self.assertEqual(kinds, ["mean"], mk.__name__)
+            n += 1
+            strip = next(m["data"] for m in [{"data": c["data"], "layer": c["layer"]}, *c.get("more", [])] if m["layer"] == "dot_strip")
+            self.assertEqual([r["kind"] for r in strip["refs"]], ["mean"], mk.__name__)
+            self.assertEqual(strip["legend"], "dot.legend_plain")   # the page's legend names no target either
+        self.assertGreater(n, 0)
+
+    LEADS = ("pace", "groups", "movers", "overtake", "tiles", "members", "rank")
+
+    def test_each_lead_opens_with_its_own_numbers_on_one_table(self):
+        """The big numbers over the page and the first section follow the lead (the first pick): on one table, each lead's three
+        opening numbers are its own facts, no two leads open alike, and every number is a fact the page declares (EU 27 members
+        and World Bank 24 economies)."""
+        for mk in self.SHAPES:
+            req, names = mk()
+            ids = {c["id"] for c in FN.candidates(req)[1]}
+            opened = {}
+            for lead in (l for l in self.LEADS if l in ids):
+                other = "ends" if lead != "ends" else "rank"
+                composed = FN.compose({**req, "picks": [lead, other]})
+                big = [i["fact"] for i in composed["leaves"]["bignums"]["bignums"]]
+                self.assertEqual(len(big), 3, (mk.__name__, lead))
+                self.assertTrue(all(k in composed["facts"] for k in big), (mk.__name__, lead, big))
+                self.assertEqual([s_["id"] for s_ in composed["sections"] if s_.get("title")][0], lead)   # the first block is the lead's
+                lead_facts = FN.candidates(req)[1]
+                own = next(c for c in lead_facts if c["id"] == lead)
+                if lead != "rank": self.assertTrue(set(big) <= set(own["facts"]), (mk.__name__, lead, big))   # its own facts
+                for k in big: self.assertNotIn(composed["facts"][k].get("op"), ("n", "count"), (lead, k))   # no unchecked count opens a page
+                opened[lead] = tuple(big)
+            self.assertGreaterEqual(len(opened), 5, mk.__name__)
+            self.assertEqual(len(set(opened.values())), len(opened), (mk.__name__, opened))
+
+    def test_the_page_draws_every_section_of_each_lead_on_two_shapes(self):
+        """Each lead with a second pick is composed and drawn by the real page child (every section's leaf, the page around them):
+        the new leaves (glyph_row, dot_strip, unit_grid) where the angle and the data shape call them, the fallback leaf otherwise."""
+        seen = set()
+        for mk in self.SHAPES:
+            req, names = mk()
+            ids = {c["id"] for c in FN.candidates(req)[1]}
+            for lead in (l for l in self.LEADS if l in ids):
+                picks = [lead, "rank" if lead != "rank" else "groups"]
+                composed, facts, bodies, page_html = Findings._page(self, req, names, picks)
+                layers = [s_["layer"] for s_ in composed["sections"]]
+                for s_ in composed["sections"]:
+                    if s_.get("title"): self.assertIn(f'data-module-id="{s_["id"]}"', page_html, (mk.__name__, lead, s_["id"]))
+                seen |= set(layers)
+        self.assertTrue({"glyph_row", "dot_strip", "unit_grid"} <= seen, seen)
 
     def test_two_picks_on_one_leaf_keep_the_first_and_the_arcs(self):
         req, _ = eu27_plain()
+        # groups and pace both draw glyph_row first: the later pick takes its fallback leaf (the members' rows), none goes
         got = FN.compose({**req, "picks": ["groups", "pace", "rank"]})
         self.assertEqual(got["arc"]["id"], "lagging")
-        self.assertNotIn("pace", got["arc"]["picks"]); self.assertIn("pace dropped", got["arc"]["why"])
-        self.assertEqual(len([s_ for s_ in got["sections"] if s_["layer"] == "winners_losers"]), 1)
+        lay = {s_["id"]: s_["layer"] for s_ in got["sections"]}
+        self.assertEqual((lay["groups"], lay["pace"], lay["rank"]), ("glyph_row", "winners_losers", "rankbar"))
+        self.assertEqual(len(set(lay.values())), len(lay))
         got = FN.compose({**req, "picks": ["pace", "groups"]})
         self.assertEqual(got["arc"]["id"], "happened")
         self.assertEqual(len({s_["layer"] for s_ in got["sections"]}), len(got["sections"]))

@@ -166,6 +166,8 @@ LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", 
 # The small multiples' line on a page with no target (the findings name it in leaves.small_multiples.legend): the whole as a pale
 # line when it is drawn, never a target's dashed level; a page with a target keeps LEGEND's line.
 LEGEND_NO_TARGET = ("story.legend.members_ref", "story.legend.members_plain")
+# The dot strip's line on a page whose strip draws no target (the findings name it in leaves.dot_strip.legend): the average's rule only.
+DOT_NO_TARGET = ("dot.legend_plain",)
 
 
 def legend_rows(layers, leaves=None):
@@ -176,6 +178,8 @@ def legend_rows(layers, leaves=None):
     for n in layers:
         row = LEGEND.get(n)
         if n == "small_multiples" and named in LEGEND_NO_TARGET: row = (row[0], named)
+        dot = ((leaves or {}).get("dot_strip") or {}).get("legend")
+        if n == "dot_strip" and dot in DOT_NO_TARGET: row = ("pale", dot)
         if row and row not in out: out.append(row)
     return out
 

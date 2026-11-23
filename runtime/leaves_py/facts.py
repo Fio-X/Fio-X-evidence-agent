@@ -133,7 +133,8 @@ def compute(spec, T):
             F[key] = from_ledger(key, q); continue
         if op in DERIVED:
             a, b = F[q["a"]]["v"], F[q["b"]]["v"]
-            v = {"share": a / b, "change": a / b - 1, "times": a / b, "minus": a - b, "plus": a + b}[op]
+            # only the fact's own op is worked out: a difference whose second number is 0 divides nothing
+            v = {"share": lambda: a / b, "change": lambda: a / b - 1, "times": lambda: a / b, "minus": lambda: a - b, "plus": lambda: a + b}[op]()
             F[key] = {"v": v, "fmt": q.get("fmt", "pct"), "src": f'{op}({q["a"]},{q["b"]})'}; continue
         rows = _rows(T, q) if "table" in q else []
         if op == "mean":  # average over the periods that start with a prefix, e.g. the 12 months of one year
