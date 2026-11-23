@@ -54,6 +54,7 @@
  "column.note.vs_next": "，比第二名高",
  "column.note.vs_prev": "，比倒数第二低",
  "column.note.vs_mean": "比图中平均高",
+ "column.note.vs_mean_low": "比图中平均低",
  "column.note.share_of_drawn": "占图中各方合计的",
  "sankey.share.source": "，占全部来源的{p}",
  "sankey.share.target": "，占全部去向的{p}",

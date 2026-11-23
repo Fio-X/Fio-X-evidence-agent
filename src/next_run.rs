@@ -11076,16 +11076,21 @@ mod tests {
         (facts, fmts, raised)
     }
 
-    /// The production bindings less form A's notes (the extreme against the mean of the places drawn, 11-03), which the
-    /// frozen rust notes never had: the parity with them holds on every other branch.
+    /// The production bindings less form A's notes (the extreme against the mean of the places drawn, 11-03; the lowest
+    /// of a column page against that mean, 11-23), which the frozen rust notes never had: the parity with them holds on every
+    /// other branch.
     fn without_mean_notes() -> crate::next_tree::J {
         let mut v = crate::next_tree::bindings().to_value();
-        for (recipe, end) in [("column", "hi"), ("change", "first")] {
+        for (recipe, end, fact) in [
+            ("column", "hi", "fact:vs_mean"),
+            ("column", "lo", "fact:lo_vs_mean"),
+            ("change", "first", "fact:vs_mean"),
+        ] {
             let list = v["nodes"]["leader_notes"]["declares_by_recipe"][recipe]["candidates"][end]
                 .as_array_mut()
                 .unwrap();
             let before = list.len();
-            list.retain(|c| c["value_text"] != "fact:vs_mean");
+            list.retain(|c| c["value_text"] != fact);
             assert_eq!(list.len(), before - 1, "{recipe} {end}: one form A note");
         }
         crate::next_tree::J::from_value(&v)
@@ -14007,7 +14012,7 @@ mod tests {
         );
         let spec = &fill["knobs"]["spec"];
         // no big numbers: the bars' and bubbles' family val and the count of places they draw (the unit line's scope), and
-        // the leader notes' hi, lo, gap and times, and the highest's note's mean of the places drawn, in no hero.data key
+        // the leader notes' hi, lo, gap and times, and the mean of the places drawn the highest's and the lowest's notes read, in no hero.data key
         assert_eq!(
             spec["facts"]
                 .as_object()
@@ -14015,7 +14020,17 @@ mod tests {
                 .keys()
                 .collect::<Vec<_>>(),
             [
-                "drawn", "gap", "hi", "lead1", "lo", "mean", "mean_n", "mean_sum", "times", "val",
+                "drawn",
+                "gap",
+                "hi",
+                "lead1",
+                "lo",
+                "lo_vs_mean",
+                "mean",
+                "mean_n",
+                "mean_sum",
+                "times",
+                "val",
                 "vs_mean"
             ]
         );
@@ -14100,7 +14115,8 @@ mod tests {
             .unwrap()
             .iter()
             .all(|n| n.get("at").is_none()));
-        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times
+        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) how far below it
+        // (the times the dek prints is no second card, 11-23)
         let said: Vec<(&str, &str, &str)> = notes["notes"]
             .as_array()
             .unwrap()
@@ -14117,7 +14133,7 @@ mod tests {
             said,
             [
                 ("SE", "column.note.vs_mean", "fact:vs_mean"),
-                ("BE", "column.note.lo", "fact:times")
+                ("BE", "column.note.vs_mean_low", "fact:lo_vs_mean")
             ]
         );
         assert_eq!(spec["hero"]["unit"], "单位：%");
@@ -16390,10 +16406,10 @@ mod tests {
                     plain.contains("画出 3 国"),
                     "{at}: the line says the places drawn"
                 );
-                // a column's notes say the drawn set (所选最高者), not the ranking's ends the page no longer draws (the
-                // ranked bars have no notes)
+                // a column's notes say the drawn set (the mean of the places drawn: 比图中平均), not the ranking's ends
+                // the page no longer draws (the ranked bars have no notes)
                 assert!(
-                    name != "column" || plain.contains("所选"),
+                    name != "column" || plain.contains("比图中平均低"),
                     "{at}: the notes say the drawn set"
                 );
                 assert!(
@@ -20984,7 +21000,7 @@ mod tests {
             notes,
             [
                 ("AF".to_string(), "column.note.vs_mean".to_string()),
-                ("IQ".into(), "column.note.lo.scoped".into())
+                ("IQ".into(), "column.note.vs_mean_low".into())
             ]
         );
         // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
@@ -21065,7 +21081,7 @@ mod tests {
             notes,
             [
                 ("SE".to_string(), "column.note.vs_mean".to_string()),
-                ("BE".into(), "column.note.lo.scoped".into())
+                ("BE".into(), "column.note.vs_mean_low".into())
             ]
         );
     }
@@ -21336,6 +21352,25 @@ mod tests {
         );
     }
 
+    /// A column page of two places has no mean to set the two ends against (a mean needs three places, as the highest's note
+    /// has always had it): its lowest keeps the times, its highest the gap to the lowest, the words the dek prints (11-23).
+    #[test]
+    fn a_column_page_of_two_places_keeps_the_gap_and_the_times_for_its_notes() {
+        let two: Vec<Value> = column_rows()
+            .into_iter()
+            .filter(|r| ["SE", "BE"].contains(&r["dims"]["geo"].as_str().unwrap()))
+            .collect();
+        assert_eq!(two.len(), 2);
+        let (_, _, _, _, notes) = cut_page(&[json!({"origin": "download", "file": "data/t.csv"})], &two);
+        assert_eq!(
+            notes,
+            [
+                ("SE".to_string(), "column.note.hi".to_string()),
+                ("BE".into(), "column.note.lo".into())
+            ]
+        );
+    }
+
     /// A table no one cut (its own download record, and a cut of another file beside it): no scope, so no scope word on the
     /// page, the plain dek that names the lowest, and the plain note keys.
     #[test]
@@ -21360,7 +21395,7 @@ mod tests {
             notes,
             [
                 ("SE".to_string(), "column.note.vs_mean".to_string()),
-                ("BE".into(), "column.note.lo".into())
+                ("BE".into(), "column.note.vs_mean_low".into())
             ]
         );
     }

@@ -859,7 +859,7 @@ class ColumnMap(unittest.TestCase):
         # 11-04: 与图中平均差 / 与倒数第二差 dropped every comparison word, so the page-good check (a note has a number and
         # 比, 高于, 低于…) failed on q1, q4, q5 and q6, and two stand-ins still misread the gap; the words are back to 比…高 / 比…低
         words = K.WD.WORDS
-        for key in ("column.note.vs_mean", "column.note.vs_mean_after", "column.note.vs_prev"):
+        for key in ("column.note.vs_mean", "column.note.vs_mean_low", "column.note.vs_mean_after", "column.note.vs_prev"):
             self.assertIn("比", words[key], key)
 
     def test_a_change_note_that_compares_with_its_neighbour_prints_the_words_and_the_gap_entry(self):
