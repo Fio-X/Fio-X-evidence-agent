@@ -52,6 +52,50 @@ class Resolve(unittest.TestCase):
         self.assertEqual(next(i for i in s["items"] if i["part"] == "solar_array")["args"]["rows"], 2)
         with self.assertRaises(R.Refused): R.resolve({**RENEW, "parts": {"solar_array": {"rows": 40}}})
 
+    def test_no_lead_keeps_the_panorama(self):
+        a, *_ = R.resolve(RENEW); self.assertEqual(a["scene"], "panorama")
+
+    def test_each_lead_has_its_own_scene(self):
+        """The same table under different lead findings: a different hero place, camera or part list each time, and the same
+        input gives the same scene twice (nothing random)."""
+        seen = {}
+        for lead, scene in R.REG["stories"]["angles"].items():
+            s, *_ = R.resolve({**RENEW, "lead": lead}); again, *_ = R.resolve({**RENEW, "lead": lead})
+            self.assertEqual(s, again); self.assertEqual(s["scene"], scene)
+            key = json.dumps([s["camera"], s["hero"], parts(s)], sort_keys=True)
+            seen.setdefault(scene, key); self.assertEqual(seen[scene], key)
+        self.assertEqual(len(set(seen.values())), len(seen))
+        self.assertGreaterEqual(len(seen), 5)
+
+    def test_scene_heroes_and_parts(self):
+        road, *_ = R.resolve({**RENEW, "lead": "path"}); rank, *_ = R.resolve({**RENEW, "lead": "rank"}); chain, *_ = R.resolve({**RENEW, "lead": "chain"})
+        self.assertEqual(parts(road)[-1], "target_flag"); self.assertIn("track", parts(road)); self.assertIn("pylon", parts(road))
+        self.assertEqual(road["items"][-1]["args"]["split"], "hero")
+        self.assertEqual(parts(rank)[-1], "hero_turbine"); self.assertEqual(set(parts(rank)), {"wind_turbine", "hero_turbine"})
+        self.assertEqual(set(parts(chain)), {"coal_plant", "pylon", "solar_array", "hero_turbine"})
+        need, *_ = R.resolve({**RENEW, "lead": "need"}); self.assertIn("target_flag", parts(need)[:-1])
+
+    def test_a_scene_the_tags_cannot_hold_keeps_the_panorama(self):
+        g, *_ = R.resolve({**GAS, "lead": "rank"}); self.assertEqual(g["scene"], "panorama"); self.assertEqual(parts(g)[-1], "gas_valve_hero")
+        road, *_ = R.resolve({**GAS, "lead": "path"}); self.assertEqual(road["scene"], "road")   # the gas tables have a grid: the marker is no topic's
+        name, _, why = R.pick_scene({**GAS, "lead": "rank"}, GAS["tags"]); self.assertEqual(name, "panorama"); self.assertIn("wind", why)
+
+    def test_the_relief_a_request_gives_beats_the_scene(self):
+        s, *_ = R.resolve({**RENEW, "lead": "rank"}); self.assertEqual(s["relief"], R.REG["scenes"]["lineup"]["relief"])
+        s, *_ = R.resolve({**RENEW, "lead": "rank", "composition": {"relief": 1.2}}); self.assertEqual(s["relief"], 1.2)
+
+    def test_mirror_flips_a_track(self):
+        m, *_ = R.resolve({**RENEW, "lead": "path", "composition": {"reading_order": "right_to_left"}}); o, *_ = R.resolve({**RENEW, "lead": "path"})
+        mt = next(i for i in m["items"] if i["part"] == "track")["args"]["points"]; ot = next(i for i in o["items"] if i["part"] == "track")["args"]["points"]
+        self.assertEqual(mt, [[-x, y] for x, y in ot])
+
+    def test_every_story_angle_has_a_scene(self):
+        """The angles the findings child names (findings.py ANGLES) are the angles the registry maps, so no lead the flow sends is refused."""
+        with open(os.path.join(HERE, "..", "runtime", "leaves_py", "findings.py")) as f: src = f.read()
+        names = re.search(r"^ANGLES = \[(.*)\]$", src, re.M).group(1)
+        self.assertEqual(sorted(n.strip()[len("angle_"):] for n in names.split(",")), sorted(R.REG["stories"]["angles"]))
+        for scene in R.REG["stories"]["angles"].values(): self.assertIn(scene, R.REG["scenes"])
+
     def test_ground_can_be_given_as_colours(self):
         g = {"dark": [20, 30, 40], "mid": [60, 80, 90], "light": [120, 140, 150], "line": [5, 10, 15]}
         _, pal, *_ = R.resolve({**RENEW, "ground": g}); self.assertEqual(pal, g)
@@ -69,6 +113,7 @@ class Refusals(unittest.TestCase):
     def test_unknown_part_and_knob(self):
         self.refused({**RENEW, "parts": {"moon": {}}}, "moon"); self.refused({**RENEW, "parts": {"pylon": {"colour": 1}}}, "colour")
     def test_out_of_range(self): self.refused({**RENEW, "composition": {"focus_scale": 2.5}}, "focus_scale")
+    def test_unknown_lead(self): self.refused({**RENEW, "lead": "weather"}, "weather", "no story angle")
     def test_bad_ground_and_accent(self):
         self.refused({**RENEW, "ground": "green"}, "ground"); self.refused({**RENEW, "accent": "green"}, "accent")
     def test_width(self):
@@ -127,6 +172,10 @@ class EndToEnd(unittest.TestCase):
 
     def test_renewables_picture(self): self.check(self.draw(RENEW), 1140)
     def test_gas_picture(self): self.check(self.draw(GAS), 1140)
+
+    def test_two_leads_two_pictures(self):
+        a, b = self.draw({**RENEW, "lead": "path"}), self.draw({**RENEW, "lead": "chain"})
+        self.check(a, 1140); self.check(b, 1140); self.assertEqual((a["scene"], b["scene"]), ("road", "sequence")); self.assertNotEqual(a["svg"], b["svg"])
 
 
 if __name__ == "__main__":

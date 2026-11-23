@@ -1,8 +1,11 @@
 """The illustration node's child (the visual group's IllusHero request runs it: src/next_visual.rs illus_hero).
 One JSON line in, one line out, as leaves_js/illus_strip.cjs:
   in : {"tags": [wind|solar|hydro|coal|gas|grid, ...], "hero": "wind"|"gas", "width": 600..2000, "ground": "warm"|"cool"|{dark,mid,light,line}, "accent": "#rrggbb",
-        "composition": {focus_scale, reading_order, relief, smoke, seed}?, "parts": {part_id: {knob: value}}?}      (anything node.json declares as a knob; unknown names and out-of-range values are refused)
-  out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "seconds": {stage: s}}
+        "lead": story angle?, "composition": {focus_scale, reading_order, relief, smoke, seed}?, "parts": {part_id: {knob: value}}?}
+        (anything node.json declares as a knob; unknown names and out-of-range values are refused). "lead" is the page's lead finding, one of
+        node.json stories.angles; it picks the scene, so a story's opening picture follows its story, not its table (pick_scene).
+  out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
+        "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
        | {"unavailable": why}                          Blender or a python package is missing, or it took too long (the caller falls back to the page-bottom strip)
 Parts, layout slots, heroes, palettes and knob ranges are data in node.json (the registry); this file validates the input against it, resolves it into a scene (scene.json), runs
@@ -53,6 +56,8 @@ def validate(inp):
         pal = g
     acc = inp.get("accent", c["accent"])
     if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    lead = inp.get("lead")
+    if lead is not None and lead not in REG["stories"]["angles"]: refuse(f"lead {lead!r} is no story angle; known: {sorted(REG['stories']['angles'])}")
     pid = {p["id"]: p for p in REG["parts"]}; over = inp.get("parts", {})
     for part, kn in over.items():
         if part not in pid: refuse(f"unknown part {part}")
@@ -67,20 +72,39 @@ def mirror_item(it):
     if "at" in it: it["at"] = [-it["at"][0], it["at"][1]]
     if "yaw" in a: a["yaw"] = -a["yaw"]
     if "cx" in a: a["cx"] = -a["cx"]
+    if "points" in a: a["points"] = [[-x, y] for x, y in a["points"]]   # a track: every point mirrors
     if it["kind"] == "reservoir": a["x0"], a["x1"] = -a["x1"], -a["x0"]      # a span: its ends swap
     elif "x0" in a and "x1" in a: a["x0"], a["x1"] = -a["x0"], -a["x1"]      # a pipe: both ends mirror
     return it
 
 
+def pick_scene(inp, tags):
+    """The scene the lead finding asks for (name, its block), or the panorama (block None), and why: no lead, a scene that needs a tag the
+    request lacks, or a scene hero whose tag the request lacks keeps the panorama. Only the request's own fields decide it."""
+    lead = inp.get("lead")
+    if lead is None: return "panorama", None, "no lead finding"
+    name = REG["stories"]["angles"][lead]; sc = REG["scenes"][name]
+    miss = [t for t in sc.get("needs_tags", []) if t not in tags]
+    if miss: return "panorama", None, f"the {name} scene needs {miss}"
+    need = REG["heroes"][sc["hero"]["name"]]["needs_tag"]
+    if need is not None and need not in tags: return "panorama", None, f"the {name} scene's hero needs {need}"
+    return name, sc, f"lead {lead}"
+
+
 def resolve(inp):
     tags, c, pal, acc, over = validate(inp)
+    name, sc, _ = pick_scene(inp, tags)
     mirror = c["reading_order"] == "right_to_left"; items = []
-    for t in TAG_ORDER:
-        if t not in tags: continue
-        for it in copy.deepcopy(REG["slots"][t]):
-            it.setdefault("args", {}).update(over.get(it["part"], {}))
-            items.append(it)
-    h = REG["heroes"][c["hero"]]; hp = next(p for p in REG["parts"] if p["id"] == h["part"])
+    if sc is not None and "relief" not in inp.get("composition", {}): c = {**c, "relief": sc["relief"]}
+    placed = [(t, it) for t in TAG_ORDER if t in tags for it in (REG["slots"] if sc is None else sc["slots"]).get(t, [])]
+    placed += [(None, it) for it in (sc or {}).get("always", [])]
+    for _, it in placed:
+        it = copy.deepcopy(it); it.setdefault("args", {}).update(over.get(it["part"], {}))
+        items.append(it)
+    h = REG["heroes"][c["hero"] if sc is None else sc["hero"]["name"]]
+    if sc is not None:   # the scene places, sizes and frames its hero
+        h = {**h, **{k: v for k, v in sc["hero"].items() if k in ("at", "dz", "camera")}, "args": {**h.get("args", {}), **sc["hero"].get("args", {})}}
+    hp = next(p for p in REG["parts"] if p["id"] == h["part"])
     args = {k: s["default"] for k, s in hp["knobs"].items()}; args.update(h.get("args", {})); args.update(over.get(h["part"], {}))
     for k in h["scale_args"]: args[k] = args[k] * c["focus_scale"]
     focus = [eval(e, {"__builtins__": {}}, dict(args)) for e in h["focus_local"]]
@@ -90,7 +114,7 @@ def resolve(inp):
         items = [mirror_item(i) for i in items]; at[0] = -at[0]; yaw = -yaw
         cam["loc"][0] = -cam["loc"][0]; cam["target"][0] = -cam["target"][0]
     r = REG["input"]["render"]
-    return dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, camera=cam, hero=dict(at=at, yaw=yaw, focus_local=focus)), pal, acc, c
+    return dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, camera=cam, hero=dict(at=at, yaw=yaw, focus_local=focus), scene=name), pal, acc, c
 
 
 
@@ -134,7 +158,7 @@ def build(inp, work):
     k = width / 1440.0; h = round(560 * k, 2)
     out = f'<g transform="scale({k:.5f})">{svg[a:b]}</g>'
     secs["total"] = round(time.time() - t0, 1)
-    return out, float(width), h, secs
+    return out, float(width), h, secs, scene["scene"]
 
 
 def serve():
@@ -143,8 +167,8 @@ def serve():
         inp = json.loads(line)
         if not isinstance(inp, dict): raise Refused("the request is not an object")
         with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
-            svg, w, h, secs = build(inp, work)
-        reply = {"svg": svg, "w": w, "h": h, "dropped": [], "seconds": secs}
+            svg, w, h, secs, name = build(inp, work)
+        reply = {"svg": svg, "w": w, "h": h, "dropped": [], "scene": name, "seconds": secs}
     except Refused as e: reply = {"refused": [str(e)]}
     except Unavailable as e: reply = {"unavailable": str(e)}
     except json.JSONDecodeError as e: reply = {"refused": [f"the request is not JSON: {e}"]}

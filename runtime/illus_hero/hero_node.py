@@ -189,7 +189,7 @@ def build():
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
     wash = []
-    for g in ("terrain", "hydro", "water", "coal"):
+    for g in ("terrain", "hydro", "water", "coal", "track"):
         if idx(g) is None: continue
         wash += [f'<path d="{pd(p, (0, 0), 1.2)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.5, 80))]
     layers.append(f'<g fill="url(#wash)">{"".join(wash)}</g>')
@@ -197,7 +197,7 @@ def build():
         sh = "".join(f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(lab == idx("shadow"), 1.0, 30)))
         layers.append(f'<g fill="{hexc(pal["dark"])}" opacity="0.5">{sh}</g>')
     bg = []
-    for g, ang, gap, wd in (("hydro", 0, 6.0, 0.9), ("spill", 90, 3.0, 0.9), ("water", 0, 8.0, 0.7)):
+    for g, ang, gap, wd in (("hydro", 0, 6.0, 0.9), ("spill", 90, 3.0, 0.9), ("water", 0, 8.0, 0.7), ("track", 0, 4.0, 0.7)):
         if idx(g) is None: continue
         for p in polys(to_geom(lab == idx(g), 1.0, 40)): bg += BR.hatch(list(p.exterior.coords), ang, gap, rng, wd, shrink=1.0, cut=0.35, gap_jit=0.4)
     layers.append(f'<path d="{"".join(bg)}" fill="{line}" opacity="0.6"/>')
