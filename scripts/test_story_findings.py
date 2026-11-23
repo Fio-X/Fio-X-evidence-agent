@@ -179,6 +179,11 @@ def compute(facts, rows, members):
             f.update(v=sum(r["value"] for r in at) / len(at), t=q.get("time"))
         elif op == "n":
             f.update(v=len({r["dims"][q["by"]] for r in sel(q) if r["time"] == q["time"]}))
+        elif op == "count":   # under a line (below, no b): each member's own value of a at the time under it; every member needs its row
+            assert "below" in q and "b" not in q, k
+            at = {r["dims"][q["by"]]: r["value"] for r in sel(q["a"]) if r["time"] == q["time"]}
+            assert all(c in at for c in members), f"{k}: a member has no row of a"
+            f.update(v=sum(1 for c in members if at[c] < q["below"]))
         elif op == "group_change":
             rs = sel(q)
             val = lambda c, t: sum(r["value"] for r in rs if r["dims"][q["by"]] == c and r["time"] == t)
@@ -243,7 +248,7 @@ class Findings(unittest.TestCase):
         _, cands, dropped = FN.candidates(req)
         # the request carries no chain, no points and no groups; its nine members' paces all bend one way (no slower column)
         self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain", "groups"])
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["below", "ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
         self.assertEqual(path["title"][0], ("w", "就算每年都像 "))  # even the best year falls short of 42.5
@@ -258,7 +263,8 @@ class Findings(unittest.TestCase):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "tiles": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables",
-                                                                  "pace": "every member changed pace the same way and a pace is below 0 (no picture stands)", "groups": "the request gives no groups of the members"})
+                                                                  "pace": "every member changed pace the same way and a pace is below 0 (no picture stands)", "groups": "the request gives no groups of the members",
+                                                                  "below": "fewer than 8 members at the last year they share"})
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "overtake", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
@@ -436,7 +442,9 @@ class Findings(unittest.TestCase):
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
                 "hero": {"data": {}, "leaves": composed["leaves"], "style": {**composed.get("style", {}), **(style or {})}}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
-                                        "knobs": {"spec": spec, "labels": names, "shapes": SHAPES}, **kv}, ensure_ascii=False)
+                                        "knobs": {"spec": spec, "labels": names, "shapes": SHAPES, "members": members}, **kv}, ensure_ascii=False)
+        # the members layer 1 gives every page (next_run story_page: knobs.members, the story input's): a count reads them
+        members = req["main"].get("members") or sorted({r["dims"][req["main"]["by"]] for r in req["rows"] if r["table"] == req["main"]["table"]})
         layers = [x["layer"] for x in composed["sections"]]
         lines = [line(phase="size")] + [line(layer=n) for n in layers]
         go = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
@@ -1103,7 +1111,7 @@ class Findings(unittest.TestCase):
         got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
         out = [json.loads(x) for x in got.stdout.splitlines()]
         self.assertEqual(len(out), 3)
-        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["below", "ends", "members", "movers", "need", "overtake", "pace", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
         # the in-time arc needs a finding on who lags: the best of the members' comparisons is added (the spread, here)
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"])
@@ -1272,8 +1280,9 @@ class Findings(unittest.TestCase):
         for mk in (eu27_request, wb12_request):
             req, names = mk()
             composed, facts, bodies, page_html = self._page(req, names, ["movers", "overtake", "tiles"])
-            # the movers' extra part, the members at both years on one axis (dot_strip), after the three pictures
-            self.assertEqual([x["layer"] for x in composed["sections"]], ["bignums", "thesis_claims", "change_dots", "rank_slope", "tile_map", "dot_strip", "risk_notes"])
+            # the movers' extra part (the members at both years on one axis, dot_strip) shows what the movers' own dots show (each
+            # member at the first and the last year): one question is answered once, so it goes
+            self.assertEqual([x["layer"] for x in composed["sections"]], ["bignums", "thesis_claims", "change_dots", "rank_slope", "tile_map", "risk_notes"])
             for sid in ("movers", "overtake", "tiles"): self.assertIn(f'data-module-id="{sid}"', page_html)
             for layer in ("change_dots", "rank_slope", "tile_map"):
                 self.assertTrue(bodies[layer].startswith("<g transform="), layer)   # a picture the page places at its own position
@@ -1532,7 +1541,13 @@ class PaceAndGroups(unittest.TestCase):
             self.assertEqual(strip["legend"], "dot.legend_plain")   # the page's legend names no target either
         self.assertGreater(n, 0)
 
-    LEADS = ("pace", "groups", "movers", "overtake", "tiles", "members", "rank")
+    LEADS = ("pace", "groups", "movers", "overtake", "tiles", "members", "rank", "below")
+
+    @staticmethod
+    def unchecked(q):
+        """A count layer 1 cannot recompute: any n, or a count that is not one under a line (op count, below, no b: layer 1 counts the
+        members whose own value is under it, from the rows)."""
+        return q.get("op") == "n" or (q.get("op") == "count" and not ("below" in q and "b" not in q))
 
     def test_each_lead_opens_with_its_own_numbers_on_one_table(self):
         """The big numbers over the page and the first section follow the lead (the first pick): on one table, each lead's three
@@ -1552,7 +1567,7 @@ class PaceAndGroups(unittest.TestCase):
                 lead_facts = FN.candidates(req)[1]
                 own = next(c for c in lead_facts if c["id"] == lead)
                 if lead != "rank": self.assertTrue(set(big) <= set(own["facts"]), (mk.__name__, lead, big))   # its own facts
-                for k in big: self.assertNotIn(composed["facts"][k].get("op"), ("n", "count"), (lead, k))   # no unchecked count opens a page
+                for k in big: self.assertFalse(self.unchecked(composed["facts"][k]), (lead, k))   # no unchecked count opens a page
                 opened[lead] = tuple(big)
             self.assertGreaterEqual(len(opened), 5, mk.__name__)
             self.assertEqual(len(set(opened.values())), len(opened), (mk.__name__, opened))
@@ -1569,7 +1584,7 @@ class PaceAndGroups(unittest.TestCase):
                 composed, facts, bodies, page_html = Findings._page(self, req, names, picks)
                 layers = [s_["layer"] for s_ in composed["sections"]]
                 # no page prints a count layer 1 cannot recompute: no n or count fact, no unit grid count
-                self.assertFalse([k for k, v in composed["facts"].items() if v.get("op") in ("n", "count")], (mk.__name__, lead))
+                self.assertFalse([k for k, v in composed["facts"].items() if self.unchecked(v)], (mk.__name__, lead))
                 self.assertNotIn("count", composed["leaves"].get("unit_grid", {}))
                 for s_ in composed["sections"]:
                     if s_.get("title"): self.assertIn(f'data-module-id="{s_["id"]}"', page_html, (mk.__name__, lead, s_["id"]))
@@ -1652,6 +1667,165 @@ class PaceAndGroups(unittest.TestCase):
         self.assertEqual(got["arc"]["id"], "happened")
         self.assertEqual(len({s_["layer"] for s_ in got["sections"]}), len(got["sections"]))
         self.assertEqual((FN.ARC_OF["pace"], FN.ARC_OF["groups"]), ("happened", "lagging"))
+
+
+
+# ---------------------------------------------------------------- one question a block, five blocks at most, a lead's names
+
+DATA_OFF = ("bignums", "thesis_claims", "risk_notes")
+
+
+def blocks(composed):
+    """The page's data blocks: the sections with a data leaf (not the numbers, the thesis or the notes)."""
+    return [s_ for s_ in composed["sections"] if s_["layer"] not in DATA_OFF]
+
+
+def eu27_whole_no_target(question=""):
+    """The twenty-seven members and the whole, no target row: the line of the "which ones" finding is the whole's value."""
+    req, names = eu27_plain(question, whole=True)
+    req = {k: v for k, v in req.items() if k != "target"}
+    return {**req, "rows": [r for r in req["rows"] if r["table"] != "targets"]}, names
+
+
+class PageBlocks(unittest.TestCase):
+    SHAPES = (lambda question="": eu27_plain(question, whole=True), eu27_plain, wb24_request)
+
+    def placed_shows(self, req, picks):
+        """Every placed part's shows (the picks' own sections and their extra parts), as place_leaves leaves them."""
+        _, cands, _ = FN.candidates(req)
+        by_id = {c["id"]: c for c in cands}
+        _, picks2, _ = FN.plan_arc(picks, cands)
+        out, placed, why = FN.place_leaves(picks2, by_id, cands)
+        return out, [p.get("shows") for i in out for p in [placed[i][0], *placed[i][1]]], why
+
+    def test_same_question_compares_the_declarations_only(self):
+        a = [{"measure": "t|k=v", "when": "2024", "shape": "rank"}]
+        self.assertTrue(FN.same_question(a, [{"measure": "t|k=v", "when": "2024", "shape": "rank"}, {"measure": "t|k=v", "when": "2005-2024", "shape": "change"}]))
+        for other in ({"measure": "t|k=v", "when": "2023", "shape": "rank"}, {"measure": "u", "when": "2024", "shape": "rank"},
+                      {"measure": "t|k=v", "when": "2024", "shape": "map"}):
+            self.assertFalse(FN.same_question(a, [other]), other)
+        self.assertFalse(FN.same_question(None, a))
+        with self.assertRaisesRegex(FN.Refused, "no shape"):
+            FN.Req(eu27_plain()[0]).shows("2024", "a_chart_name")
+
+    def test_one_ranking_a_page_on_two_shapes(self):
+        """The members' ranking at the last year was drawn three times (rankbar, the unit grid of the rank and ends findings, the
+        dot strip's later row): each block declares what it shows, and two that share an entry keep the first (the lead's)."""
+        for mk in self.SHAPES:
+            req, names = mk()
+            for picks in (["rank", "movers", "ends"], ["ends", "rank", "overtake"], ["movers", "overtake", "rank"]):
+                out, shows, _ = self.placed_shows(req, picks)
+                for i, a in enumerate(shows):
+                    for b in shows[i + 1:]: self.assertFalse(FN.same_question(a, b), (picks, a, b))
+                composed, _, _ = draw_all(self, req, names, picks)
+                layers = [s_["layer"] for s_ in blocks(composed)]
+                self.assertIn("rankbar", layers, picks)
+                self.assertNotIn("unit_grid", layers, picks)        # the rank's and the ends' grid show the rankbar's ranking
+                self.assertNotIn("dot_strip", layers, picks)        # the strip shows the movers' change and the ranking again
+
+    def test_the_lead_keeps_its_block_and_the_same_question_later_goes(self):
+        for mk in self.SHAPES:
+            req, names = mk(ASKED["none"])
+            got = FN.compose({**req, "picks": ["below", "rank", "movers"]})
+            ids = [s_["id"] for s_ in blocks(got)]
+            self.assertEqual(ids[0], "below")
+            self.assertNotIn("rank", ids)                       # its ranking is the lead's grid's question
+            self.assertIn("rank dropped", got["arc"]["why"])
+            self.assertGreaterEqual(len([i for i in ids if i in FN.ARC_OF]), 2)   # a page still tells two picks at least
+
+    def test_at_most_five_blocks(self):
+        import itertools
+        for mk in self.SHAPES:
+            req, _ = mk()
+            ids = [c["id"] for c in FN.candidates(req)[1]]
+            n = 0
+            for picks in itertools.permutations(ids, 4):
+                if n >= 60: break
+                n += 1
+                got = FN.compose({**req, "picks": list(picks)})
+                self.assertLessEqual(len(blocks(got)), FN.MAX_BLOCKS, picks)
+                self.assertGreaterEqual(len([s_ for s_ in blocks(got) if s_["id"] in FN.ARC_OF]), 2, picks)
+            self.assertEqual(n, 60)
+
+    def test_a_blank_unit_grid_is_not_drawn(self):
+        """A grid none of whose glyphs is lit says nothing: it is not placed, and the page stands on its other blocks."""
+        for mk in (eu27_plain, wb24_request):
+            req, names = mk()
+            _, cands, _ = FN.candidates(req)
+            by_id = {c["id"]: c for c in cands}
+            grid = next(m for m in by_id["ends"].get("more", []) if m["layer"] == "unit_grid")
+            out, placed, _ = FN.place_leaves(["ends", "movers"], by_id, cands)
+            self.assertIn("unit_grid", [m["layer"] for m in placed["ends"][1]], mk.__name__)
+            grid["data"] = {**grid["data"], "members": [{**m, "flag": False} for m in grid["data"]["members"]]}
+            self.assertTrue(FN.blank(grid))
+            out, placed, _ = FN.place_leaves(["ends", "movers"], by_id, cands)
+            self.assertEqual(out, ["ends", "movers"])
+            self.assertNotIn("unit_grid", [m["layer"] for p in out for m in [placed[p][0], *placed[p][1]]])
+
+    def test_a_crowded_strip_names_the_lead_findings_members_only(self):
+        """A dot strip of more than twenty points (twenty-five members here) names only the members the lead finding is about; one
+        of twenty or fewer keeps its own names."""
+        few = {c: v for c, v in list(EU27.items())[:25]}
+        for mk, crowded in ((lambda: eu27_request(few), True), (eu_request, False)):
+            req, names = mk()
+            ids = {c["id"] for c in FN.candidates(req)[1]}
+            self.assertIn("overtake", ids)
+            composed, _, drawn = draw_all(self, req, names, ["overtake", "pace"])
+            strip = composed["leaves"].get("dot_strip")
+            self.assertIsNotNone(strip, mk)
+            lead = next(c for c in FN.candidates(req)[1] if c["id"] == "overtake")
+            if crowded:
+                self.assertEqual(len(strip["rows"]), 25)
+                self.assertEqual(strip["lead"], FN.spaced(FN.Req(req), strip["rows"], lead["about"]))
+                self.assertTrue(strip["lead"] and set(strip["lead"]) <= set(lead["about"]))
+                self.assertEqual(composed["style"]["dot_strip"]["lead_set"], "given")
+            else:
+                self.assertLessEqual(len(strip["rows"]), FN.LABEL_ALL_MAX)
+                self.assertEqual(strip["lead"], lead["data"]["accent"])   # its own pair (the riser and the faller)
+            self.assertEqual(len(re.findall(r'data-leader="lead ', str(drawn["dot_strip"]))), len(strip["lead"]))
+        # with the "which countries" finding leading, the groups' strip of twenty-seven names its members under the line
+        req, names = eu27_plain(ASKED["none"])
+        composed, _, drawn = draw_all(self, req, names, ["below", "groups"])
+        below = next(c for c in FN.candidates(req)[1] if c["id"] == "below")
+        strip = composed["leaves"]["dot_strip"]
+        self.assertTrue(strip["lead"] and set(strip["lead"]) <= set(below["about"]), strip["lead"])
+        self.assertEqual(strip["lead"][0], below["about"][0])   # the lowest member under the line is named first
+
+    def test_which_countries_names_them_and_counts_them_from_facts(self):
+        """A question that asks which countries (哪些国家 … 拖后腿) leads with the members under the line: their count a fact layer 1
+        counts from the rows (op count under a line), their names the request's name rows, never typed; on three shapes (a target, a
+        whole with no target, neither)."""
+        kinds = set()
+        for mk in (eu27_request, eu27_whole_no_target, eu27_plain, wb24_request):
+            req, names = mk()
+            req = {**req, "question": ASKED["none"]}
+            _, cands, _ = FN.candidates(req)
+            self.assertEqual(cands[0]["id"], "below", mk)
+            self.assertTrue(cands[0]["why"]["asked"])
+            composed, facts, drawn = draw_all(self, req, names, ["below", "ends"])
+            q = composed["facts"]["bl_n"]
+            self.assertEqual((q["op"], "b" in q), ("count", False))
+            # the count recomputed from the rows: the members whose own value that year is under the line
+            y = q["time"]
+            at = {r["dims"][req["main"]["by"]]: float(r["value"]) for r in req["rows"] if r["table"] == req["main"]["table"] and r["time"] == y}
+            members = req["main"].get("members") or sorted(at)
+            under = sorted(c for c in members if at[c] < q["below"])
+            self.assertEqual(facts["bl_n"]["v"], len(under))
+            # the grid lights the same members, and the title names the lowest of them by their name rows
+            grid = composed["leaves"]["unit_grid"]
+            self.assertEqual(sorted(m["code"] for m in grid["members"] if m["flag"]), under)
+            named = re.findall(r"\{name\.([A-Z0-9_]+)\}", composed["title"])
+            lowest = sorted(under, key=lambda c: (at[c], c))[:FN.BELOW_NAMES]
+            self.assertEqual([c for c in named if c in lowest], lowest)
+            self.assertTrue(composed["title"].startswith("{bl_n} "), composed["title"])
+            self.assertNotRegex(re.sub(r"\{[^}]+\}", "", composed["title"]), r"[0-9]")   # no number typed
+            kinds.add(cands[0]["why"]["line"])
+        self.assertEqual(kinds, {"goal", "whole", "mean"})
+        # a question that does not ask which ones does not raise it
+        for mk in (eu27_plain, wb24_request):
+            req, _ = mk(ASKED["pace"])
+            c = next(x for x in FN.candidates(req)[1] if x["id"] == "below")
+            self.assertIsNone(c["why"]["asked"])
 
 
 if __name__ == "__main__":

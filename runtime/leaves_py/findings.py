@@ -65,7 +65,13 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               simple mean at the last year they share against the mean of every grouped member, the gap of the
                               highest group over the lowest, and the group with the widest spread inside it named by its highest
                               and lowest member. Needs GROUPS_MIN groups of GROUP_MEMBERS members at least.
+  * below  (unit_grid):      the members under a line at the last year they share (the target, else the whole's value, else
+                              the members' simple mean), named lowest first and counted by layer 1 (op count, below); raised by a
+                              "which ones" question (story.ask.below).
   pace and groups draw on winners_losers until their own leaves are wired; a page's picks that name one leaf twice keep the first.
+  Each block declares what it shows ("shows": measure, year or span, shape of SHAPES): two blocks with an entry in common answer one
+  question and the page keeps the first (the lead's); a page holds MAX_BLOCKS data blocks at most; a flag grid with no lit glyph
+  is not drawn; a strip of more than LABEL_ALL_MAX points names only the lead finding's members ("about").
   A finding whose question words (words.zh.json story.ask.<angle>) the request's "question" holds is scored ASKED_BOOST higher.
 Chain rules. Years: the longest run of consecutive years, ending at the last, that every chain table and the whole have
 (at least CHAIN_YEARS). A chain table is read at the dims its "filter" names (one row a year, else the angle is dropped).
@@ -130,7 +136,7 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 13           # the candidates the child gives (one a finding: there are thirteen angles; the flow shows the model its best few)
+TOP_K = 14           # the candidates the child gives (one a finding: there are fourteen angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
 MAP_MIN, MAP_CALL = 8, 3   # members with a point a map needs at least; the highest and the lowest this many are called out
@@ -142,6 +148,24 @@ TILE_MIN, TILE_MAX = 10, 40   # members with a point a tile map needs at least, 
 PACE_MIN, PACE_WIN = 8, 4     # years in a row the members share a two-period pace needs, and years each window holds at least (the windows may share the split year)
 GROUPS_MIN, GROUP_MEMBERS = 2, 3   # groups a group comparison needs at least, each with this many members at least
 ASKED_BOOST = 1.0             # added to the score of a finding the question's words name, so it is shown first
+BELOW_MIN, BELOW_NAMES = 8, 5   # members a "which ones are under the line" finding needs at least; the lowest it names in its title
+MAX_BLOCKS = 5                # data blocks a page holds at most (the picks' own sections and the extra parts; not the numbers, thesis or notes)
+LABEL_ALL_MAX = 20            # a strip of more points than this names only the lead finding's members (the rest unlabelled)
+LEAD_MAX = 12                 # names a strip takes at most (dot_strip's LEAD_MAX)
+LABEL_GAP = 0.08              # two names in one strip row stand at least this share of the strip's span apart
+# What a block can show, its "shape" (each part declares shows: [{measure, when, shape}], Req.shows): two blocks that share an
+# entry answer one question, and a page keeps the first (place_leaves, same_question). No chart is named here: a leaf's part
+# says what it shows, the comparison reads only these declarations.
+SHAPES = {"rank": "every member's value at one year, in order (who is high, who is low, who is under a line)",
+          "change": "every member's value at two years: who rose, who fell",
+          "rank_change": "every place's rank at two years: who overtook whom",
+          "series": "each member's line over the years",
+          "map": "the members' values at one year by where they lie",
+          "ends": "the highest member over the lowest at one year",
+          "path": "the whole's line carried on to the target year", "need": "the pace the target needs against the past pace",
+          "chain": "companion series around the year they moved most", "pace": "the members' mean pace before and after a split",
+          "pace_members": "the members whose pace changed most", "group_means": "each group's mean against every member's",
+          "within_groups": "the members by group: the spread inside each group"}
 
 
 class Refused(Exception):
@@ -322,6 +346,14 @@ class Req:
         q.moved = [x for x in (g.get("moved") or []) if isinstance(x, dict) and x.get("code") and x.get("from_zh") and x.get("to_zh")]
         q.events = [x for x in (r.get("events") or []) if isinstance(x, dict) and x.get("name_zh") and x.get("from") and x.get("to")]
         q.question = r.get("question") if isinstance(r.get("question"), str) else ""
+        # the measure a block shows: the main table at its fixed dimensions (what "the same measure" means in shows)
+        q.measure = q.table + "".join(f"|{k}={v}" for k, v in sorted(q.fixed.items()))
+
+    def shows(q, when, shape):
+        """One entry of what a block shows (a part's "shows"): the measure, the year or the span ("y0-y1") it reads, and the shape
+        of its answer (SHAPES). Two blocks with one entry in common answer one question (same_question)."""
+        if shape not in SHAPES: raise Refused(f"findings: {shape!r} is no shape a block shows")
+        return {"measure": q.measure, "when": str(when), "shape": shape}
 
     def asked(q, angle):
         """The first of the angle's question words (words.zh.json story.ask.<angle>, "|" between them) the question holds, or None."""
@@ -434,7 +466,7 @@ def angle_path(q):
             f[key] = {"op": "minus", "a": "goal", "b": run, "fmt": q.change}
             anns.append(note(key, f"story.note.path.{key}"))
     sturdy = clamp(len(ys) / 15)
-    return {"angle": "path", "layer": "target_path", "kicker": T("story.path.kicker"), "title": title, "text": text, "facts": f, "data": data,
+    return {"angle": "path", "shows": [q.shows(f"{first}-{gy}", "path")], "about": [], "layer": "target_path", "kicker": T("story.path.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:p_best", "head": T("story.path.claim")}, "notes": ["scenario"], "last": "now",
             "anns": anns,
             "score": round(size * surprise * sturdy, 4),
@@ -477,7 +509,7 @@ def angle_need(q):
     size = clamp((ratio - 1) / 3)
     surprise = 1.0 if need > best else 0.6
     sturdy = clamp(len(ys) / 15)
-    return {"angle": "need", "layer": "gap_axis", "kicker": T("story.need.kicker"), "title": title, "text": text, "facts": f, "data": data,
+    return {"angle": "need", "shows": [q.shows(last, "need")], "about": [], "layer": "gap_axis", "kicker": T("story.need.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:need_x", "head": T("story.need.claim")}, "notes": ["scenario"], "last": "now",
             "anns": [note("recent", "story.note.need.recent"), note("best", "story.note.need.best", y="best")],
             "score": round(size * surprise * sturdy, 4),
@@ -533,7 +565,7 @@ def angle_spread(q):
     surprise = 0.9 if not caught else 0.5
     sturdy = clamp(len(q.panel) / 20) * clamp((int(y1) - int(y0)) / 10)
     key = "lowg" if caught else "topg"
-    return {"angle": "spread", "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
+    return {"angle": "spread", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [up[0], down[0]], "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
             "anns": [note(f"d_{up[0].lower()}", "story.note.spread.rise", c=up[0]), note(f"d_{down[0].lower()}", "story.note.spread.fall", c=down[0])],
             "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",
             "score": round(size * surprise * sturdy, 4),
@@ -561,7 +593,7 @@ def angle_ends(q):
     size = clamp(math.log(ratio) / math.log(5))
     surprise = 0.5
     sturdy = clamp(len(at) / 20)
-    return with_part({"angle": "ends", "layer": "pair_bars", "kicker": T("story.ends.kicker"), "title": title, "text": text, "facts": f, "data": data,
+    return with_part({"angle": "ends", "shows": [q.shows(y1, "ends")], "about": [hi, lo], "layer": "pair_bars", "kicker": T("story.ends.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:hi_lo", "head": T("story.ends.claim", a=hi, b=lo)}, "notes": [], "members": True, "last": "hi",
             "anns": [note("d_hl", "story.note.ends.diff", a=hi, b=lo)],
             "score": round(size * surprise * sturdy, 4),
@@ -652,7 +684,7 @@ def angle_chain(q):
     share = moved / len(items)
     surprise = clamp(0.3 + 0.7 * share)
     sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
-    return {"angle": "chain", "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
+    return {"angle": "chain", "shows": [q.shows(band, "chain")], "about": [], "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
             "data": data, "claim": {"num": "fact:m_step", "head": T("story.chain.claim")}, "notes": [], "last": "c1_last",
             "anns": [{"num": "fact:c1_last", "text": SW(items[0]["words"]["measure"]) + ST("story.note.chain.last")},
                      {"num": f"fact:c{len(items)}_last", "text": SW(items[-1]["words"]["measure"]) + ST("story.note.chain.last")}],
@@ -707,7 +739,7 @@ def angle_rank(q):
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "share_head": head, "name_kind": "place", "rows": rows,
             "highlight": q.whole if q.wseries else hi,   # the code of the row the page draws in the accent (story.rank_style reads it)
             "omit": ST("story.rank.omit")}   # a long rank folds to its ends and the highlighted row (the leaf's fold_over), this line where rows are left out
-    return with_part({"angle": "rank", "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
+    return with_part({"angle": "rank", "shows": [q.shows(y, "rank")], "about": [hi, lo], "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": claim, "notes": [], "members": True, "last": key(hi),
             "anns": ([note(f"g_{hi.lower()}", "story.note.rank.hi", hi=hi, w=q.whole, rw=key(q.whole)), note(f"g_{lo.lower()}", "story.note.rank.lo", lo=lo, w=q.whole, rw=key(q.whole))]
                      if q.wseries else [note(f"g_{lo.lower()}", "story.note.rank.lo_top", lo=lo, hi=hi, rhi=key(hi))]),
@@ -770,7 +802,7 @@ def angle_members(q):
     sturdy = clamp(len(ys) / 10) * clamp(len(members) / 8)
     big_items = [{"fact": hot, "label": {"word": "story.big.now", "name": hi, "year": {"src": f"fact:{hot}.t.y"}}},
                  {"fact": "dhi", "label": {"word": "story.big.change_of", "name": hi}}, {"fact": "dlo", "label": {"word": "story.big.change_of", "name": lo}}]
-    return {"angle": "members", "layer": "small_multiples", "big": big_items, "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
+    return {"angle": "members", "shows": [q.shows(f"{y0}-{y1}", "series")], "about": [hi, lo], "layer": "small_multiples", "big": big_items, "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
             "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
             "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
             "anns": [note(hot, "story.note.members.last", hi=hi), note(key(lo), "story.note.members.last_lo", lo=lo)],
@@ -809,7 +841,7 @@ def angle_map(q):
     big_items = [{"fact": key(hi), "label": {"word": "story.big.hi", "name": hi, "year": {"src": f"fact:{key(hi)}.t.y"}}},
                  {"fact": key(lo), "label": {"word": "story.big.lo", "name": lo, "year": {"src": f"fact:{key(lo)}.t.y"}}},
                  {"fact": "mrange", "label": {"word": "story.big.range"}}]
-    return {"angle": "map", "layer": "member_map", "big": big_items, "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
+    return {"angle": "map", "shows": [q.shows(y, "map")], "about": [hi, lo], "layer": "member_map", "big": big_items, "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
             "text": T("story.map.text", y1=key(hi)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key(hi)}", "head": T("story.map.claim")}, "notes": [], "members": True, "last": key(hi),
             "anns": [note("mrange", "story.note.map.range", hi=hi, lo=lo), note(key(second), "story.note.map.second", c=second)],
@@ -878,7 +910,7 @@ def angle_movers(q):
     big_items = [{"fact": key0(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key0(big)}.t.y"}}},
                  {"fact": key1(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key1(big)}.t.y"}}},
                  {"fact": "mv_dbig", "label": {"word": "story.big.moved", "name": big}}]
-    return with_part({"angle": "movers", "layer": "change_dots", "big": big_items, "kicker": T("story.mv.kicker"),
+    return with_part({"angle": "movers", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [big, other], "layer": "change_dots", "big": big_items, "kicker": T("story.mv.kicker"),
             "title": T("story.mv.title", big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
             "text": T("story.mv.text_ref" if whole else "story.mv.text", w=whole, y0=key0(big), y1=key1(big)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key1(big)}", "head": T("story.mv.claim", big=big)}, "notes": [], "members": True, "last": key1(big),
@@ -928,7 +960,7 @@ def angle_overtake(q):
     sturdy = clamp(len(pool) / 16) * clamp((int(y1) - int(y0)) / 8)
     big_items = [{"fact": "ot_rise", "label": {"word": "story.big.ot_rise", "name": up}}, {"fact": "ot_fall", "label": {"word": "story.big.ot_fall", "name": dn}},
                  {"fact": kb(up), "label": {"word": "story.big.rank_at", "name": up, "year": {"src": "fact:ot_y1.t.y"}}}]
-    return with_part({"angle": "overtake", "layer": "rank_slope", "kicker": T("story.ot.kicker"), "big": big_items,
+    return with_part({"angle": "overtake", "shows": [q.shows(f"{y0}-{y1}", "rank_change")], "about": [up, dn, over], "layer": "rank_slope", "kicker": T("story.ot.kicker"), "big": big_items,
             "title": T("story.ot.title", up=up, over=over, y0="ot_y0", y1="ot_y1", u0=ka(up), u1=kb(up)),
             "text": T("story.ot.text_ref" if q.wseries else "story.ot.text", w=q.whole, y0="ot_y0", y1="ot_y1"), "facts": f, "data": data,
             "claim": {"num": "fact:ot_rise", "head": T("story.ot.claim", up=up)}, "notes": [], "members": True, "last": "ot_y1",
@@ -973,7 +1005,7 @@ def angle_tiles(q):
     big_items = [{"fact": key(hi), "label": {"word": "story.big.hi", "name": hi, "year": {"src": f"fact:{key(hi)}.t.y"}}},
                  {"fact": key(lo), "label": {"word": "story.big.lo", "name": lo, "year": {"src": f"fact:{key(lo)}.t.y"}}},
                  {"fact": "trange", "label": {"word": "story.big.range"}}]
-    return {"angle": "tiles", "layer": "tile_map", "big": big_items, "kicker": T("story.tl.kicker"), "title": T(tk, hi=hi, lo=lo, thi=key(hi), tlo=key(lo), y1=key(hi)),
+    return {"angle": "tiles", "shows": [q.shows(y, "map")], "about": [hi, lo], "layer": "tile_map", "big": big_items, "kicker": T("story.tl.kicker"), "title": T(tk, hi=hi, lo=lo, thi=key(hi), tlo=key(lo), y1=key(hi)),
             "text": T("story.tl.text", y1=key(hi)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key(hi)}", "head": T("story.tl.claim")}, "notes": [], "members": True, "last": key(hi),
             "anns": anns, "score": round(size * surprise * sturdy * (0.8 + 0.4 * crowd), 4),
@@ -1004,7 +1036,7 @@ def strip_two(q, y0, y1, kicker_key, lead):
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "refs": refs, "footnote": ST("story.risk.simple_mean")}
     if lead: data["lead"] = [c for c in lead if c in members]
     if not tr: data["legend"] = "dot.legend_plain"   # the page's legend line names no target the strip does not draw (story.py)
-    return f, {"layer": "dot_strip", "data": data, "style": {"dot_strip": {"periods": 2, "lead_set": "given" if lead else "both"}}, "kicker": T(kicker_key),
+    return f, {"layer": "dot_strip", "shows": [q.shows(f"{y0}-{y1}", "change"), q.shows(y1, "rank")], "data": data, "style": {"dot_strip": {"periods": 2, "lead_set": "given" if lead else "both"}}, "kicker": T(kicker_key),
                "title": T("story.strip.title", y1=k1, m="ds_mean"), "text": T("story.strip.text", y0=k0, y1=k1)}
 
 
@@ -1034,7 +1066,7 @@ def grid_part(q, y, members):
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)], "rule": rule,
             "key": key}
-    return f, {"layer": "unit_grid", "data": data, "style": {"unit_grid": {"sort": "flag_first"}}, "kicker": T("story.grid.kicker"),
+    return f, {"layer": "unit_grid", "shows": [q.shows(y, "rank")], "data": data, "style": {"unit_grid": {"sort": "flag_first"}}, "kicker": T("story.grid.kicker"),
                "title": title, "text": T("story.grid.text")}
 
 
@@ -1135,7 +1167,7 @@ def angle_pace(q):
     if rows_ok:   # the members whose pace changed most each way, before -> after (a section of its own beside the pair)
         top = max(fast, key=lambda c: (dch[c], c)) if fast else None
         k = top.lower() if top and f"pa_{top.lower()}" in f else None
-        rows_part = {"layer": "winners_losers", "data": rows_data, "kicker": T("story.pace.rows_kicker"),
+        rows_part = {"layer": "winners_losers", "shows": [q.shows(f"{y0}-{y1}", "pace_members")], "data": rows_data, "kicker": T("story.pace.rows_kicker"),
                      "title": T("story.pace.rows_title", c=top, a=f"pa_{k}", b=f"pb_{k}") if k else T("story.pace.rows_title_mean"),
                      "text": T("story.pace.rows_text")}
     if pair_ok:   # the two paces as two glyphs whose area is the pace (glyph_row: a derived fact's bare number is its value)
@@ -1143,9 +1175,12 @@ def angle_pace(q):
         layer, data = "glyph_row", {"title": ST("story.pace.pair_title"), "unit": SW(unit), "accent": "after", "footnote": ST("story.risk.simple_mean"),
                                     "items": [{"code": "before", "name": ST("story.pace.pair_before"), "value": "fact:pc_a.n", "text": "fact:pc_a.n"},
                                               {"code": "after", "name": ST("story.pace.pair_after"), "value": "fact:pc_b.n", "text": "fact:pc_b.n"}]}
-        more, fallback = ([rows_part] if rows_part else []), ({"layer": "winners_losers", "data": rows_data, "anns": anns} if rows_ok else None)
+        more, fallback = ([rows_part] if rows_part else []), ({"layer": "winners_losers", "data": rows_data, "anns": anns,
+                                                              "shows": [q.shows(f"{y0}-{y1}", "pace"), q.shows(f"{y0}-{y1}", "pace_members")]} if rows_ok else None)
+        shows = [q.shows(f"{y0}-{y1}", "pace")]
     else:
         layer, data, more, fallback = "winners_losers", rows_data, [], None
+        shows = [q.shows(f"{y0}-{y1}", "pace"), q.shows(f"{y0}-{y1}", "pace_members")]
     # hook (era_bands, with the events registry): the windows' years are the facts pc_y0, pc_from, pc_to and pc_y1
     big = [{"fact": "pc_a", "label": {"word": "story.big.pace_a", "year": {"src": "fact:pc_from.t.y"}}},
            {"fact": "pc_b", "label": {"word": "story.big.pace_b", "year": {"src": "fact:pc_to.t.y"}}},
@@ -1156,7 +1191,7 @@ def angle_pace(q):
     sturdy = clamp(len(ys) / 15) * clamp(len(pool) / 12)
     asked = q.asked("pace")
     score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
-    return {"angle": "pace", "layer": layer, "kicker": T("story.pace.kicker"), "title": title, "text": text, "facts": f,
+    return {"angle": "pace", "shows": shows, "about": [top] if rows_part and top else [], "layer": layer, "kicker": T("story.pace.kicker"), "title": title, "text": text, "facts": f,
             "data": data, "more": more, "fallback": fallback, "big": big, "era": {"from": "pc_from", "to": "pc_to"}, "claim": {"num": "fact:pc_b", "head": T("story.pace.claim_ev" if ev else "story.pace.claim", **bind)},
             "notes": [], "risks": risks, "members": True, "last": "pc_y1",
             "anns": anns,
@@ -1225,9 +1260,9 @@ def angle_groups(q):
     if tr:
         f.update(tr[0]); strip["refs"].append({**tr[1], "text": "fact:goal.n"})
     else: strip["legend"] = "dot.legend_plain"
-    strip_part = {"layer": "dot_strip", "data": strip, "style": {"dot_strip": {"lead_set": "given"}}, "kicker": T("story.groups.strip_kicker"), "title": T("story.groups.strip_title", **bind),
+    strip_part = {"layer": "dot_strip", "shows": [q.shows(y, "within_groups")], "data": strip, "style": {"dot_strip": {"lead_set": "given"}}, "kicker": T("story.groups.strip_kicker"), "title": T("story.groups.strip_title", **bind),
                   "text": T("story.groups.strip_text")}
-    fallback = {"layer": "winners_losers", "data": rows_data, "anns": anns} if rows_ok else None
+    fallback = {"layer": "winners_losers", "data": rows_data, "anns": anns, "shows": [q.shows(y, "group_means")]} if rows_ok else None
     if glyph_ok: layer, data, more = "glyph_row", glyph, [strip_part]
     elif rows_ok: layer, data, more, fallback = "winners_losers", rows_data, [strip_part], None
     else: layer, data, more = "dot_strip", strip, []
@@ -1245,7 +1280,8 @@ def angle_groups(q):
     sturdy = clamp(len(kept) / 4) * clamp(len(pool) / 20)
     asked = q.asked("groups")
     score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
-    return {"angle": "groups", "layer": layer, "kicker": T("story.groups.kicker"), "title": T("story.groups.title", **bind),
+    shows = [q.shows(y, "within_groups" if layer == "dot_strip" else "group_means")]
+    return {"angle": "groups", "shows": shows, "about": [whi, wlo], "layer": layer, "kicker": T("story.groups.kicker"), "title": T("story.groups.title", **bind),
             "text": T("story.groups.text", **bind), "facts": f, "data": data, "more": more, "fallback": fallback, "big": big, "style": style,
             "claim": {"num": "fact:gp_gap", "head": T("story.groups.claim", **bind)}, "notes": [], "risks": risks, "members": True, "last": "gp_y",
             "anns": anns,
@@ -1255,7 +1291,65 @@ def angle_groups(q):
             "summary": "the members compared by named region groups: each group's average, the gap between the highest and the lowest group, and the spread inside a group"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_movers, angle_overtake, angle_tiles, angle_chain, angle_pace, angle_groups]
+def angle_below(q):
+    """Which members are under the line: the members whose value at the last year they share is under the registered target
+    (when some are and some are not), else under the whole's value that year, else under the members' simple mean, named
+    lowest first (BELOW_NAMES at most in the title) and counted by layer 1 (op count, below: each member's own value under the
+    line, recomputed from the rows), drawn as a flag grid lit by the same line (the leaf rechecks each glyph against the line as
+    printed). The finding a "which ones" question asks for (words.zh.json story.ask.below): ASKED_BOOST when the question holds
+    one of its words. Needs BELOW_MIN members, each with a value that year, and no member between the line and the line as printed."""
+    ends = common_ends(q)
+    if not ends: return None, "fewer than two members with two common years"
+    y = ends[1]
+    at = {c: s_[y][0] for c, s_ in q.panel.items() if y in s_}
+    if len(at) < BELOW_MIN: return None, f"fewer than {BELOW_MIN} members at the last year they share"
+    if set(q.members) - set(at): return None, "a member has no value at the last year the others share (layer 1 could not count it)"
+    fd = q.defs.get(q.fmts["value"], {})
+    scale, dec = float(fd.get("scale", 1)), int(fd.get("dec", 0))
+    under = lambda t: sorted(c for c, v in at.items() if v < t)
+    f, line, g, tr = {}, None, q.goal(), q.target_ref()
+    if g and tr and 0 < len(under(g[0])) < len(at):
+        f.update(tr[0]); line = ("goal", g[0], "goal", (q.target or {}).get("filter", {}).get(q.by))
+    elif q.whole and y in q.wseries and 0 < len(under(q.wseries[y][0])) < len(at):
+        f["bl_t"] = q.value(q.whole, y); line = ("whole", q.wseries[y][0], "bl_t", q.whole)
+    elif 0 < len(under(sum(at.values()) / len(at))) < len(at):
+        f["bl_t"] = q.mean(sorted(at), y); line = ("mean", sum(at.values()) / len(at), "bl_t", None)
+    if line is None: return None, "every member holds the same value"
+    kind, t, tkey, w = line
+    lit = under(t)
+    # layer 1 counts against the raw line, the grid lights against the line as printed: the two must light the same members
+    shown = round(t * scale, dec) / scale
+    if under(shown) != lit or any(abs(v - t) <= 1e-9 * max(abs(t), 1.0) for v in at.values()):
+        return None, "a member stands between the line and the line as printed"
+    order = sorted(lit, key=lambda c: (at[c], c))
+    lo, names = order[0], order[:BELOW_NAMES]
+    f["bl_n"] = {"op": "count", "a": {"table": q.table, "filter": dict(q.fixed)}, "by": q.by, "time": y, "below": t, "fmt": "n"}
+    f["bl_lo"] = q.value(lo, y)
+    title = T(f"story.below.title_{kind}", names=names, w=w, t=tkey)
+    if len(order) > len(names): title.append(("w", WD.WORDS["story.below.more"]))
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "mode": "flag", "scale": scale,
+            "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)],
+            "rule": {"op": "lt", "ref": f"fact:{tkey}.n"}, "key": {"lit": ST("story.below.lit"), "unlit": ST("story.grid.unlit")}}
+    line_note = {"goal": ("story.ref.target", {"w": w}), "whole": ("story.below.note_whole", {"w": w}), "mean": ("story.ref.mean", {})}[kind]
+    big = [{"fact": "bl_n", "label": {"word": "story.big.below_n", "year": {"src": "fact:bl_lo.t.y"}}},
+           {"fact": tkey, "label": {"word": f"story.big.below_{kind}", **({"name": w} if kind == "whole" else {}), **({"year": {"src": "fact:goal.t.y"}} if kind == "goal" else {})}},
+           {"fact": "bl_lo", "label": {"word": "story.big.lo", "name": lo, "year": {"src": "fact:bl_lo.t.y"}}}]
+    share = len(lit) / len(at)
+    size = clamp(1 - abs(share - 0.5) * 2 + 0.2)   # a line that splits the field reads as news; one or all under it does not
+    surprise = 0.5
+    sturdy = clamp(len(at) / 20)
+    asked = q.asked("below")
+    score = size * surprise * sturdy * 0.5 + (ASKED_BOOST if asked else 0)
+    return {"angle": "below", "shows": [q.shows(y, "rank")], "about": names, "layer": "unit_grid", "big": big,
+            "kicker": T("story.below.kicker"), "title": title, "text": T("story.below.text", lo=lo), "facts": f, "data": data,
+            "style": {"unit_grid": {"sort": "flag_first"}}, "claim": {"num": "fact:bl_n", "head": T(f"story.below.claim_{kind}", w=w)},
+            "notes": [], "members": True, "last": "bl_lo", "anns": [{"num": f"fact:{tkey}", "text": ST(line_note[0], **line_note[1])}],
+            "score": round(score, 4),
+            "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "line": kind, "under": len(lit), "asked": asked},
+            "summary": "which members are under the line (the target, the whole or the members' average): their names and how many"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_movers, angle_overtake, angle_tiles, angle_chain, angle_pace, angle_groups, angle_below]
 
 
 # ---------------------------------------------------------------- the header's big numbers
@@ -1370,10 +1464,10 @@ def candidates(r):
 #   lagging   who is dragging: a spread, rank, ends, members, movers, overtake, map or tiles finding leads; the other comparisons; the whole last
 ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
           "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging",
-          "pace": "happened", "groups": "lagging"}
-ARC_ORDER = {"happened": ["chain", "pace", "spread", "rank", "members", "ends", "movers", "overtake", "groups", "map", "tiles", "path", "need"],
-             "in_time": ["need", "path", "pace", "rank", "spread", "groups", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
-             "lagging": ["groups", "spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "pace", "chain", "need", "path"]}
+          "pace": "happened", "groups": "lagging", "below": "lagging"}
+ARC_ORDER = {"happened": ["chain", "pace", "spread", "rank", "members", "ends", "movers", "overtake", "groups", "below", "map", "tiles", "path", "need"],
+             "in_time": ["need", "path", "pace", "below", "rank", "spread", "groups", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
+             "lagging": ["below", "groups", "spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "pace", "chain", "need", "path"]}
 # the findings an arc needs besides its lead (any one of them): the outlook, who lags, the comparison among the members
 ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "movers", "overtake", "map", "tiles", "groups"),
              "lagging": ("spread", "rank", "movers", "overtake", "groups")}
@@ -1381,29 +1475,60 @@ MAX_PICKS = 4
 OUTLOOK = ("path", "need")   # the findings an arc may end on: extra parts stand before them
 
 
+def same_question(a, b):
+    """Whether two parts answer one question: an entry of the one's "shows" (measure, year or span, shape) is the other's."""
+    key = lambda e: (e.get("measure"), e.get("when"), e.get("shape"))
+    return bool({key(e) for e in a or []} & {key(e) for e in b or []})
+
+
+def blank(part):
+    """Whether a part would draw an empty picture: a grid of flags none of which is lit (nothing to read in it)."""
+    d = part.get("data") or {}
+    return d.get("mode") == "flag" and isinstance(d.get("members"), list) and not any(m.get("flag") for m in d["members"])
+
+
+def spaced(q, rows, about):
+    """The strip rows the lead finding is about that can be named: in its order, LEAD_MAX at most, each at least LABEL_GAP of the
+    strip's span from a named one in the same row (a group's, else the strip's), so the names find their tiers."""
+    val = {r_["src"]: number(r_.get("value")) for r_ in q.rows if r_.get("src")}
+    at = {r_["code"]: (val.get(r_.get("a")), r_.get("group")) for r_ in rows}
+    vs = [v for v, _ in at.values() if v is not None]
+    gap = LABEL_GAP * (max(vs) - min(vs)) if vs else 0.0
+    out = []
+    for c in about:
+        if c not in at or at[c][0] is None or len(out) >= LEAD_MAX: continue
+        if all(at[k][1] != at[c][1] or abs(at[k][0] - at[c][0]) >= gap for k in out): out.append(c)
+    return out
+
+
 def place_leaves(picks, by_id, cands):
-    """(picks, {id: (main part, [extra parts])}, why): a leaf stands once on a page. Each pick in order takes its own leaf, else
-    its fallback leaf, else it goes (the why names it); then, in the same order, each pick's extra parts whose leaf is still free.
-    With fewer than two picks left, the best candidate whose leaf is free is added."""
-    used, out, mains, gone = set(), [], {}, []
-    opts = lambda c: [{"layer": c["layer"], "data": c["data"], "anns": c.get("anns"), "style": c.get("style")}] + ([c["fallback"]] if c.get("fallback") else [])
+    """(picks, {id: (main part, [extra parts])}, why): a leaf stands once on a page, a question is answered once, and a page holds
+    MAX_BLOCKS data blocks at most. Each pick in order takes its own leaf, else its fallback leaf, else it goes (the why names it):
+    a part goes when its leaf is taken, when it shows what a part placed before it shows (same_question: so the lead's block is the
+    one kept), or when it would draw nothing (blank). With fewer than two picks left, the best candidate with a part that stands
+    is added. Then, in the same order (the lead's first), each pick's extra parts that stand, while the page has room."""
+    used, shown, out, mains, gone = set(), [], [], {}, []
+    opts = lambda c: ([{"layer": c["layer"], "data": c["data"], "anns": c.get("anns"), "style": c.get("style"), "shows": c.get("shows")}]
+                      + ([{**c["fallback"], "shows": c["fallback"].get("shows", c.get("shows"))}] if c.get("fallback") else []))
+    stands = lambda o: o["layer"] not in used and not blank(o) and not any(same_question(o.get("shows"), s_) for s_ in shown)
+    def take(o): used.add(o["layer"]); shown.append(o.get("shows"))
     for p in picks:
-        m = next((o for o in opts(by_id[p]) if o["layer"] not in used), None)
+        m = next((o for o in opts(by_id[p]) if stands(o)), None)
         if m is None: gone.append(p); continue
-        used.add(m["layer"]); out.append(p); mains[p] = m
+        take(m); out.append(p); mains[p] = m
     if len(out) < 2:
-        free = [c for c in cands if c["id"] not in out and any(o["layer"] not in used for o in opts(c))]
+        free = [c for c in cands if c["id"] not in out and any(stands(o) for o in opts(c))]
         if not free: raise Refused("findings: the picks draw one leaf and no other finding stands")
         add = max(free, key=lambda c: c["score"])
-        m = next(o for o in opts(add) if o["layer"] not in used)
-        used.add(m["layer"]); out.append(add["id"]); mains[add["id"]] = m
-    placed = {}
+        m = next(o for o in opts(add) if stands(o))
+        take(m); out.append(add["id"]); mains[add["id"]] = m
+    placed, room = {}, MAX_BLOCKS - len(out)
     for p in out:
         extra = []
         for part in by_id[p].get("more") or []:
-            if part["layer"] not in used: used.add(part["layer"]); extra.append(part)
+            if room > 0 and stands(part): take(part); extra.append(part); room -= 1
         placed[p] = (mains[p], extra)
-    return out, placed, (f"{'|'.join(gone)} dropped: its leaf is a pick's before it" if gone else None)
+    return out, placed, (f"{'|'.join(gone)} dropped: its leaf or its question is a pick's before it" if gone else None)
 
 
 def plan_arc(picks, cands):
@@ -1469,6 +1594,12 @@ def compose(r):
             for leaf, kv in (m.get("style") or {}).items(): style[leaf] = {**style.get(leaf, {}), **kv}
         for m in extra: leaves[m["layer"]] = {**m["data"], "notes": m["anns"]} if m.get("anns") else m["data"]
     first = chosen[0]
+    # a strip of more than LABEL_ALL_MAX points names only the members the lead finding is about (its "about"), the rest unlabelled:
+    # any leaf whose knobs take a lead set (the strip's lead_set) and whose rows are that many
+    for leaf, d in list(leaves.items()):
+        if "lead_set" in style.get(leaf, {}) and len(d.get("rows") or []) > LABEL_ALL_MAX:
+            leaves[leaf] = {**d, "lead": spaced(q, d["rows"], first.get("about") or [])}
+            style[leaf] = {**style[leaf], "lead_set": "given", "levels": 8}   # the named ones may stand close: every tier the knob allows
     # the page's headline is the lead finding's conclusion and its dek the lead's text, each printed once: the thesis block holds
     # the claims alone, and the lead's own section is headed by its claim (the words, then its number) with no text of its own
     leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
