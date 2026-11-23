@@ -549,6 +549,20 @@ class Findings(unittest.TestCase):
                 notes = composed["leaves"]["risk_notes"]["items"]
                 self.assertTrue(notes and "情景" not in json.dumps(notes, ensure_ascii=False), notes)
 
+    def test_the_ends_pair_draws_beside_the_rank_with_a_short_or_a_long_measure_name(self):
+        """q4 11-23: the ends finding's row and both charts' heads are named by the measure's whole name; beside the rank (a pair,
+        half the page wide) a World Bank indicator's reviewed name left the pair bars no track and the heads no room. The page now
+        draws on both shapes: short names keep the rank and the ends paired; a name whose head runs past half the page takes
+        each picture wider (story.plan), and the pair bars' row name stands over its tracks (pair_bars)."""
+        long = "不含土地利用、土地利用变化和林业的人均二氧化碳排放量（吨二氧化碳当量／人）"
+        eu, eu_names = eu_request()
+        wb, wb_names = wb12_request()
+        for req, names, paired in ((eu, eu_names, True), (wb, wb_names, True), ({**wb, "words": {**wb["words"], "measure": long}}, wb_names, False)):
+            composed, facts, bodies, page_html = self._page(req, names, ["rank", "ends", "members"])
+            self.assertEqual([s["layer"] for s in composed["sections"]][2:4], ["rankbar", "pair_bars"])
+            self.assertEqual('data-layout="pair"' in page_html, paired)
+            self.assertIn("pair_bars", bodies)
+
     def test_the_arc_takes_the_finding_it_needs_or_says_none_stands(self):
         req, names = self._arc_request()
         req["points"] = self._points(EU_MEMBERS)

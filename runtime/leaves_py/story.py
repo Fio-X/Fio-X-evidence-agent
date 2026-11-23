@@ -84,6 +84,8 @@ PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side",
          "winners_losers": "side", "pair_bars": "pair", "rankbar": "pair"}
 
 
+# The chart name's size (px) of the leaves a section draws with a head (their title_size knob's default; FIXED sets none).
+HEAD_TITLE_PX = 16
 # The narrowest picture (px) each leaf draws without refusing; a place that would be narrower falls back (pair to side, side to stack).
 NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "pair_bars": 500, "rankbar": 480}
 
@@ -100,10 +102,19 @@ def plan(spec):
     secs = sections(spec); kn = layout_knobs(spec["hero"])
     text_w = round(PAGE_W * kn["share"]); side_w = PAGE_W - text_w - kn["gutter"]; half_w = (PAGE_W - kn["gutter"]) // 2
     rows, width, i = [], {}, 0
+    leaves = spec["hero"].get("leaves") or {}
+    def need(layer):
+        """The leaf's narrowest picture (NEEDS), or wider when its head (the chart name in bold, the unit beside it, as wbkit.head
+        lays them from x 8) needs more: a measure's whole reviewed name may run past half the page (q4 11-23)."""
+        d = leaves.get(layer) or {}
+        if not (isinstance(d, dict) and d.get("title") and d.get("unit")): return NEEDS.get(layer, 0)
+        size = FIXED.get(layer, {}).get("size", 13)
+        head = 8 + K.tw(K.plain(d["title"], "title"), HEAD_TITLE_PX) + 8 + K.tw(K.plain(d["unit"], "unit"), size) + 8
+        return max(NEEDS.get(layer, 0), head)
     def mode(s):
         m = "stack" if kn["layout"] == "stack" else PLACE.get(s[2], "stack")
-        if m == "pair" and half_w < NEEDS.get(s[2], 0): m = "side"
-        if m == "side" and side_w < NEEDS.get(s[2], 0): m = "stack"
+        if m == "pair" and half_w < need(s[2]): m = "side"
+        if m == "side" and side_w < need(s[2]): m = "stack"
         return m
     while i < len(secs):
         s = secs[i]
@@ -112,7 +123,7 @@ def plan(spec):
         nxt = secs[i + 1] if i + 1 < len(secs) else None
         if m == "pair" and kn["pair"] and nxt is not None and nxt[4] is not None and mode(nxt) == "pair":
             rows.append(("pair", [s[0], nxt[0]])); width[s[0]] = width[nxt[0]] = half_w; i += 2; continue
-        if m == "pair": m = "side" if side_w >= NEEDS.get(s[2], 0) else "stack"
+        if m == "pair": m = "side" if side_w >= need(s[2]) else "stack"
         rows.append((m, [s[0]])); width[s[0]] = side_w if m == "side" else PAGE_W; i += 1
     return width, rows, dict(kn, text_w=text_w)
 
