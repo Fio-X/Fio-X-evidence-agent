@@ -1473,6 +1473,36 @@ class PaceAndGroups(unittest.TestCase):
             self.assertTrue(all(c["why"].get("asked") is None for c in cands if c["id"] in ("pace", "groups")))
             self.assertEqual(len(cands), len({c["id"] for c in cands}))
 
+    def test_reference_labels_come_from_the_words_and_the_target_row(self):
+        """A mean reference reads 成员国简单平均, a target one '<place> <year> 年整体目标' from the request's target row (EU27_2020 at
+        2030 here); a World Bank shape with no target has no target reference."""
+        def say(segs, rows):
+            led = {r["src"]: r["text"] for r in rows if "text" in r}
+            out = []
+            for s_ in segs:
+                if "w" in s_: out.append(s_["w"])
+                elif "src" in s_: out.append(led[s_["src"]])
+                elif "word" in s_: out.append(FN.WD.WORDS[s_["word"]])
+                else: out.append(led[K.name_row(s_["name"], "place")])
+            return "".join(out)
+        req, names = eu27_request()
+        req = {**req, "groups": m49_groups([c for c in req["main"]["members"]])}
+        for picks in (["groups", "rank"], ["pace", "rank"]):
+            if picks[0] == "pace": req = {**req, "rows": [r for r in req["rows"] if r["dims"].get("geo") != "EU27_2020" or r["table"] == "targets"]}
+            composed = FN.compose({**req, "picks": picks})
+            rows, _ = ledger(req, composed, names)
+            refs = {r["kind"]: say(r["label"], rows) for r in composed["leaves"]["winners_losers"]["refs"]}
+            self.assertEqual(refs["mean"], "成员国简单平均", picks)
+            if picks[0] == "groups": self.assertEqual(refs["target"], "欧盟 2030 年整体目标")
+            else: self.assertNotIn("target", refs)   # a pace is no level: the target is no reference of it
+        for mk in (wb24_request, wb12_request):
+            wreq, wnames = mk()
+            wreq = {**wreq, "groups": m49_groups(sorted({r["dims"]["country"] for r in wreq["rows"]}))}
+            c, _ = next(((x, None) for x in FN.candidates(wreq)[1] if x["id"] == "groups"), (None, None))
+            if c is None: continue
+            kinds = [r["kind"] for r in c["data"]["refs"]]
+            self.assertEqual(kinds, ["mean"], mk.__name__)
+
     def test_two_picks_on_one_leaf_keep_the_first_and_the_arcs(self):
         req, _ = eu27_plain()
         got = FN.compose({**req, "picks": ["groups", "pace", "rank"]})

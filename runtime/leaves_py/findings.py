@@ -331,6 +331,14 @@ class Req:
         return {"op": "mean", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "within": year, "time": year,
                 "fmt": fmt or q.fmts["value"]}
 
+    def target_ref(q):
+        """({goal: query}, ref) of the registered target as a reference line (dot_strip refs, kind target): its label the
+        target's place name and year in the words' frame (story.ref.target), both from the request's target row; None with none."""
+        g = q.goal()
+        place = (q.target or {}).get("filter", {}).get(q.by) if g else None
+        if not place: return None
+        return {"goal": g[2]}, {"kind": "target", "text": "fact:goal", "label": ST("story.ref.target", w=place)}
+
     def count(q, codes, year):
         """How many of the codes the rows hold at a year (next_facts n)."""
         return {"op": "n", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "by": q.by, "time": year, "fmt": "n"}
@@ -1017,7 +1025,7 @@ def angle_pace(q):
     if a_ == b_: f["pc_mb"] = f["pc_ma"]
     cols = {"up": [], "down": []}
     if printed(q, pa, q.change) != printed(q, pb, q.change):   # the mean's own row, in its column
-        cols["up" if up else "down"].append({"label": SW(WD.WORDS["story.pace.mean_row"]), "a": "fact:pc_a", "b": "fact:pc_b",
+        cols["up" if up else "down"].append({"label": ST("story.ref.mean"), "a": "fact:pc_a", "b": "fact:pc_b",
                                              "change": [{"src": "fact:pc_d"}]})
     for col, cs in (("up", sorted(fast, key=lambda c: (-dch[c], c))), ("down", sorted(slow, key=lambda c: (dch[c], c)))):
         for c in cs:
@@ -1036,8 +1044,10 @@ def angle_pace(q):
     bind = {"ev": ev["name_zh"]} if ev else {}
     title = T(f"story.pace.title_ev_{tone}" if ev else f"story.pace.title_{tone}", **bind)
     text = T(f"story.pace.text_{'fast' if up else 'slow'}" if tone != "plain" else f"story.pace.text_{'up' if up else 'down'}")
+    # the reference a later leaf draws (refs: dot_strip's shape; winners_losers reads none): the members' mean pace after the split,
+    # labelled by the words' table; a target is a level, no pace, so none here
     data = {"up": {"title": ST("story.pace.up"), "rows": cols["up"]}, "down": {"title": ST("story.pace.down"), "rows": cols["down"]},
-            "footnote": ST("story.pace.foot")}
+            "footnote": ST("story.pace.foot"), "refs": [{"kind": "mean", "text": "fact:pc_b", "label": ST("story.ref.mean")}]}
     risks = [ST("story.risk.pace_event", **bind) if ev else ST("story.risk.pace_split"), ST("story.risk.simple_mean")]
     size = clamp(abs(pb - pa) / max(abs(pa), abs(pb), 1e-9))
     surprise = clamp(0.3 + 1.4 * min(len(fast), len(slow)) / len(pool))
@@ -1091,8 +1101,14 @@ def angle_groups(q):
     if not cols["up"] or not cols["down"]: return None, "no group stands apart from the members' mean (one column would be empty)"
     names = {"hi": kept[hi][0], "lo": kept[lo][0], "wide": kept[wide][0]}
     bind = dict(names, ghi=gk(hi), glo=gk(lo), whi=whi, wlo=wlo, vhi="gp_vhi", vlo="gp_vlo")
+    # the references a later leaf draws (refs: dot_strip's shape; winners_losers reads none): the mean of every grouped member and the
+    # registered target when the request holds one, each labelled from the words' table and the request's target row
     data = {"up": {"title": ST("story.groups.up"), "rows": cols["up"]}, "down": {"title": ST("story.groups.down"), "rows": cols["down"]},
-            "footnote": ST("story.groups.foot")}
+            "footnote": ST("story.groups.foot"), "refs": [{"kind": "mean", "text": "fact:gp_all", "label": ST("story.ref.mean")}],
+            "groups": [{"id": gid, "label": SW(kept[gid][0]), "mean": f"fact:{gk(gid)}"} for gid in sorted(kept, key=lambda g: (-gm[g], g))]}
+    tr = q.target_ref()
+    if tr:
+        f.update(tr[0]); data["refs"].append(tr[1])
     risks = [ST("story.risk.simple_mean")]
     risks += [ST("story.risk.groups_moved", c=m["code"], **{"from": m["from_zh"], "to": m["to_zh"]}) for m in q.moved if m["code"] in pool]
     if left: risks.append(ST("story.risk.groups_left", left=sorted(left)))
