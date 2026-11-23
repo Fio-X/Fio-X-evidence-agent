@@ -151,6 +151,9 @@
    "imports change_dots (runtime/leaves_py/change_dots.py), which breaks the rule": 1,
    "imports rank_slope (runtime/leaves_py/rank_slope.py), which breaks the rule": 1,
    "imports tile_map (runtime/leaves_py/tile_map.py), which breaks the rule": 1,
+   "imports unit_grid (runtime/leaves_py/unit_grid.py), which breaks the rule": 1,
+   "imports glyph_row (runtime/leaves_py/glyph_row.py), which breaks the rule": 1,
+   "imports dot_strip (runtime/leaves_py/dot_strip.py), which breaks the rule": 1,
    "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
    "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
@@ -245,6 +248,15 @@
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/tile_map.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/unit_grid.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/glyph_row.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/dot_strip.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/winners_losers.py": {
