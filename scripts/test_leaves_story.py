@@ -6,8 +6,9 @@ seven page-story leaves' own test shapes (test values, ledger texts and words; l
     marked ledger run, each chart a pub-visual module named and described, the sections in the request's order;
   - the page checks: a title with no ledger number refuses naming its section; one fact printed two ways refuses; a section
     naming no story leaf, a leaf drawn twice, a layer the page does not place, a kicker with a digit all refuse;
-  - the recipe: story is bound to the has_target shape condition and eats an annual series with a target and an event chain; a
-    World Bank one-economy multi-year shape has neither, so the recipe's table must not admit it (knobs.json read as data);
+  - the recipe: story is bound to the has_target shape condition and eats an annual series with a target and an event chain, or
+    goes without the target over the registry's minimums (eight members, three findings); a World Bank one-economy multi-year
+    shape has neither, so the recipe's table must not admit it (knobs.json read as data);
     its layers are the seven leaves and the page's layout holds no topic word.
 With STORY_DIR set the page's html is kept there (for a screenshot).
 Run: python3 -I -B scripts/test_leaves_story.py"""
@@ -231,12 +232,15 @@ class Story(unittest.TestCase):
         html, why = page()
         self.assertTrue(html, why)
 
-    def test_the_recipe_wants_a_target(self):
+    def test_the_recipe_wants_a_target_or_a_wide_field(self):
         with open(os.path.join(LEAVES, "knobs.json"), encoding="utf-8") as f: rec = {r["name"]: r for r in json.load(f)["recipes"]}["page_story"]
         self.assertEqual(rec["layers"], story.STORY_LAYERS)
         # the shape a World Bank one-economy multi-year request has (annual, two years or more, one place, one unit, a last year,
-        # two ends) lacks a target: the recipe's last condition is the one it fails, so the recipe is not chosen for it
+        # two ends) lacks a target: the recipe's last condition is the one it fails; it may go without it (pj004-23) only over
+        # eight members and three findings, the minimums the registry holds with their reason, so one economy is not chosen
         self.assertEqual(rec["eats"][-1], "has_target")
+        self.assertEqual({k: v for k, v in rec["without"].items() if k != "why"}, {"condition": "has_target", "members": 8, "findings": 3})
+        self.assertTrue(rec["without"]["why"].strip())
         self.assertEqual(rec["relation"], "Change")
         with open(os.path.join(LEAVES, "knobs.json"), encoding="utf-8") as f: order = [r["name"] for r in json.load(f)["recipes"]]
         self.assertLess(order.index("page_story"), order.index("one_line"))  # placed before the plainer line page

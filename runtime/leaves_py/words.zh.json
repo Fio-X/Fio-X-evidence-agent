@@ -202,6 +202,8 @@
 "story.legend.path": "虚线是照各个速度延伸出去的情景，空心点是目标",
 "story.legend.chain": "阴影是几个数合起来动得最大的那一年",
 "story.legend.members": "淡线是整体，虚线是目标，各格共用一条纵轴",
+"story.legend.members_ref": "淡线是整体，各格共用一条纵轴",
+"story.legend.members_plain": "各格共用一条纵轴",
 "story.legend.map": "颜色越深，值越大",
 "story.legend.rank": "红色的一行是要看的那一方",
 "story.mv.kicker": "谁动得最多",

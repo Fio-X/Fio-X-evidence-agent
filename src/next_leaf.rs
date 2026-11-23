@@ -147,6 +147,19 @@ pub struct Recipe {
     pub relation: Option<String>,
     /// Only a block of a many-block page draws it (knobs.json recipes[].blocks_only, from knobs.py): a short page passes over it.
     pub blocks_only: bool,
+    /// The one condition of its eats the recipe may go without, and the minimums it then takes the page behind (knobs.json
+    /// recipes[].without, from knobs.py, the reason beside them there): next_run shape_for, recipe_request.
+    pub without: Option<Without>,
+}
+
+/// A recipe's minimums when it goes without one of its conditions (knobs.json recipes[].without): the condition passed over
+/// when the tables do not meet it, the countries the main must then hold at least, and the findings its findings step must
+/// then give at least. All three are data in the registry; layer 1 compares counts only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Without {
+    pub condition: String,
+    pub members: usize,
+    pub findings: usize,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -303,6 +316,20 @@ pub fn leaves() -> &'static Leaves {
                     v => v
                         .as_bool()
                         .expect("knobs.json: a recipe's blocks_only is true or false"),
+                },
+                without: match &r["without"] {
+                    Value::Null => None,
+                    w => {
+                        let n = |k: &str| {
+                            w[k].as_u64()
+                                .expect("knobs.json: a recipe's without minimum is a whole number") as usize
+                        };
+                        Some(Without {
+                            condition: word(&w["condition"]).to_string(),
+                            members: n("members"),
+                            findings: n("findings"),
+                        })
+                    }
                 },
             });
         Leaves {

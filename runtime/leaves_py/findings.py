@@ -716,6 +716,8 @@ def angle_members(q):
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [hi, lo], "footnote": ST("story.sm.foot")}
     if ref: data["ref"] = ref
     if target: data["target"] = target
+    # with no target row the page's legend says no dashed target (story.LEGEND_NO_TARGET; the leaf ignores the key)
+    if not q.target: data["legend"] = "story.legend.members_ref" if ref else "story.legend.members_plain"
     ups = sum(1 for v in ch.values() if v > 0); downs = sum(1 for v in ch.values() if v < 0)
     minority = min(ups, downs) / len(ch)
     size = clamp((ch[hi] - ch[lo]) / span)

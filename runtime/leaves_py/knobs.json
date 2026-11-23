@@ -3319,6 +3319,12 @@
     "two_ends",
     "has_target"
    ],
+   "without": {
+    "condition": "has_target",
+    "members": 8,
+    "findings": 3,
+    "why": "with no target: three findings of different kinds make an arc, eight members at least say who lags"
+   },
    "charts": [],
    "picks": [],
    "exposes": [],

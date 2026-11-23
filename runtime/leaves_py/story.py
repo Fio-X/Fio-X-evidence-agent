@@ -162,18 +162,27 @@ LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", 
           "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank")}
 
 
-def legend_rows(layers):
-    """The accent line, then each picture kind's line once (the map and the tile map share one)."""
+# The small multiples' line on a page with no target (the findings name it in leaves.small_multiples.legend): the whole as a pale
+# line when it is drawn, never a target's dashed level; a page with a target keeps LEGEND's line.
+LEGEND_NO_TARGET = ("story.legend.members_ref", "story.legend.members_plain")
+
+
+def legend_rows(layers, leaves=None):
+    """The accent line, then each picture kind's line once (the map and the tile map share one); the small multiples' word is the
+    one its leaf data names when it is one of LEGEND_NO_TARGET."""
     out = [("accent", "story.legend.accent")]
+    named = ((leaves or {}).get("small_multiples") or {}).get("legend")
     for n in layers:
-        if n in LEGEND and LEGEND[n] not in out: out.append(LEGEND[n])
+        row = LEGEND.get(n)
+        if n == "small_multiples" and named in LEGEND_NO_TARGET: row = (row[0], named)
+        if row and row not in out: out.append(row)
     return out
 
 
-def legend_html(layers, box=None):
+def legend_html(layers, box=None, leaves=None):
     """The 'how to read this page' block: the accent line, then a line for each picture kind on the page that needs one (no number in it);
     `box` is the layout's (x, y, w, h) of it."""
-    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers))
+    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers, leaves))
     return f'<section class="sec" data-id="legend" data-layout="bare"{place(box)}><div class="legend" data-legend="story"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
 
 
@@ -241,11 +250,11 @@ def notes_height(pc, w, kn):
     return tot + NOTE_GAP * max(0, len(pc["items"]) - 1)
 
 
-def legend_height(layers):
+def legend_height(layers, leaves=None):
     """The legend block (padding 14 px a side): its title's line, 20 px, and its items' lines. With the title the items fill one line when they fit
     beside it; otherwise they take the lines under it, each (a row of items that wraps) 40 px high but the last, 20, a 26 px gap between two."""
     title = K.tw(word("story.legend.title"), 14)
-    items = [26 + 8 + K.tw(word(w), 12) for _, w in legend_rows(layers)]
+    items = [26 + 8 + K.tw(word(w), 12) for _, w in legend_rows(layers, leaves)]
     if title + 28 + sum(items) + LEGEND_GAP * (len(items) - 1) <= PAGE_W - 36: return LEGEND_PAD + 20
     rows, cur = 1, 0.0
     for w in items:
@@ -290,7 +299,7 @@ def layout(spec, c, drew, html_h):
             b["y"] = y; boxes[i] = b; row_h = max(row_h, b["h"])
         y += row_h
         if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids):
-            y += SEC_GAP; lh = legend_height(list(layer_of.values())); legend = (0, y, PAGE_W, lh); y += lh
+            y += SEC_GAP; lh = legend_height(list(layer_of.values()), spec["hero"].get("leaves")); legend = (0, y, PAGE_W, lh); y += lh
     return dict(boxes=boxes, legend=legend, H=y, pieces=pcs, drew={k: tuple(v) for k, v in drew.items()})
 
 
@@ -449,7 +458,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
     layer_of = {s[0]: s[2] for s in secs}
     for how, ids in rows:
         for i in ids: body.append(sec(i, "pair" if how == "pair" else how))
-        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"]))
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], spec["hero"].get("leaves")))
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)

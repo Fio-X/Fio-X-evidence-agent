@@ -11,6 +11,7 @@ next_facts does for the ops the node declares (value, per_year, line_at, step_ma
 so a declared key the leaf reads and the facts lack, or a data shape the leaf refuses, fails here. Also: a pick that is no
 candidate, one picked twice, a request with no format or a digit in its words is refused; candidates are ranked by score.
 Run: python3 -I -B scripts/test_story_findings.py"""
+import json
 import math
 import os
 import re
@@ -512,6 +513,41 @@ class Findings(unittest.TestCase):
         self.assertEqual(told["in_time"][1][2:5], ["gap_axis", "target_path", "winners_losers"])   # the need, the path, then who lags
         self.assertEqual(told["lagging"][1][2:4], ["rankbar", "winners_losers"])   # the comparisons first, the outlook last
         self.assertEqual(told["lagging"][1][-2], "target_path")
+
+    def test_with_no_target_the_page_tells_the_happened_or_the_lagging_arc_and_says_no_target(self):
+        """pj004-23: a request with no target row (the recipe went without has_target) on two data shapes, an EU shape with the
+        whole and its chain, a World Bank shape of twelve economies with no whole: path and need are dropped (no target row), the
+        rest stand; the chain first tells "happened", a comparison first "lagging"; the header, the notes, the sections and the
+        closing line name no target, declare no goal fact and leave no placeholder empty, and the page is drawn by the real child."""
+        eu, eu_names = self._arc_request()
+        wb, wb_names = wb12_request()
+        for req, names, told in ((eu, eu_names, (("happened", ["chain", "spread"]), ("lagging", ["rank", "spread", "chain"]))),
+                                 (wb, wb_names, (("lagging", ["rank", "members", "overtake"]), ("lagging", ["spread", "ends"])))):
+            req = {**req, "rows": [r for r in req["rows"] if not r["src"].startswith("target:")]}
+            req.pop("target", None)
+            _, cands, dropped = FN.candidates(req)
+            ids = [c["id"] for c in cands]
+            self.assertEqual({d["angle"]: d["why"] for d in dropped if d["angle"] in ("path", "need")},
+                             {"path": "no target row", "need": "no target row"})
+            self.assertGreaterEqual(len(ids), 3)
+            for arc, picks in told:
+                composed, facts, bodies, page_html = self._page(req, names, picks)
+                self.assertEqual(composed["arc"]["id"], arc, picks)
+                self.assertEqual(composed["arc"]["picks"][0], picks[0])
+                self._once(page_html)
+                self.assertNotIn("goal", composed["facts"])
+                said = json.dumps({k: composed[k] for k in ("title", "dek", "end", "sections", "leaves")}, ensure_ascii=False)
+                self.assertNotIn("目标", said)
+                self.assertNotIn("目标", re.sub(r"<[^>]+>", "", page_html))
+                for k in ("title", "dek", "end"):
+                    self.assertTrue(composed[k].strip(), k)
+                    self.assertNotRegex(composed[k], r"\{\s*\}", k)
+                end = re.sub(r"<[^>]+>", "", re.search(r"<p class=end>(.*?)</p>", page_html, re.S)[1]).strip()
+                self.assertEqual(end, FN.WD.WORDS["story.end.happened_plain" if arc == "happened" else "story.end.lagging"])
+                big = [i["fact"] for i in composed["leaves"]["bignums"]["bignums"]]
+                self.assertEqual(big, ["b_now", "m_step"] if arc == "happened" else ["b_hi", "b_lo", "b_ratio"])
+                notes = composed["leaves"]["risk_notes"]["items"]
+                self.assertTrue(notes and "情景" not in json.dumps(notes, ensure_ascii=False), notes)
 
     def test_the_arc_takes_the_finding_it_needs_or_says_none_stands(self):
         req, names = self._arc_request()
