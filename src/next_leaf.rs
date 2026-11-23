@@ -3513,7 +3513,7 @@ mod tests {
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
-        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 20 with its label gap and spacing, leader
+        // chart leaves over the column page's frame (section_head 8, rankbar 10 (its fold_over and fold_to came last), bubbles 20 with its label gap and spacing, leader
         // reach, land cost, nudge, circle gap, inset and the notes' other places (noted), three of them a list of codes), then
         // the map panel's leader notes (7: a note never sits over the land, so it has no land cost; two a list of codes, the
         // highlight and the focus laid out first), the
@@ -3523,7 +3523,7 @@ mod tests {
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
         // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
         // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them)
-        assert_eq!((t.nodes.len(), knobs), (52, 280));
+        assert_eq!((t.nodes.len(), knobs), (52, 282));
         let reserve: Vec<_> = t
             .nodes
             .iter()
