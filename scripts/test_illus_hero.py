@@ -255,6 +255,16 @@ class EndToEnd(unittest.TestCase):
             self.assertRegex(r["svg"], r'd="M[0-9.,]+C[0-9.,]+C'); self.assertLess(r["seconds"]["total"], R.TOTAL_DEADLINE); seen.add(r["svg"])
         self.assertEqual(len(seen), 3)
 
+    def test_a_picture_bound_to_the_finding_is_drawn_and_a_wrong_count_is_not(self):
+        """A subject (rows, rule, declared count) is drawn end to end in its topic's scene and keeps the gate's shapes; the same rows with a
+        declared count that is not the recomputed one are refused before Blender starts. (scripts/test_illus_vary.py holds the rest.)"""
+        ms = [{"code": c, "value": v} for c, v in zip("ABCDEFGHIJ", (9, 8, 7, 6, 5, 4, 3, 2, 1.5, 1))]
+        sub = {"members": ms, "rule": {"op": "ge", "ref": 5}, "declared": {"count": 5, "total": 10}}
+        r = self.draw({"family": "co2", "lead": "members", "width": 1140, "ground": "warm", "subject": sub}); self.check(r, 1140)
+        self.assertEqual(r["scene"], "emissions.tally"); self.assertEqual(r["composition"]["lit"], 5); self.assertEqual(r["composition"]["objects"], 10)
+        bad = Protocol().ask({"family": "co2", "lead": "members", "width": 1140, "subject": {**sub, "declared": {"count": 6, "total": 10}}})
+        self.assertIn("refused", bad); self.assertIn("declared.count 6", bad["refused"][0])
+
     def test_two_leads_two_pictures(self):
         a, b = self.draw({**RENEW, "lead": "path"}), self.draw({**RENEW, "lead": "chain"})
         self.check(a, 1140); self.check(b, 1140); self.assertEqual((a["scene"], b["scene"]), ("road", "sequence")); self.assertNotEqual(a["svg"], b["svg"])

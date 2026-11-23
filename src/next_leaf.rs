@@ -1509,6 +1509,15 @@ fn drawn(
                 .iter()
                 .map(|(name, s)| (name.to_string(), json!([s.w, s.h])))
                 .collect();
+            // a piece that leaves members out says so on the page, in words with no number (the count is the child's, not a fact)
+            let left_out: serde_json::Map<String, Value> = given
+                .iter()
+                .filter(|(_, s)| s.omitted > 0)
+                .map(|(name, _)| (name.to_string(), json!(true)))
+                .collect();
+            if !left_out.is_empty() {
+                request["left_out"] = Value::Object(left_out);
+            }
         }
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
@@ -1728,6 +1737,10 @@ pub struct Strip {
     pub h: f64,
     pub dropped: Vec<String>,
     pub ms: u128,
+    /// The members of the finding the picture does not draw (a ranking shows its head and tail): the child's own count,
+    /// 0 for a strip and for a picture that draws them all. The page's caption says only that the middle is left out, with
+    /// no number (a number would be a page number, owed a fact).
+    pub omitted: u64,
 }
 
 /// The strip one request draws, through one child started by `runner`: taken only when it is as wide as asked and
@@ -1766,6 +1779,7 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
         h,
         dropped: strs(&reply, "dropped"),
         ms: started.elapsed().as_millis(),
+        omitted: 0,
     })
 }
 
@@ -1943,6 +1957,7 @@ pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
         h,
         dropped: strs(&reply, "dropped"),
         ms: started.elapsed().as_millis(),
+        omitted: reply["omitted"].as_u64().unwrap_or(0),
     })
 }
 

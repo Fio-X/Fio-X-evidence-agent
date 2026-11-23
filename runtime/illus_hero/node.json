@@ -844,7 +844,8 @@
    "tones",
    "hero_bbox_area_pct"
   ],
-  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame"
+  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame",
+  "omitted": "run_hero's reply carries `omitted` (an integer: the members of the request the picture does not draw, 0 when all are drawn) and `omitted_label_key` (topics.omitted.label_key, the key of the caption the page prints, e.g. 'N left out in the middle'); the same number is in composition.omitted. The picture itself has no text."
  },
  "stories": {
   "doc": "The opening picture follows the page's story, not its table: the caller names the lead finding's angle (findings.py ANGLES, the page's first titled section) as `lead`, and the scene it maps to here is drawn: its hero (placed, sized and framed by the scene), its own layout of the request's tags (a tag the scene has no slot for is left out), and the parts it always places. An angle with no scene, a scene whose tags or hero the request lacks, or no lead keeps the panorama (heroes + slots). Same input, same picture: nothing is random or read from words.",
@@ -2431,5 +2432,606 @@
    -0.6
   ],
   "note": "every standing part (turbine, pylon, marker) casts a thin wedge on the terrain from its foot, length len x its height, towards dir (x, y), so nothing in a picture floats; not mirrored with the reading order, as the light is not"
+ },
+ "topics": {
+  "doc": "The opening picture follows the page's topic as well as its finding. The caller names the measure family of the page's table (`family`, an id of runtime/pi/assets/measure-families.json), which maps here to a topic and the topic to its unit (one thing per member) and its ground filler; a family this table does not list, or none, is the neutral topic. `subject` (the finding's own rows: members with a value each, a rule or a path) then composes the picture: scenes.kind picks the layout from the lead angle (tally: the members that pass a line are lit; pair: the highest and the lowest at their sizes; rank: the members by value, sized by it; path: the milestones passed on the way to a target). The count of lit units is recomputed from the rows and refused when it is not the one the page declares. Nothing here is read from words.",
+  "families": {
+   "renewable_share": "energy",
+   "energy_balance": "energy",
+   "electricity_mix": "energy",
+   "installed_capacity": "energy",
+   "electricity_price": "energy",
+   "co2": "emissions",
+   "pop65": "people",
+   "population": "people",
+   "urban_share": "people",
+   "unemployment": "people",
+   "gdp": "trade",
+   "gdp_pc": "trade",
+   "energy_imports": "trade",
+   "asylum": "migration"
+  },
+  "neutral": "neutral",
+  "angle_kinds": {
+   "members": "tally",
+   "tiles": "tally",
+   "map": "tally",
+   "groups": "groups",
+   "movers": "tally",
+   "overtake": "tally",
+   "need": "path",
+   "path": "path",
+   "pace": "series",
+   "chain": "series",
+   "ends": "pair",
+   "spread": "pair",
+   "rank": "rank"
+  },
+  "kind_arcs": {
+   "tally": "lagging",
+   "pair": "lagging",
+   "rank": "lagging",
+   "path": "in_time",
+   "series": "happened",
+   "groups": "lagging"
+  },
+  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked.",
+  "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
+  "layout": {
+   "x": [
+    -108,
+    108
+   ],
+   "y0": 40,
+   "row_dy": 34,
+   "rows_at": [
+    10,
+    20
+   ],
+   "max_size": 1.5,
+   "min_size": 0.5,
+   "unlit_k": 0.8,
+   "pair": {
+    "hi_x": -62,
+    "lo_x": 40,
+    "y": 40,
+    "hi_size": 1.35,
+    "floor": 0.35,
+    "back_y": 104,
+    "back_max": 27,
+    "back_size": 0.9,
+    "back_floor": 0.2
+   },
+   "rank": {
+    "ends": {"3d": [7, 7], "line": [5, 5]},
+    "size": 1.7,
+    "floor": 0.3,
+    "y": 46,
+    "x": [
+     -124,
+     124
+    ]
+   },
+   "path": {
+    "milestones": 10,
+    "y": 44,
+    "size": [
+     0.7,
+     1.2
+    ],
+    "flag_at": [
+     118,
+     56
+    ],
+    "track_y": 38,
+    "x": [
+     -100,
+     88
+    ]
+   },
+   "mark_rise": 38,
+   "series": {
+    "min": 4,
+    "max": 30,
+    "y": 44,
+    "size": 1.6,
+    "floor": 0.3,
+    "x": [
+     -124,
+     124
+    ]
+   },
+   "groups": {
+    "x": [
+     [
+      -112,
+      -10
+     ],
+     [
+      10,
+      112
+     ]
+    ],
+    "gap_note": "two panels, each on its own stone slab",
+    "slab": {
+     "h": 4,
+     "pad": 10
+    },
+    "rows_at": 6,
+    "rows": 2
+   }
+  },
+  "scenes": {
+   "energy": {
+    "unit": "turbine_unit",
+    "renderer": "line",
+    "accent": "#1a9a6c",
+    "relief": 0.4,
+    "filler": [],
+    "objects": {
+     "doc": "Within the energy topic the object follows the finding: the finding's measure key (subject.measure: wind, solar, hydro, grid, biomass) when given, else the registered family's entry below. A family entry is a measure key, or mix: then the layout picks (tally cycles the whole mix, the others one object of it). A key not listed refuses.",
+     "measure": {
+      "wind": "turbine_unit",
+      "solar": "solar_unit",
+      "hydro": "dam_unit",
+      "grid": "pylon_unit",
+      "biomass": "biomass_unit"
+     },
+     "family": {
+      "renewable_share": "mix",
+      "electricity_mix": "mix",
+      "installed_capacity": "wind",
+      "electricity_price": "grid",
+      "energy_balance": "grid"
+     },
+     "default": "mix",
+     "mix": {
+      "tally": [
+       "turbine_unit",
+       "solar_unit",
+       "dam_unit",
+       "biomass_unit",
+       "pylon_unit"
+      ],
+      "groups": [
+       "solar_unit"
+      ],
+      "pair": [
+       "solar_unit"
+      ],
+      "rank": [
+       "dam_unit"
+      ],
+      "path": [
+       "turbine_unit"
+      ],
+      "series": [
+       "biomass_unit"
+      ]
+     }
+    }
+   },
+   "emissions": {
+    "unit": "stack_unit",
+    "renderer": "3d",
+    "accent": "#c4572a",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "tree_unit",
+      "at": [
+       -140,
+       118
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -96,
+       134
+      ],
+      "args": {
+       "size": 0.9
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -40,
+       124
+      ],
+      "args": {
+       "size": 1.1
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       52,
+       136
+      ],
+      "args": {
+       "size": 1.0
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       112,
+       120
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       150,
+       132
+      ],
+      "args": {
+       "size": 0.9
+      }
+     }
+    ]
+   },
+   "people": {
+    "unit": "figure_unit",
+    "renderer": "3d",
+    "accent": "#b8433a",
+    "relief": 0.3,
+    "filler": [],
+    "figure_style": {
+     "default": "line",
+     "values": [
+      "flat",
+      "line"
+     ],
+     "doc": "How the crowd is painted (line is the main look, flat is kept for comparison). flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
+    }
+   },
+   "trade": {
+    "unit": "container_unit",
+    "renderer": "3d",
+    "accent": "#2b7fa6",
+    "relief": 0.3,
+    "filler": [
+     {
+      "fn": "crane_unit",
+      "at": [
+       -120,
+       150
+      ],
+      "args": {
+       "size": 1.6
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       20,
+       160
+      ],
+      "args": {
+       "size": 1.9
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       130,
+       150
+      ],
+      "args": {
+       "size": 1.5
+      }
+     }
+    ]
+   },
+   "migration": {
+    "unit": "waypoint_unit",
+    "renderer": "3d",
+    "accent": "#8e3f7a",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "fence_unit",
+      "at": [
+       -100,
+       150
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       10,
+       156
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       118,
+       150
+      ],
+      "args": {
+       "length": 80
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -150,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -114,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -78,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -42,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -6,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       30,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       66,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       102,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       138,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     }
+    ]
+   },
+   "neutral": {
+    "unit": "cairn_unit",
+    "renderer": "3d",
+    "accent": "#3c6e91",
+    "relief": 0.4,
+    "filler": []
+   }
+  },
+  "cameras": {
+   "tally": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
+   },
+   "default": {
+    "loc": [
+     0,
+     -176,
+     30
+    ],
+    "target": [
+     0,
+     140,
+     40
+    ],
+    "lens": 30
+   },
+   "groups": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
+   },
+   "raised": {
+    "loc": [
+     0,
+     -176,
+     130
+    ],
+    "target": [
+     0,
+     140,
+     -14
+    ],
+    "lens": 30
+   }
+  },
+  "units": {
+   "turbine_unit": {
+    "mark_z": 46,
+    "k": 1.0,
+    "tally_k": 0.72,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "solar_unit": {
+    "mark_z": 26,
+    "k": 0.46,
+    "tally_k": 1.0,
+    "groups_k": 1.4,
+    "row_k": 1.0,
+    "groups_rows": 3,
+    "body_w": 33.6,
+    "row_dy_k": 1.2
+   },
+   "dam_unit": {
+    "mark_z": 22,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "body_w": 36.0,
+    "gap": 0.12,
+    "rank_ends": {"3d": [3, 3], "line": [5, 5]},
+    "camera": "raised"
+   },
+   "pylon_unit": {
+    "mark_z": 40,
+    "k": 0.9,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 0.8
+   },
+   "biomass_unit": {
+    "mark_z": 18,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "body_w": 16.0,
+    "gap": 0.1
+   },
+   "stack_unit": {
+    "mark_z": 40,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "figure_unit": {
+    "mark_z": 34,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "depth_groups": true,
+    "body_w": 10.6,
+    "row_dy_k": 1.8,
+    "unlit_k": 0.72,
+    "stagger": 0.5,
+    "stagger_rows": 2,
+    "gap": 0.5,
+    "rank_ends": {"3d": [5, 5], "line": [5, 5]},
+    "persp_rows": true
+   },
+   "container_unit": {
+    "mark_z": 22,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "waypoint_unit": {
+    "mark_z": 32,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "cairn_unit": {
+    "mark_z": 27,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   }
+  },
+  "units_doc": "mark_z: how high the leader mark stands over a unit of size 1; k: the unit's footprint against the turbine's, so a wide unit (a dam) is drawn smaller and rows of it do not overlap. tally_k, groups_k, row_k: the extra scale of the unit in a tally, in a groups panel and in the size-coded layouts (rank, series, pair), so a wide unit does not run into its neighbour.",
+  "omitted": {
+   "doc": "Where a ranking leaves members out (a wide unit shows only the top and the bottom of it) the picture draws an omission mark (three dots, the picture's own pen) between the two groups and reports `omitted`, the members of the request not drawn (members - drawn, counted from the rows), in its composition and as the reply's top-level `omitted`. The caption ('N left out in the middle') is printed by the page from that number under the key `label_key`; the picture holds no text. r_frac, gap, z_frac: the dots' radius as a share of the neighbours' height, the spacing in radii, the height of their centre as a share of that height. slot: the width in scene units left between the two groups for the mark.",
+   "label_key": "rank_omitted_middle",
+   "r_frac": 0.11,
+   "gap": 3.0,
+   "z_frac": 0.5,
+   "slot": 14.0
+  },
+  "cameras_doc": "raised: a camera standing above the ground the units stand on, so that a unit's far side (a reservoir behind a dam) shows; a unit names it in its `camera` field and it takes the size-coded layouts (rank, series, path, pair); tally and groups keep their own.",
+  "size_floor": 0.4,
+  "size_floor_doc": "The drawn units (lit and unlit together) must stand at least this share of the picture's height (their projected bounding box over the 560-px frame, frame.py unit_height_fraction, computed from the placed sizes and the scene's own camera); the tests hold the five story pictures to it."
  }
 }

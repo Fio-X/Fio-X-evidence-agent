@@ -39,14 +39,15 @@ def paper_field(name, size, lo_sigma=None):
     return a
 
 
-def ground_jpeg3(pal):
+def ground_jpeg3(pal, calm=1.0):
+    """The paper ground; `calm` < 1 lowers the cloud and crumple contrast (a pictogram topic: the people must beat the texture)."""
     h, w = H * 2, W * 2; r = np.random.RandomState(4)
     crumple = paper_field("crumple.jpg", (w, h)); crumple = (crumple - ndi.gaussian_filter(crumple, 80)); crumple = ndi.gaussian_filter(crumple, 2.0); crumple /= crumple.std()
     tooth = paper_field("tooth.jpg", (w, h)); tooth = tooth - ndi.gaussian_filter(tooth, 6); tooth /= tooth.std()
     blob1 = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 110); blob1 /= blob1.std()
     blob2 = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 34); blob2 /= blob2.std()
     grain = ndi.gaussian_filter(r.normal(0, 1, (h, w)), 0.9); grain /= grain.std()
-    t = np.clip(0.5 + 0.10 * blob1 + 0.06 * blob2 + 0.075 * crumple + 0.05 * tooth + 0.018 * grain, 0, 1)
+    t = np.clip(0.5 + calm * (0.10 * blob1 + 0.06 * blob2 + 0.075 * crumple + 0.05 * tooth) + 0.018 * grain, 0, 1)
     d, m, l = (np.array(pal[k], float) for k in ("dark", "mid", "light"))
     lo = np.clip(t * 2, 0, 1)[..., None]; hi = np.clip(t * 2 - 1, 0, 1)[..., None]
     img = np.where(t[..., None] < 0.5, d + (m - d) * lo, m + (l - m) * hi)
@@ -209,16 +210,35 @@ def leader_marks(line, acc):
     return out
 
 
+FS = CFG.get("figure_style")      # None | "flat" | "line": the people topic's pictogram painting (flat_figures / line_figures)
+
+
+def flat_figures(lab, idx, pal, acc, style):
+    """The crowd as a pictogram, rows back to front: an unlit person one flat pale grey, a lit one the accent (a flat colour: no gradient, no
+    shading, no grain). "flat": nothing else, the rows parted by a hairline of the ground's own tone; "line": the unlit ones are hand-drawn outlines
+    only (the pen strokes of the picture, a faint paper fill under them), the lit ones the accent filled and outlined, the pen of the page-bottom strip."""
+    grey = mix(pal["light"], (250, 248, 244), 0.72); out = []; halo = hexc(pal["mid"])
+    for d in (2, 1, 0):
+        for base, col, op in (("thing", grey, 1.0 if style == "flat" else 0.5), ("lit", acc, 1.0)):
+            i = idx(base + ("" if d == 0 else str(d + 1)))
+            if i is None: continue
+            ps = [pd(p, (0, 0), 0.0 if style == "flat" else 0.6) for p in polys(to_geom(ndi.binary_opening(lab == i, iterations=1), 0.8, 30))]
+            if not ps: continue
+            hl = f' stroke="{halo}" stroke-width="1.6" stroke-linejoin="round"' if style == "flat" else f' stroke="{hexc(pal["line"])}" stroke-width="1.3" stroke-linejoin="round" stroke-opacity="0.75"'
+            out.append(f'<path d="{"".join(ps)}" fill="{hexc(col)}" fill-opacity="{op}"{hl}/>')
+    return out
+
+
 def build():
     pal = {k: tuple(v) for k, v in CFG["palette"].items()}; line = hexc(pal["line"]); IN = H2.IN
     names, lab = H2.load_labels(); idx = lambda n: names.index(n) if n in names else None
     shade = np.asarray(Image.open(os.path.join(IN, "shade.png")).convert("L").resize((W, H), Image.LANCZOS)).astype(float) / 255
     S = json.load(open(os.path.join(IN, "strokes.json"))); k = W / S["w"]
-    gj, tooth, crumple = ground_jpeg3(pal)
+    gj, tooth, crumple = ground_jpeg3(pal, 0.4 if FS else 1.0)
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
     body = []   # the background turbines and plants get a pale body under their ink, so they read as things, not as wires
-    for g in ("wind", "coal"):
+    for g in (("wind", "coal", "thing", "thing2", "thing3") if not FS else ("wind", "coal")):
         if idx(g) is None: continue
         body += [f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.0, 30))]
     wash = []
@@ -240,10 +260,12 @@ def build():
         layers.append(f'<g fill="none" stroke="{line}" stroke-width="1.4" stroke-linejoin="round" opacity="0.8">{ol}</g>')
     HUB = json.load(open(os.path.join(IN, "hub.json"))); hero = []
     if idx("hero_body") is not None: hero += paint3(lab == idx("hero_body"), shade, BODY)
-    if idx("hero_blade") is not None: hero += paint_blades(lab == idx("hero_blade"), shade, (HUB["x"] * W / HUB["w"], HUB["y"] * H / HUB["h"]), pal)
+    if idx("hero_blade") is not None and (lab == idx("hero_blade")).any(): hero += paint_blades(lab == idx("hero_blade"), shade, (HUB["x"] * W / HUB["w"], HUB["y"] * H / HUB["h"]), pal)
+    if FS: hero += flat_figures(lab, idx, pal, BLADE["base"], FS)
+    elif idx("lit") is not None: hero += paint3(lab == idx("lit"), shade, BLADE)    # the units the data marks: the accent ramp
     layers += hero
-    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade"))
-    layers.append(f'<image href="data:image/png;base64,{grain_layer(ndi.binary_dilation(hm, iterations=2), tooth, crumple, pal)}" width="{W}" height="{H}" preserveAspectRatio="none"/>')
+    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade")) | (lab == idx("lit")) | (lab == idx("lit2")) | (lab == idx("lit3"))
+    if not FS: layers.append(f'<image href="data:image/png;base64,{grain_layer(ndi.binary_dilation(hm, iterations=2), tooth, crumple, pal)}" width="{W}" height="{H}" preserveAspectRatio="none"/>')
     G = {"hero_out": [], "hero_in": [], "bg_far": [], "bg_near": [], "coal": []}; DIRS = {"h": [], "v": [], "d": []}
     widths = {"hero_out": [], "hero_in": [], "bg": [], "coal": []}
     for s in S["strokes"]:
@@ -256,11 +278,13 @@ def build():
             w = H2.WID[ls] * np.clip(1 + 0.40 * BR.smooth_noise(rng, len(pts), 10), 0.55, 1.5); widths[ls] += list(w)
             pth = ink_stroke_lf(xy, w, 26.0 if ls == "hero_out" else 14.0, 36.0 if ls == "hero_out" else 22.0)
             if not pth: continue
+            if ls == "hero_in" and FS: continue      # a pictogram is its silhouette: no crease inside it
             if ls == "hero_in": G[ls].append(pth); continue
             dx, dy = xy[-1][0] - xy[0][0], xy[-1][1] - xy[0][1]; n = math.hypot(dx, dy) or 1
             DIRS["h" if abs(dx) / n > 0.8 else "v" if abs(dy) / n > 0.8 else "d"].append(pth)
+        elif FS == "flat" and ls == "bg": continue      # a flat pictogram has no outline
         else:   # background and coal plant: one pass, 0.9-1.5 px, same strength
-            near, far = H2.WID["bg"]; w = (near + (far - near) * t) * np.clip(1 + 0.2 * BR.smooth_noise(rng, len(pts), 3), 0.8, 1.2); widths["bg"] += list(w)
+            near, far = H2.WID["bg"]; w = (near + (far - near) * t) * np.clip(1 + 0.2 * BR.smooth_noise(rng, len(pts), 3), 0.8, 1.2) * (1.5 if FS == "line" and ls == "bg" else 1.0); widths["bg"] += list(w)
             pth = ink_stroke(xy, w, 0.9, 14, 22)
             if not pth: continue
             G["coal" if ls == "coal" else ("bg_far" if t.mean() > 0.5 else "bg_near")].append(pth)
@@ -285,7 +309,7 @@ def build():
     layers += leader_marks(line, BLADE["base"])
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">' + "".join(layers) + "</svg>"
     open(os.path.join(IN, "hero.svg"), "w").write(svg)
-    ys, xs = np.nonzero(hm); allw = np.array(widths["hero_out"] + widths["hero_in"] + widths["bg"])
+    ys, xs = np.nonzero(hm) if hm.any() else (np.array([0, H - 1]), np.array([0, W - 1])); allw = np.array(widths["hero_out"] + widths["hero_in"] + widths["bg"])
     st = dict(svg_kb=len(svg) // 1024, hero_mask_area_pct=round(float(hm.mean() * 100), 1), hero_bbox_area_pct=round(float((xs.max() - xs.min()) * (ys.max() - ys.min()) / (W * H) * 100), 1),
               pen_pct_of_w=dict(hero_out=round(H2.WID["hero_out"] / W * 100, 2), hero_in=round(H2.WID["hero_in"] / W * 100, 2), median_all_vertices=round(float(np.median(allw) / W * 100), 3)))
     json.dump(st, open(os.path.join(IN, "hero-stats.json"), "w"), indent=1); print(json.dumps(st))

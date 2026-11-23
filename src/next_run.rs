@@ -4990,12 +4990,15 @@ fn leaf_page(
     // answers with the strip instead, owed as page_strip's; a refusal or a failed call owes the strip and gives none, so the
     // page check strip_placed fails it, its event saying why. The picture follows the page's story: the lead finding's angle
     // (the first titled section's id, which the findings child names) picks its scene
-    let lead = fill["knobs"]["spec"]["sections"]
+    let lead_section = fill["knobs"]["spec"]["sections"]
         .as_array()
         .into_iter()
         .flatten()
-        .find(|s| s.get("title").is_some())
-        .and_then(|s| s["id"].as_str());
+        .find(|s| s.get("title").is_some());
+    let lead = lead_section.and_then(|s| s["id"].as_str());
+    // the lead finding's own rows (the findings child's `picture.subject`, read from the same rows its leaf draws): with them the
+    // picture is composed from the finding, not from the table's tags alone
+    let subject = lead_section.and_then(|s| s["picture"].get("subject"));
     let (strip, hero, strip_ask) = match picked.opening {
         true => match crate::next_flow::visual_call(
             calls,
@@ -5003,6 +5006,7 @@ fn leaf_page(
             Request::IllusHero {
                 tables: &page.refs,
                 lead,
+                subject,
                 width: page.w,
                 runtime: &runtime,
             },

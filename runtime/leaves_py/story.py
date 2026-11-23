@@ -408,7 +408,7 @@ def chart(body, layer, size, sid, label, desc, over="", pos="", origin=(0.0, 0.0
             f'{over}<p id="desc-{sid}" hidden>{desc}</p></div>')
 
 
-def story_page(panel, got, sizes, placeholders, drew, over=None):
+def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None):
     """The page around the layers the panel drew (`got`, layer -> svg), as the module docstring says; {"html"} or {"refused": [...]}."""
     c, spec, f = panel.c, panel.spec, panel.f
     secs = sections(spec)
@@ -489,8 +489,10 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
     opening = ""
     if "illus_hero" in got:
         w, h = sizes["illus_hero"]
+        # a picture that leaves members out (a ranking draws its head and tail) says so in words, with no number
+        cap = f'<p class="opening-cap">{word("story.hero.left_out")}</p>' if (left_out or {}).get("illus_hero") else ""
         opening = (f'<div class="opening" aria-hidden="true"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}">'
-                   f'<g data-layer="illus_hero">{got["illus_hero"]}</g></svg></div>')
+                   f'<g data-layer="illus_hero">{got["illus_hero"]}</g></svg>{cap}</div>')
     strip = ""
     if "illus_strip" in got:
         import column
@@ -503,7 +505,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
 
 # The story's layout over the page's tokens: the opening picture and the sections 1140 wide; a titled section's words in a column
 # 640 wide over its picture.
-CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
+CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.opening-cap{margin:4px 0 0;font:400 12px/18px var(--sans);color:var(--t-sec);text-align:center}"
        # every block stands where the layout put it (story.layout): the story is a positioned box as high as the layout, each section a box in it, its words and its picture placed in that
        ".story{width:1140px;position:relative}.story .sec{position:absolute;margin:0}.story .col{position:absolute;left:0;top:0;max-width:640px;margin:0}"
        ".story .kick{display:inline-block;min-width:30px;padding:0 10px;box-sizing:border-box;height:28px;line-height:28px;border-radius:14px;"

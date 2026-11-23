@@ -2699,6 +2699,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 /// declarations and expansions the checks then hold, child processes, and the chart matcher's ranking.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
+    "visual::measure_family",
     "tree_gen::page_scale",
     "tree_gen::code_ok",
     "tree_gen::tree_tables",

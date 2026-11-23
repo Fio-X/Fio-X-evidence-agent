@@ -112,9 +112,15 @@ pub enum Request<'a> {
     /// the reason in the note. A request the child refuses is an error. Nothing is written. `lead` is the angle of the page's
     /// lead finding (its first titled section's id, runtime/leaves_py/findings.py), which picks the picture's scene (node.json
     /// stories: a path to a target, a ranking, the members as a map, events in order, ...); none, the set's panorama.
+    ///
+    /// `subject` is the lead finding's own rows (the findings child's `picture.subject`: members, a path, a series or groups
+    /// with the values read from the page's rows): with it the child composes the picture from them, in the topic of the
+    /// measure family the tables belong to (measure-families.json), the lit units recounted by the child from the rows. The
+    /// reply's `omitted` is the members it does not draw.
     IllusHero {
         tables: &'a [String],
         lead: Option<&'a str>,
+        subject: Option<&'a Value>,
         width: f64,
         runtime: &'a Path,
     },
@@ -210,6 +216,7 @@ fn illus_strip(
 fn illus_hero(
     tables: &[String],
     lead: Option<&str>,
+    subject: Option<&Value>,
     width: f64,
     runtime: &Path,
 ) -> Result<(Option<Strip>, Option<Strip>, String), String> {
@@ -238,7 +245,8 @@ fn illus_hero(
             format!("illus_hero: {why}; the strip stands in: {note}"),
         ))
     };
-    if tags.is_empty() {
+    // a picture composed from the finding's rows needs no hero parts; without them it needs the parts
+    if tags.is_empty() && subject.is_none() {
         return fall_back(format!(
             "the {name} set gives no hero parts to these tables"
         ));
@@ -246,6 +254,12 @@ fn illus_hero(
     let mut request = json!({"tags": tags, "hero": block["hero"], "width": width, "ground": block["ground"], "accent": block["accent"]});
     if let Some(lead) = lead {
         request["lead"] = json!(lead);
+    }
+    if let Some(subject) = subject {
+        request["subject"] = subject.clone();
+        if let Some(family) = measure_family(tables) {
+            request["family"] = json!(family);
+        }
     }
     let runner = Runner::python(&runtime.join("illus_hero/run_hero.py"));
     match hero(&runner, &request) {
@@ -264,6 +278,27 @@ fn illus_hero(
         Err(HeroMiss::Unavailable(why)) => fall_back(why),
         Err(HeroMiss::Refused(why)) => Err(format!("illus_hero: {why}")),
     }
+}
+
+/// The measure families (id, and the table ids or id prefixes each holds) the knowledge group's question reading shares with
+/// the picture: which topic a page's tables are about.
+const MEASURE_FAMILIES: &str = include_str!("../runtime/pi/assets/measure-families.json");
+
+/// The id of the first measure family one of `tables` belongs to (a family lists table ids, or a prefix ending in `_` or `.`
+/// for a group of tables); none when no family holds them (the neutral topic's picture). The file is vendored and parsed by a
+/// test, so a file that does not parse is no family either.
+fn measure_family(tables: &[String]) -> Option<String> {
+    let all: Value = serde_json::from_str(MEASURE_FAMILIES).ok()?;
+    all["families"].as_array()?.iter().find_map(|fam| {
+        let held = fam["tables"].as_array()?;
+        held.iter().filter_map(Value::as_str).any(|h| {
+            let prefix = h.ends_with('_') || h.ends_with('.');
+            tables
+                .iter()
+                .any(|t| if prefix { t.starts_with(h) } else { t == h })
+        })
+        .then(|| fam["id"].as_str().map(String::from))?
+    })
 }
 
 /// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
@@ -1118,10 +1153,11 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::IllusHero {
             tables,
             lead,
+            subject,
             width,
             runtime,
         } => {
-            let (drawn, instead, note) = illus_hero(tables, lead, width, runtime)?;
+            let (drawn, instead, note) = illus_hero(tables, lead, subject, width, runtime)?;
             Reply::Opening {
                 drawn,
                 instead,
@@ -1513,6 +1549,7 @@ mod tests {
         match call(Request::IllusHero {
             tables: &tables,
             lead,
+            subject: None,
             width: 1140.0,
             runtime,
         }) {
@@ -1551,6 +1588,74 @@ mod tests {
             note.contains("the strip stands in: illus: energy drawn 1140x225"),
             "{note}"
         );
+    }
+
+    fn subject_hero_for(
+        tables: &[&str],
+        lead: &str,
+        subject: &Value,
+    ) -> (Option<Strip>, Option<Strip>, String) {
+        let tables: Vec<String> = tables.iter().map(|t| t.to_string()).collect();
+        match call(Request::IllusHero {
+            tables: &tables,
+            lead: Some(lead),
+            subject: Some(subject),
+            width: 1140.0,
+            runtime: Path::new("runtime"),
+        }) {
+            Ok(Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }) => (drawn, instead, note),
+            Ok(_) => panic!("illus_hero answered with another reply"),
+            Err(e) => panic!("illus_hero: {e}"),
+        }
+    }
+
+    fn story_subject(name: &str) -> Value {
+        let specs: Value = serde_json::from_str(
+            &std::fs::read_to_string("fixtures/illus-vary-specs.json").unwrap(),
+        )
+        .unwrap();
+        specs[name]["subject"].clone()
+    }
+
+    /// An energy page's lead finding gives the picture its own rows: the hand-drawn line picture is drawn from them (no Blender, no
+    /// numpy), in the page's colour variables only, and says how many members it leaves out (a ranking draws its head and tail).
+    /// A layout the line drawing does not draw (the pair of ends and spread) leaves the page its strip.
+    #[test]
+    fn a_lead_finding_with_its_rows_is_drawn_as_the_line_picture() {
+        let rank = story_subject("st2");
+        let members = rank["members"].as_array().unwrap().len() as u64;
+        let (hero, strip, note) = subject_hero_for(&["nrg_ind_ren"], "rank", &rank);
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert!(strip.is_none(), "{note}");
+        assert_eq!(hero.w, 1140.0);
+        assert_eq!(hero.omitted, members - 10);
+        assert!(crate::next_leaf::hero_faults(&hero.svg).is_empty());
+        // the page's accent as its palette gives it in hex, and no variable and no colour of the picture's own
+        assert!(hero.svg.contains("#c93f2b") && !hero.svg.contains("var("));
+        let need = story_subject("st1");
+        let (hero, _, note) = subject_hero_for(&["nrg_ind_ren"], "need", &need);
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert_eq!(hero.omitted, 0);
+        let (hero, strip, note) = subject_hero_for(&["nrg_ind_ren"], "ends", &rank);
+        assert!(hero.is_none() && strip.is_some(), "{note}");
+        assert!(note.contains("the strip stands in"), "{note}");
+    }
+
+    /// The measure family of a page is the first family that holds one of its tables, by id or by the prefix a family lists.
+    #[test]
+    fn the_measure_family_of_the_tables_is_the_one_that_holds_them() {
+        let f = |t: &[&str]| {
+            measure_family(&t.iter().map(|x| x.to_string()).collect::<Vec<_>>())
+        };
+        assert_eq!(f(&["nrg_ind_ren"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["sdg", "sdg_07_40"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["EG.ELC.RNEW"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["nrg_bal_c"]).as_deref(), Some("energy_balance"));
+        assert_eq!(f(&["not_a_table"]), None);
     }
 
     /// With Blender installed and a python3 that has the painting's packages, the energy tables get a drawn hero and no strip;

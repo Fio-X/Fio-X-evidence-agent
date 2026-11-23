@@ -322,6 +322,7 @@ class Req:
         q.moved = [x for x in (g.get("moved") or []) if isinstance(x, dict) and x.get("code") and x.get("from_zh") and x.get("to_zh")]
         q.events = [x for x in (r.get("events") or []) if isinstance(x, dict) and x.get("name_zh") and x.get("from") and x.get("to")]
         q.question = r.get("question") if isinstance(r.get("question"), str) else ""
+        q.illus = {}   # {angle: the subject the opening picture draws}, set by each angle that has one (illus_*); compose hands the lead's on
 
     def asked(q, angle):
         """The first of the angle's question words (words.zh.json story.ask.<angle>, "|" between them) the question holds, or None."""
@@ -355,6 +356,59 @@ class Req:
         if len(hits) != 1 or number(hits[0].get("value")) is None: return None
         return number(hits[0]["value"]), str(t["time"]), {"table": t["table"], "filter": dict(t.get("filter") or {}),
                                                           "time": str(t["time"]), "fmt": q.fmts["value"]}
+
+# ---------------------------------------------------------------- the opening picture's subject
+# The lead finding's own rows as the subject the illustration child (runtime/illus_hero/run_hero.py) draws: the values the angle's leaf
+# reads (at the year it reads them, in the page's units: the value format's scale), nothing retyped. An angle with no sensible subject
+# sets none; compose then adds no `picture` and the picture is drawn as before. The family and the measure are the caller's.
+ILLUS_MEMBERS = (3, 60)   # members a tally, a rank or a pair draws (run_hero members_of)
+ILLUS_YEARS = (4, 30)     # years a series draws (the layout's series min and max)
+
+
+def illus_value(q, v):
+    """A row's value in the page's units (the value format's scale), without float noise."""
+    return round(v * float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), 9)
+
+
+def illus_members(q, at):
+    """[{"code", "value"}] of {code: value} in the page's units, by code; None outside the picture's member range."""
+    if not ILLUS_MEMBERS[0] <= len(at) <= ILLUS_MEMBERS[1]: return None
+    return [{"code": c, "value": illus_value(q, at[c])} for c in sorted(at)]
+
+
+def illus_lit(members, op, ref):
+    """The codes a threshold rule lights (lt: below ref, ge: at or above it)."""
+    return sorted(m["code"] for m in members if (m["value"] < ref if op == "lt" else m["value"] >= ref))
+
+
+def illus_tally(q, at, year):
+    """{"members", "rule", "declared"}: the members at `year` against the line the page draws, the registered target, else the whole's
+    value at that year; None with neither, or when the rule lights none or all of them (no count to draw)."""
+    ms = illus_members(q, at)
+    g = q.goal()
+    line = g[0] if g else (q.wseries[year][0] if q.whole and year in q.wseries else None)
+    if ms is None or line is None: return None
+    ref = illus_value(q, line)
+    n = len(illus_lit(ms, "lt", ref))
+    if not 0 < n < len(ms): return None
+    return {"members": ms, "rule": {"op": "lt", "ref": ref}, "declared": {"count": n, "total": len(ms)}}
+
+
+def illus_pair(q, at):
+    """{"members"} of the members at the last year (the highest and the lowest are the pair); None unless the highest is above the lowest."""
+    ms = illus_members(q, at)
+    if ms is None or min(m["value"] for m in ms) < 0 or max(m["value"] for m in ms) <= min(m["value"] for m in ms): return None
+    return {"members": ms}
+
+
+def illus_series(q, vals, split):
+    """{"series", "split", "declared"} of {year: value} with the years from `split` on lit (the last ILLUS_YEARS[1] years when there are more);
+    None when it leaves no year before or none from the split."""
+    ys = sorted(vals, key=int)[-ILLUS_YEARS[1]:]
+    lit = [y for y in ys if int(y) >= split]
+    if len(ys) < ILLUS_YEARS[0] or not 0 < len(lit) < len(ys): return None
+    return {"series": [{"t": int(y), "value": illus_value(q, vals[y])} for y in ys], "split": split,
+            "declared": {"count": len(lit), "total": len(ys)}}
 
 
 # ---------------------------------------------------------------- the angles
@@ -434,6 +488,7 @@ def angle_path(q):
             f[key] = {"op": "minus", "a": "goal", "b": run, "fmt": q.change}
             anns.append(note(key, f"story.note.path.{key}"))
     sturdy = clamp(len(ys) / 15)
+    q.illus["path"] = {"path": {"from": illus_value(q, q.wseries[first][0]), "now": illus_value(q, now), "goal": illus_value(q, gv)}}
     return {"angle": "path", "layer": "target_path", "kicker": T("story.path.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:p_best", "head": T("story.path.claim")}, "notes": ["scenario"], "last": "now",
             "anns": anns,
@@ -477,6 +532,7 @@ def angle_need(q):
     size = clamp((ratio - 1) / 3)
     surprise = 1.0 if need > best else 0.6
     sturdy = clamp(len(ys) / 15)
+    q.illus["need"] = {"path": {"from": illus_value(q, q.wseries[first][0]), "now": illus_value(q, now), "goal": illus_value(q, gv)}}
     return {"angle": "need", "layer": "gap_axis", "kicker": T("story.need.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:need_x", "head": T("story.need.claim")}, "notes": ["scenario"], "last": "now",
             "anns": [note("recent", "story.note.need.recent"), note("best", "story.note.need.best", y="best")],
@@ -561,6 +617,8 @@ def angle_ends(q):
     size = clamp(math.log(ratio) / math.log(5))
     surprise = 0.5
     sturdy = clamp(len(at) / 20)
+    ill = illus_pair(q, at)
+    if ill: q.illus["ends"] = ill
     return with_part({"angle": "ends", "layer": "pair_bars", "kicker": T("story.ends.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:hi_lo", "head": T("story.ends.claim", a=hi, b=lo)}, "notes": [], "members": True, "last": "hi",
             "anns": [note("d_hl", "story.note.ends.diff", a=hi, b=lo)],
@@ -652,6 +710,8 @@ def angle_chain(q):
     share = moved / len(items)
     surprise = clamp(0.3 + 0.7 * share)
     sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
+    ill = illus_series(q, {y: q.wseries[y][0] for y in ys}, int(band))   # the whole over the shared years, the shaded band's year the lit run's start
+    if ill: q.illus["chain"] = ill
     return {"angle": "chain", "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
             "data": data, "claim": {"num": "fact:m_step", "head": T("story.chain.claim")}, "notes": [], "last": "c1_last",
             "anns": [{"num": "fact:c1_last", "text": SW(items[0]["words"]["measure"]) + ST("story.note.chain.last")},
@@ -704,6 +764,8 @@ def angle_rank(q):
         head, why_line = ST("story.rank.gap_top_head"), "every member's value at the last year, highest first"
         why = {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)}
     if g: f["goal"] = g[2]
+    ill = illus_pair(q, at)   # the members' values at the page's year (the whole is a row of the leaf, not a member of the ranking)
+    if ill: q.illus["rank"] = {"members": ill["members"]}
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "share_head": head, "name_kind": "place", "rows": rows,
             "highlight": q.whole if q.wseries else hi,   # the code of the row the page draws in the accent (story.rank_style reads it)
             "omit": ST("story.rank.omit")}   # a long rank folds to its ends and the highlighted row (the leaf's fold_over), this line where rows are left out
@@ -763,6 +825,8 @@ def angle_members(q):
     if target: data["target"] = target
     # with no target row the page's legend says no dashed target (story.LEGEND_NO_TARGET; the leaf ignores the key)
     if not q.target: data["legend"] = "story.legend.members_ref" if ref else "story.legend.members_plain"
+    ill = illus_tally(q, {c: s_[y1][0] for c, s_ in members.items()}, y1)   # the cells' last values against the target, else the reference line's last value
+    if ill: q.illus["members"] = ill
     ups = sum(1 for v in ch.values() if v > 0); downs = sum(1 for v in ch.values() if v < 0)
     minority = min(ups, downs) / len(ch)
     size = clamp((ch[hi] - ch[lo]) / span)
@@ -806,6 +870,8 @@ def angle_map(q):
     size = clamp(rng / max(abs(at[hi]), 1e-9))
     surprise = clamp(0.3 + 0.7 * gradient)
     sturdy = clamp(len(members) / 20)
+    ill = illus_tally(q, at, y)
+    if ill: q.illus["map"] = ill
     big_items = [{"fact": key(hi), "label": {"word": "story.big.hi", "name": hi, "year": {"src": f"fact:{key(hi)}.t.y"}}},
                  {"fact": key(lo), "label": {"word": "story.big.lo", "name": lo, "year": {"src": f"fact:{key(lo)}.t.y"}}},
                  {"fact": "mrange", "label": {"word": "story.big.range"}}]
@@ -875,6 +941,8 @@ def angle_movers(q):
     surprise = clamp(0.3 + 0.7 * start_pos)
     sturdy = clamp(len(q.panel) / 12) * clamp((int(y1) - int(y0)) / 8)
     f["mv_dbig"] = {"op": "minus", "a": key1(big), "b": key0(big), "fmt": q.change}
+    ill = illus_tally(q, {c: q.panel[c][y1][0] for c in kept}, y1)   # the dots' last values (the members the picture draws)
+    if ill: q.illus["movers"] = ill
     big_items = [{"fact": key0(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key0(big)}.t.y"}}},
                  {"fact": key1(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key1(big)}.t.y"}}},
                  {"fact": "mv_dbig", "label": {"word": "story.big.moved", "name": big}}]
@@ -926,6 +994,8 @@ def angle_overtake(q):
     size = clamp(cross / pairs * 4)
     surprise = clamp(0.3 + 0.7 * jump[up] / (len(pool) / 3))
     sturdy = clamp(len(pool) / 16) * clamp((int(y1) - int(y0)) / 8)
+    ill = illus_tally(q, {c: v1[c] for c in pool if c != q.whole}, y1)   # the places' last values (the whole is the reference, not a member)
+    if ill: q.illus["overtake"] = ill
     big_items = [{"fact": "ot_rise", "label": {"word": "story.big.ot_rise", "name": up}}, {"fact": "ot_fall", "label": {"word": "story.big.ot_fall", "name": dn}},
                  {"fact": kb(up), "label": {"word": "story.big.rank_at", "name": up, "year": {"src": "fact:ot_y1.t.y"}}}]
     return with_part({"angle": "overtake", "layer": "rank_slope", "kicker": T("story.ot.kicker"), "big": big_items,
@@ -966,6 +1036,8 @@ def angle_tiles(q):
         f["tl_whole"] = q.value(q.whole, y)
         anns.append(note("tl_whole", "story.note.tl.whole", w=q.whole))
     n = len(members)
+    ill = illus_tally(q, at, y)
+    if ill: q.illus["tiles"] = ill
     crowd = clamp((n - 8) / 16)      # a crowd of members is what a map hides; 8 members 0, 24 or more 1
     size = clamp(rng / max(abs(at[hi]), 1e-9))
     surprise = clamp(0.3 + 0.7 * gradient)
@@ -1154,6 +1226,8 @@ def angle_pace(q):
     size = clamp(abs(pb - pa) / max(abs(pa), abs(pb), 1e-9))
     surprise = clamp(0.3 + 1.4 * min(len(fast), len(slow)) / len(pool))
     sturdy = clamp(len(ys) / 15) * clamp(len(pool) / 12)
+    ill = illus_series(q, m, int(b_))   # the members' mean a year, the years after the split lit
+    if ill: q.illus["pace"] = ill
     asked = q.asked("pace")
     score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
     return {"angle": "pace", "layer": layer, "kicker": T("story.pace.kicker"), "title": title, "text": text, "facts": f,
@@ -1164,6 +1238,22 @@ def angle_pace(q):
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "from": a_, "to": b_,
                     "event": ev.get("id") if ev else None, "faster": len(fast), "slower": len(slow), "asked": asked},
             "summary": "the members' average pace a year before and after a split year: did it speed up or slow down, and which members changed most"}, None
+
+
+def illus_groups(q, kept, order, at, allm):
+    """{"groups", "rule", "declared"} of the highest and the lowest group (by mean, the page's own two): each one's members at the page's
+    year, lit when at or above the mean of every grouped member (the section's reference line); None unless the pair stands."""
+    pair = [order[0], order[-1]]
+    groups = []
+    for gid in pair:
+        ms = illus_members(q, {c: at[c] for c in kept[gid][1]})
+        if ms is None or len(ms) > 30: return None
+        groups.append({"key": gid, "name": kept[gid][0], "members": ms})
+    ref = illus_value(q, allm)
+    lit = {g["key"]: len(illus_lit(g["members"], "ge", ref)) for g in groups}
+    if not 0 < sum(lit.values()) < sum(len(g["members"]) for g in groups): return None
+    return {"groups": groups, "rule": {"op": "ge", "ref": ref},
+            "declared": {"groups": {g["key"]: {"count": lit[g["key"]], "total": len(g["members"])} for g in groups}}}
 
 
 def angle_groups(q):
@@ -1243,6 +1333,8 @@ def angle_groups(q):
     size = clamp((gm[hi] - gm[lo]) / span) if span > 0 else 0.0
     surprise = clamp(0.3 + 0.7 * min(1.0, rng[wide] / max(gm[hi] - gm[lo], 1e-9) / 2))
     sturdy = clamp(len(kept) / 4) * clamp(len(pool) / 20)
+    ill = illus_groups(q, kept, order, at, allm)
+    if ill: q.illus["groups"] = ill
     asked = q.asked("groups")
     score = size * surprise * sturdy + (ASKED_BOOST if asked else 0)
     return {"angle": "groups", "layer": layer, "kicker": T("story.groups.kicker"), "title": T("story.groups.title", **bind),
@@ -1487,7 +1579,8 @@ def compose(r):
             num = c["claim"]["num"]
             if not num.startswith("fact:"): raise Refused(f"findings: the lead finding's claim number {num!r} is no fact")
             lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
-            sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead)})
+            sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead),
+                             **({"picture": {"subject": q.illus[c["id"]]}} if c["id"] in q.illus else {})})   # the lead's own rows, for the opening picture
         else:
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
                              "text": wording(c["text"])})
