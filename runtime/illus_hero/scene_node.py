@@ -39,7 +39,7 @@ def contact_shadow(x, y, h):
     m = Mesh("cast", "shadow"); m.add(V, F, outward=False); return [m]
 
 
-SHADOW_H = {"wind_turbine": "height", "hero_turbine": "height", "target_flag": "height", "pylon": "height", "turbine_unit": "size", "stack_unit": "size", "figure_unit": "size", "container_unit": "size", "waypoint_unit": "size", "cairn_unit": "size"}
+SHADOW_H = {"wind_turbine": "height", "hero_turbine": "height", "target_flag": "height", "pylon": "height", "turbine_unit": "size", "stack_unit": "size", "figure_unit": "size", "container_unit": "size", "waypoint_unit": "size", "cairn_unit": "size", "solar_unit": "size", "dam_unit": "size", "pylon_unit": "size", "biomass_unit": "size"}
 
 
 def build_world():

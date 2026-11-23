@@ -382,11 +382,52 @@ def stack_unit(size=1.0, lit=False, name="stack"):
     return out
 
 
-def figure_unit(size=1.0, lit=False, name="figure", stoop=0.0):
-    """A standing figure (people): a tapering body and a round head; stoop leans it a little (a taller figure is an adult, a shorter a child)."""
-    H = 28.0 * size; m = Mesh(name, _grp(lit)); tilt = rot_x(stoop) if stoop else None
-    m.merge(frustum((0, 0, 0), 0.17 * H, 0.10 * H, 0.62 * H, n=8, rot=tilt))
-    _ball(m, (0, 0.0, 0.74 * H), 0.105 * H); m.merge(box((0, 0, 0.05 * H), (0.3 * H, 0.2 * H, 0.1 * H)))
+def figure_unit(size=1.0, lit=False, name="figure"):
+    """A stick person with shoulders (people), as the strip's people are drawn: a round head, a tapering torso, two arms and two legs of
+    plain bars. An unlit person stands with the arms down; a lit one raises both arms (so the two read apart without the accent)."""
+    H = 28.0 * size; m = Mesh(name, _grp(lit)); r = 0.045 * H
+    _ball(m, (0, 0, 0.90 * H), 0.095 * H)
+    m.merge(loft([[(sx * 0.10 * H, sy * 0.07 * H, 0.38 * H) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))],
+                  [(sx * 0.17 * H, sy * 0.08 * H, 0.76 * H) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]]))
+    for sx in (-1, 1):
+        hand = (sx * 0.34 * H, 0, 0.98 * H) if lit else (sx * 0.24 * H, 0, 0.42 * H)
+        m.merge(tube((sx * 0.17 * H, 0, 0.72 * H), hand, r=r, n=6))
+        m.merge(tube((sx * 0.06 * H, 0, 0.40 * H), (sx * 0.10 * H, 0, 0.0), r=r * 1.1, n=6))
+    return [m]
+
+
+def solar_unit(size=1.0, lit=False, name="solar"):
+    """A solar panel on a post (energy): the tilted panel is the lit part."""
+    S = 24.0 * size; p = Mesh(name + "_panel", _grp(lit)); f = Mesh(name + "_post", "thing")
+    p.merge(box((0, 0, 0.66 * S), (1.5 * S, 0.9 * S, 0.07 * S), rot=rot_x(-32)))
+    for k in (-0.35, 0.0, 0.35): p.merge(box((k * S * 1.5, 0, 0.66 * S), (0.05 * S, 0.95 * S, 0.1 * S), rot=rot_x(-32)))
+    f.merge(tube((0, 0.05 * S, 0), (0, 0.05 * S, 0.6 * S), r=0.05 * S, n=6)); f.merge(box((0, 0, 0.03 * S), (0.8 * S, 0.5 * S, 0.06 * S)))
+    return [p, f]
+
+
+def dam_unit(size=1.0, lit=False, name="dam"):
+    """A concrete dam wall with its crest and a slab of reservoir behind it (energy, hydro); the wall is the lit part."""
+    S = 24.0 * size; w = Mesh(name + "_wall", _grp(lit)); r = Mesh(name + "_lake", "thing")
+    w.merge(frustum((0, 0, 0), 0.8 * S, 0.8 * S, 0.1 * S, n=4, rot_phase=math.pi / 4)); w.merge(box((0, 0, 0.42 * S), (1.7 * S, 0.34 * S, 0.8 * S)))
+    w.merge(box((0, 0, 0.84 * S), (1.9 * S, 0.5 * S, 0.08 * S)))
+    for k in (-0.5, 0.0, 0.5): w.merge(box((k * S, -0.22 * S, 0.3 * S), (0.1 * S, 0.14 * S, 0.6 * S)))
+    r.merge(box((0, 0.7 * S, 0.3 * S), (1.8 * S, 0.9 * S, 0.5 * S)))
+    return [w, r]
+
+
+def pylon_unit(size=1.0, lit=False, name="pylon"):
+    """A grid pylon (energy: the electricity grid and its price), the lit ones in the accent."""
+    H = 36.0 * size; ms, _ = pylon(height=H, arm_w=0.24 * H, yaw=0.0, name=name)
+    for m in ms: m.group = _grp(lit)
+    return ms
+
+
+def biomass_unit(size=1.0, lit=False, name="biomass"):
+    """A stack of logs, three, two, one (energy, biomass and heating); the logs are the lit part."""
+    S = 24.0 * size; m = Mesh(name, _grp(lit)); rad = 0.2 * S
+    for row, n in enumerate((3, 2, 1)):
+        for i in range(n):
+            m.merge(frustum((0, 0, 0), rad, rad, 1.5 * S, n=8, rot=rot_y(90)), loc=(-0.75 * S, (i - (n - 1) / 2) * 2.05 * rad, rad + row * 1.75 * rad))
     return [m]
 
 

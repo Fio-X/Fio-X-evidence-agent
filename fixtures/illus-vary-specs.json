@@ -310,118 +310,94 @@
  "st5": {
   "question": "How wide is the north-south renewable gap",
   "family": "renewable_share",
-  "lead": "ends",
+  "lead": "groups",
   "subject": {
-   "members": [
+   "groups": [
     {
-     "code": "AT",
-     "value": 44.2
+     "key": "154",
+     "name": "Northern Europe",
+     "members": [
+      {
+       "code": "DK",
+       "value": 48.2
+      },
+      {
+       "code": "EE",
+       "value": 42.3
+      },
+      {
+       "code": "FI",
+       "value": 53.0
+      },
+      {
+       "code": "IE",
+       "value": 17.2
+      },
+      {
+       "code": "LT",
+       "value": 38.5
+      },
+      {
+       "code": "LV",
+       "value": 46.3
+      },
+      {
+       "code": "SE",
+       "value": 65.4
+      }
+     ]
     },
     {
-     "code": "BE",
-     "value": 14.9
-    },
-    {
-     "code": "BG",
-     "value": 22.7
-    },
-    {
-     "code": "CY",
-     "value": 21.5
-    },
-    {
-     "code": "CZ",
-     "value": 19.1
-    },
-    {
-     "code": "DE",
-     "value": 23.9
-    },
-    {
-     "code": "DK",
-     "value": 48.2
-    },
-    {
-     "code": "EE",
-     "value": 42.3
-    },
-    {
-     "code": "EL",
-     "value": 26.9
-    },
-    {
-     "code": "ES",
-     "value": 26.0
-    },
-    {
-     "code": "FI",
-     "value": 53.0
-    },
-    {
-     "code": "FR",
-     "value": 23.9
-    },
-    {
-     "code": "HR",
-     "value": 28.5
-    },
-    {
-     "code": "HU",
-     "value": 19.6
-    },
-    {
-     "code": "IE",
-     "value": 17.2
-    },
-    {
-     "code": "IT",
-     "value": 20.5
-    },
-    {
-     "code": "LT",
-     "value": 38.5
-    },
-    {
-     "code": "LU",
-     "value": 20.2
-    },
-    {
-     "code": "LV",
-     "value": 46.3
-    },
-    {
-     "code": "MT",
-     "value": 18.8
-    },
-    {
-     "code": "NL",
-     "value": 22.7
-    },
-    {
-     "code": "PL",
-     "value": 18.7
-    },
-    {
-     "code": "PT",
-     "value": 36.7
-    },
-    {
-     "code": "RO",
-     "value": 25.6
-    },
-    {
-     "code": "SE",
-     "value": 65.4
-    },
-    {
-     "code": "SI",
-     "value": 25.4
-    },
-    {
-     "code": "SK",
-     "value": 16.3
+     "key": "039",
+     "name": "Southern Europe",
+     "members": [
+      {
+       "code": "EL",
+       "value": 26.9
+      },
+      {
+       "code": "ES",
+       "value": 26.0
+      },
+      {
+       "code": "HR",
+       "value": 28.5
+      },
+      {
+       "code": "IT",
+       "value": 20.5
+      },
+      {
+       "code": "MT",
+       "value": 18.8
+      },
+      {
+       "code": "PT",
+       "value": 36.7
+      },
+      {
+       "code": "SI",
+       "value": 25.4
+      }
+     ]
     }
-   ]
+   ],
+   "rule": {
+    "op": "ge",
+    "ref": 26.2
+   },
+   "declared": {
+    "groups": {
+     "154": {
+      "count": 6,
+      "total": 7
+     },
+     "039": {
+      "count": 3,
+      "total": 7
+     }
+    }
+   }
   }
  },
  "em_tally": {
@@ -992,6 +968,510 @@
      "value": 1
     }
    ]
+  }
+ },
+ "en_solar": {
+  "question": "synthetic: the same member rows asked about the solar measure",
+  "family": "installed_capacity",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ],
+   "rule": {
+    "op": "lt",
+    "ref": 42.5
+   },
+   "declared": {
+    "count": 22,
+    "total": 27
+   },
+   "measure": "solar"
+  }
+ },
+ "en_hydro": {
+  "question": "synthetic: the same member rows asked about the hydro measure",
+  "family": "installed_capacity",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ],
+   "rule": {
+    "op": "lt",
+    "ref": 42.5
+   },
+   "declared": {
+    "count": 22,
+    "total": 27
+   },
+   "measure": "hydro"
+  }
+ },
+ "en_grid": {
+  "question": "synthetic: the same member rows asked about the grid measure",
+  "family": "installed_capacity",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ],
+   "rule": {
+    "op": "lt",
+    "ref": 42.5
+   },
+   "declared": {
+    "count": 22,
+    "total": 27
+   },
+   "measure": "grid"
+  }
+ },
+ "en_biomass": {
+  "question": "synthetic: the same member rows asked about the biomass measure",
+  "family": "installed_capacity",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ],
+   "rule": {
+    "op": "lt",
+    "ref": 42.5
+   },
+   "declared": {
+    "count": 22,
+    "total": 27
+   },
+   "measure": "biomass"
   }
  }
 }

@@ -158,6 +158,100 @@ class TopicScenes(unittest.TestCase):
         self.assertEqual([i["at"][0] for i in a["items"]], [-i["at"][0] for i in b["items"]])
 
 
+def groups_req(**dec):
+    mk = lambda key, vals: {"key": key, "name": f"Group {key}", "members": [{"code": f"{key}{i}", "value": v} for i, v in enumerate(vals)]}
+    sub = {"groups": [mk("N", (9, 8, 7, 6, 2, 1)), mk("S", (9, 3, 2, 1, 1))], "rule": {"op": "ge", "ref": 5}, "declared": {"groups": {"N": {"count": 4, "total": 6}, "S": {"count": 1, "total": 5}}}}
+    for k, v in dec.items(): sub["declared"]["groups"][k] = v
+    return {"family": "co2", "lead": "groups", "width": 1140, "subject": sub}
+
+
+class Groups(unittest.TestCase):
+    def test_two_panels_each_with_its_own_recomputed_count(self):
+        s, *_ = R.resolve(groups_req()); c = s["composition"]
+        self.assertEqual([(g["key"], g["name"], g["lit"], g["total"]) for g in c["groups"]], [("N", "Group N", 4, 6), ("S", "Group S", 1, 5)])
+        self.assertEqual((c["lit"], c["objects"]), (5, 11)); self.assertEqual(c["layout"], "groups-4of6+1of5")
+        units = [i for i in s["items"] if "lit" in i.get("args", {})]; self.assertEqual(sum(1 for i in units if i["args"]["lit"]), 5)
+        left = [i for i in units if i["at"][0] < 0]; right = [i for i in units if i["at"][0] > 0]
+        self.assertEqual((len(left), len(right), sum(i["args"]["lit"] for i in left), sum(i["args"]["lit"] for i in right)), (6, 5, 4, 1))
+        self.assertEqual(sum(1 for i in s["items"] if i["fn"] == "plinth"), 2, "each panel on its own slab")
+
+    def test_each_groups_declared_count_is_refused_when_it_is_not_the_rows(self):
+        with self.assertRaisesRegex(R.Refused, "declared.count 5 is not the 4"): R.resolve(groups_req(N={"count": 5, "total": 6}))
+        with self.assertRaisesRegex(R.Refused, "declared.count 2 is not the 1"): R.resolve(groups_req(S={"count": 2, "total": 5}))
+        with self.assertRaisesRegex(R.Refused, "declared.total 4 is not the 5"): R.resolve(groups_req(S={"count": 1, "total": 4}))
+
+    def test_a_group_finding_needs_two_distinct_groups_and_no_shared_member(self):
+        r = groups_req(); r["subject"]["groups"] = r["subject"]["groups"][:1]
+        with self.assertRaisesRegex(R.Refused, "two groups"): R.resolve(r)
+        r = groups_req(); r["subject"]["groups"][1]["key"] = "N"
+        with self.assertRaisesRegex(R.Refused, "own key"): R.resolve(r)
+        r = groups_req(); r["subject"]["groups"][1]["members"][0]["code"] = "N0"
+        with self.assertRaisesRegex(R.Refused, "two groups"): R.resolve(r)
+
+    def test_the_north_south_story_draws_two_groups_with_the_m49_names(self):
+        s, *_ = R.resolve(req("st5")); c = s["composition"]
+        self.assertEqual(c["scene"].split(".")[1], "groups"); self.assertEqual([g["name"] for g in c["groups"]], ["Northern Europe", "Southern Europe"])
+        self.assertEqual([(g["lit"], g["total"]) for g in c["groups"]], [(6, 7), (3, 7)])
+        m49 = json.load(open(os.path.join(ROOT, "runtime", "pi", "assets", "m49-regions.json")))["regions"]
+        self.assertEqual({g["key"]: g["name"] for g in c["groups"]}, {k: m49[k]["name_en"] for k in ("154", "039")}, "the names are the M49 data's")
+
+
+class EnergyObjects(unittest.TestCase):
+    ENERGY = ("en_solar", "en_hydro", "en_grid", "en_biomass", "st4")
+
+    def objs(self, r): return tuple(R.resolve(r)[0]["composition"]["units"])
+
+    def test_a_different_finding_subject_in_energy_draws_a_different_object_set(self):
+        sets = {n: self.objs(req(n)) for n in self.ENERGY}
+        self.assertEqual(sets["en_solar"], ("solar_unit",)); self.assertEqual(sets["en_hydro"], ("dam_unit",))
+        self.assertEqual(sets["en_grid"], ("pylon_unit",)); self.assertEqual(sets["en_biomass"], ("biomass_unit",))
+        self.assertEqual(len(set(sets.values())), 5, sets)
+        self.assertEqual(set(sets["st4"]), {"turbine_unit", "solar_unit", "dam_unit", "biomass_unit", "pylon_unit"}, "a share of renewables is a mix")
+
+    def test_the_family_decides_when_no_measure_key_is_given(self):
+        base = req("st4"); base["subject"] = {k: v for k, v in base["subject"].items() if k != "measure"}
+        got = {f: self.objs({**base, "family": f}) for f in ("installed_capacity", "electricity_price", "electricity_mix", "renewable_share")}
+        self.assertEqual(got["installed_capacity"], ("turbine_unit",)); self.assertEqual(got["electricity_price"], ("pylon_unit",))
+        self.assertEqual(got["electricity_mix"], got["renewable_share"]); self.assertGreater(len(got["renewable_share"]), 1)
+        self.assertEqual(self.objs({**base, "subject": {**base["subject"], "measure": "hydro"}}), ("dam_unit",), "the measure key beats the family")
+
+    def test_the_mix_follows_the_layout_and_the_five_story_questions_draw_five_object_sets(self):
+        sets = {n: self.objs(req(n)) for n in ("st1", "st2", "st3", "st4", "st5")}
+        self.assertEqual(sets["st1"], ("turbine_unit",)); self.assertEqual(sets["st2"], ("dam_unit",)); self.assertEqual(sets["st3"], ("biomass_unit",))
+        self.assertEqual(len(set(sets["st4"])), 5); self.assertEqual(sets["st5"], ("solar_unit",))
+        self.assertEqual(len({sets[n] for n in ("st1", "st2", "st3", "st4", "st5")}), 5)
+
+    def test_an_unknown_measure_key_is_refused(self):
+        r = req("st4"); r["subject"] = {**r["subject"], "measure": "tidal"}
+        with self.assertRaisesRegex(R.Refused, "tidal"): R.resolve(r)
+
+    def test_other_topics_keep_their_one_unit(self):
+        self.assertEqual(self.objs(req("em_tally")), ("stack_unit",)); self.assertEqual(self.objs(req("pop_tally")), ("figure_unit",))
+
+    def test_the_mapping_is_data_and_every_object_is_a_part(self):
+        import parts as P
+        ob = T["scenes"]["energy"]["objects"]
+        fns = set(ob["measure"].values()) | {f for l in ob["mix"].values() for f in l}
+        for fn in fns: self.assertTrue(callable(getattr(P, fn)), fn); self.assertIn(fn, T["units"], fn)
+        for key in ob["family"].values(): self.assertTrue(key == "mix" or key in ob["measure"], key)
+        self.assertEqual(set(ob["mix"]), set(R.LAYOUTS))
+        self.assertEqual(set(T["cameras"]) - {"default"}, {"tally", "groups"}); self.assertTrue(set(ob["family"]) <= set(T["families"]))
+        for fn, u in T["units"].items(): self.assertTrue(u["mark_z"] > 0 and 0.3 < u["k"] <= 1 and 0.3 < u["tally_k"] <= 1 and 0.3 < u["row_k"] <= 1 and 0.5 <= u["groups_k"] <= 2, fn)
+        src = open(os.path.join(HERO, "scene_node.py")).read()
+        for fn in T["units"]: self.assertIn(f'"{fn}": "size"', src, f"{fn} casts no shadow: scene_node SHADOW_H")
+
+
+class Figures(unittest.TestCase):
+    def test_a_person_is_a_stick_figure_whose_lit_one_raises_the_arms(self):
+        import parts as P
+        on, off = P.figure_unit(size=1.0, lit=True)[0], P.figure_unit(size=1.0, lit=False)[0]
+        self.assertEqual((on.group, off.group), ("lit", "thing"))
+        top = lambda m: max(v[2] for v in m.v)
+        self.assertGreater(top(on), top(off) - 1e-9); self.assertGreater(on.bounds()[0][1] - on.bounds()[0][0], off.bounds()[0][1] - off.bounds()[0][0], "arms up are wider than arms down")
+        self.assertLess(on.bounds()[1][1] - on.bounds()[1][0], 0.3 * 28, "a flat pictogram, not a pin")
+        self.assertGreater(len(on.v), 80, "head, torso, two arms, two legs")
+
+
 class Compositions(unittest.TestCase):
     NAMES = ("st1", "st2", "st3", "st4", "st5")
 
@@ -166,7 +260,7 @@ class Compositions(unittest.TestCase):
         for i, a in enumerate(self.NAMES):
             for b in self.NAMES[i + 1:]: self.assertNotEqual(sigs[a][:3], sigs[b][:3], f"{a} and {b} share a composition {sigs[a]}")
         self.assertEqual(len({s[0] for s in sigs.values()}), 5, "five questions, five scene ids")
-        self.assertEqual({n: sigs[n][0].split(".")[1] for n in self.NAMES}, {"st1": "path", "st2": "rank", "st3": "series", "st4": "tally", "st5": "pair"})
+        self.assertEqual({n: sigs[n][0].split(".")[1] for n in self.NAMES}, {"st1": "path", "st2": "rank", "st3": "series", "st4": "tally", "st5": "groups"})
 
     def test_the_same_rows_under_another_finding_or_topic_compose_differently(self):
         base = req("st4"); pair = req("st4", lead="ends"); rank = req("st4", lead="rank"); other = req("st4", family="co2")
@@ -183,9 +277,6 @@ class Compositions(unittest.TestCase):
         self.assertEqual(set(T["kind_arcs"]), set(R.LAYOUTS))
 
     def test_the_pair_sizes_follow_the_values(self):
-        s = R.resolve(req("st5"))[0]; hi, lo = s["items"][0]["args"]["size"], s["items"][1]["args"]["size"]
-        ms = {m["code"]: m["value"] for m in SPECS["st5"]["subject"]["members"]}
-        self.assertAlmostEqual(lo / hi, max(min(ms.values()) / max(ms.values()), T["layout"]["pair"]["floor"]), places=3)   # the lowest is kept readable above the floor
         near = {"family": "co2", "lead": "ends", "width": 1140, "subject": {"members": [{"code": c, "value": v} for c, v in zip("ABCD", (10, 8, 7, 6))]}}
         p = R.resolve(near)[0]["items"]; self.assertAlmostEqual(p[1]["args"]["size"] / p[0]["args"]["size"], 0.6, places=3)   # above the floor: exact
 

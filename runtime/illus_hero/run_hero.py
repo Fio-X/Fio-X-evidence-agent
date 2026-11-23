@@ -196,24 +196,62 @@ def lit_codes(subject):
     return lit
 
 
-def unit_item(fn, x, y, size, lit, mark=None, yaw=0.0, z=28.0):
-    it = {"part": fn, "kind": "at_ground", "fn": fn, "at": [round(x, 2), round(y, 2)], "dz": -0.3, "args": {"size": round(size, 3), "lit": bool(lit)}}
-    if mark: it["mark"] = {"z": f"{z * size:.1f}", "rise": TOPICS["layout"]["mark_rise"]}; it["hero"] = True
+def unit_item(fn, x, y, size, lit, mark=None, dz=-0.3, kk="row_k"):
+    """One unit on the ground: its part, place and size (the unit's own footprint factor k applied), lit or not; the mark is the leader
+    line over the boundary unit, as high as that unit is tall."""
+    u = TOPICS["units"][fn]; size = size * u["k"] * u[kk]
+    it = {"part": fn, "kind": "at_ground", "fn": fn, "at": [round(x, 2), round(y, 2)], "dz": dz, "args": {"size": round(size, 3), "lit": bool(lit)}}
+    if mark: it["mark"] = {"z": f"{u['mark_z'] * size:.1f}", "rise": TOPICS["layout"]["mark_rise"]}; it["hero"] = True
     return it
 
 
-def layout_tally(unit, subject, topic):
-    L = TOPICS["layout"]; ms = members_of(subject); lit = lit_codes(subject); n = len(ms)
-    ordered = sorted(ms, key=lambda m: (m["code"] not in lit, -m["value"], m["code"]))   # the lit ones first, so the count reads as a run
-    rows = 1 if n <= L["rows_at"][0] else 2 if n <= L["rows_at"][1] else 3; cols = -(-n // rows)
-    x0, x1 = L["x"]; step = min(36.0, (x1 - x0) / (cols + 0.5)); size = min(max(step / 22.0, L["min_size"]), L["max_size"]) * TOPICS["scenes"][topic]["tally_k"]; left = -step * cols / 2; items = []
+def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows=None, kk="tally_k"):
+    """The members in rows over x0..x1 (the lit first), a unit each: the unit of position i is units[i % len(units)]; (items, rows, cols)."""
+    L = TOPICS["layout"]; n = len(ordered)
+    rows = rows or (1 if n <= L["rows_at"][0] else 2 if n <= L["rows_at"][1] else 3); cols = -(-n // rows)
+    step = min(36.0, (x1 - x0) / (cols + 0.5)); size = size_of(step); left = (x0 + x1) / 2 - step * cols / 2; items = []
+    nl = sum(1 for m in ordered if m["code"] in lit)
     for i, m in enumerate(ordered):
-        r, c = divmod(i, cols); on = m["code"] in lit
-        items.append(unit_item(unit, left + step * (c + 0.5) + step * 0.34 * (r % 3), L["y0"] + L["row_dy"] * r, size * (1.0 if on else L["unlit_k"]), on, mark=on and i == len(lit) - 1))
-    return items, dict(layout=f"tally-{rows}x{cols}", objects=n, lit=len(lit))
+        r, c = divmod(i, cols); on = m["code"] in lit; fn = units[i % len(units)]
+        items.append(unit_item(fn, left + step * (c + 0.5) + step * 0.34 * (r % 3), y0 + L["row_dy"] * r, size * (1.0 if on else L["unlit_k"]), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk))
+    return items, rows, cols
 
 
-def layout_pair(unit, subject, topic=None):
+def order_members(ms, lit): return sorted(ms, key=lambda m: (m["code"] not in lit, -m["value"], m["code"]))   # the lit ones first, so the count reads as a run
+
+
+def layout_tally(units, subject, topic):
+    L = TOPICS["layout"]; ms = members_of(subject); lit = lit_codes(subject)
+    items, rows, cols = grid(units, order_members(ms, lit), lit, *L["x"], L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]))
+    return items, dict(layout=f"tally-{rows}x{cols}", objects=len(ms), lit=len(lit))
+
+
+def layout_groups(units, subject, topic):
+    """Two groups side by side, each on its own slab, each its own members and its own lit count (the same rule over each group's rows,
+    each declared count recomputed and refused like the single tally's); the groups' names are the caller's data, echoed back."""
+    L = TOPICS["layout"]; G = L["groups"]; gs = subject.get("groups")
+    if not isinstance(gs, list) or len(gs) != 2: refuse("subject.groups: two groups required")
+    keys = [g.get("key") for g in gs]
+    if not all(isinstance(k, str) and k for k in keys) or keys[0] == keys[1]: refuse("subject.groups: each group needs its own key")
+    seen = set(); items = []; out = []
+    dec = (subject.get("declared") or {}).get("groups") or {}
+    for g, (x0, x1) in zip(gs, G["x"]):
+        sub = {"members": g.get("members"), "rule": subject.get("rule"), "declared": dec.get(g["key"])}
+        ms = members_of(sub, lo=2, hi=30); lit = lit_codes(sub)
+        for m in ms:
+            if m["code"] in seen: refuse(f"subject.groups: {m['code']} is in two groups")
+            seen.add(m["code"])
+        its, rows, cols = grid(units, order_members(ms, lit), lit, x0, x1, L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]), dz=G["slab"]["h"] - 0.3, mark_last=False, rows=G["rows"], kk="groups_k")
+        items += its
+        w = x1 - x0 + G["slab"]["pad"] * 0.8; depth = L["row_dy"] * (rows - 1) + 22 + G["slab"]["pad"]
+        items.append({"part": "plinth", "kind": "at_ground", "fn": "plinth", "at": [round((x0 + x1) / 2 + L["row_dy"] * 0.17 * (rows - 1), 2), round(L["y0"] + L["row_dy"] * (rows - 1) / 2, 2)], "dz": -0.3,
+                      "args": {"height": G["slab"]["h"], "width": round(w, 1), "depth": round(depth, 1)}})
+        out.append(dict(key=g["key"], name=g.get("name"), lit=len(lit), total=len(ms)))
+    return items, dict(layout="groups-" + "+".join(f"{o['lit']}of{o['total']}" for o in out), objects=sum(o["total"] for o in out), lit=sum(o["lit"] for o in out), groups=out)
+
+
+def layout_pair(units, subject, topic=None):
+    unit = units[0]
     L = TOPICS["layout"]["pair"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c)); hi, lo = order[0], order[-1]
     if val[hi] <= 0 or val[lo] < 0 or val[hi] == val[lo]: refuse("subject: a pair needs a highest above the lowest, both positive")
@@ -224,7 +262,8 @@ def layout_pair(unit, subject, topic=None):
     return items, dict(layout=f"pair-{len(rest)}", objects=len(items), lit=1)
 
 
-def layout_rank(unit, subject, topic=None):
+def layout_rank(units, subject, topic=None):
+    unit = units[0]
     L = TOPICS["layout"]["rank"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c))
     if len(order) > L["max"]: order = order[:L["max"] // 2] + order[-(L["max"] - L["max"] // 2):]
@@ -235,7 +274,8 @@ def layout_rank(unit, subject, topic=None):
     return items, dict(layout=f"rank-{len(order)}", objects=len(order), lit=1)
 
 
-def layout_path(unit, subject, topic=None):
+def layout_path(units, subject, topic=None):
+    unit = units[0]
     L = TOPICS["layout"]["path"]; p = subject.get("path") or {}
     a, b, c = (number(p.get(k), f"subject.path.{k}") for k in ("from", "now", "goal"))
     if c == a: refuse("subject.path: the goal is the start")
@@ -248,7 +288,8 @@ def layout_path(unit, subject, topic=None):
     return items, dict(layout=f"path-{passed}of{k}", objects=k, lit=passed)
 
 
-def layout_series(unit, subject, topic=None):
+def layout_series(units, subject, topic=None):
+    unit = units[0]
     """The years in order, each unit as tall as its year's value; the years from the split year on are lit (the declared count is refused
     when it is not the number of those years)."""
     L = TOPICS["layout"]["series"]; ys = subject.get("series")
@@ -272,7 +313,18 @@ def layout_series(unit, subject, topic=None):
     return items, dict(layout=f"series-{len(ys)}-{len(lit)}", objects=len(ys), lit=len(lit))
 
 
-LAYOUTS = {"tally": layout_tally, "series": layout_series, "pair": layout_pair, "rank": layout_rank, "path": layout_path}
+LAYOUTS = {"tally": layout_tally, "groups": layout_groups, "series": layout_series, "pair": layout_pair, "rank": layout_rank, "path": layout_path}
+
+
+def pick_units(topic, family, sub, kind):
+    """The units the finding draws: the topic's one unit, or, where the scene has objects (energy), the one the finding's measure key (subject.measure)
+    or else the family's entry names; a mix is the layout's list. A measure key the scene does not list is refused."""
+    sc = TOPICS["scenes"][topic]; ob = sc.get("objects")
+    if ob is None: return [sc["unit"]]
+    m = sub.get("measure"); key = m if m is not None else ob["family"].get(family, ob["default"])
+    if key == "mix": return list(ob["mix"][kind])
+    if key not in ob["measure"]: refuse(f"subject.measure {key!r} is none of {'|'.join(ob['measure'])}|mix")
+    return [ob["measure"][key]]
 
 
 def compose_subject(inp):
@@ -282,10 +334,10 @@ def compose_subject(inp):
     if not isinstance(sub, dict): refuse("subject: an object required")
     topic = topic_of(inp.get("family")); sc = TOPICS["scenes"][topic]
     lead = inp.get("lead"); kind = sub.get("kind") or TOPICS["angle_kinds"].get(lead)
+    if "groups" in sub and kind in ("tally", "pair"): kind = "groups"      # a finding about groups draws the groups
     if kind not in LAYOUTS: refuse(f"subject: the layout {kind!r} (lead {lead!r}) is none of {'|'.join(LAYOUTS)}")
-    items, comp = LAYOUTS[kind](sc["unit"], sub, topic)
-    for it in items:   # the leader mark stands as high over a unit as the topic's unit is tall
-        if "mark" in it: it["mark"]["z"] = f"{sc['mark_z'] * it['args']['size']:.1f}"
+    units = pick_units(topic, inp.get("family"), sub, kind)
+    items, comp = LAYOUTS[kind](units, sub, topic); comp["units"] = sorted({i["fn"] for i in items if i.get("fn", "") in units})
     items += [{"part": f["fn"], "kind": "at_ground", "fn": f["fn"], "at": list(f["at"]), "dz": -0.3, "args": dict(f.get("args", {}))} for f in sc["filler"]]
     ck = REG["composition_knobs"]; comp_in = dict(inp.get("composition", {}))
     for k in comp_in:

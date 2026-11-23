@@ -2455,7 +2455,7 @@
    "members": "tally",
    "tiles": "tally",
    "map": "tally",
-   "groups": "tally",
+   "groups": "groups",
    "movers": "tally",
    "overtake": "tally",
    "need": "path",
@@ -2471,9 +2471,10 @@
    "pair": "lagging",
    "rank": "lagging",
    "path": "in_time",
-   "series": "happened"
+   "series": "happened",
+   "groups": "lagging"
   },
-  "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this).",
+  "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
   "layout": {
    "x": [
     -108,
@@ -2529,6 +2530,25 @@
     "y": 44,
     "size": 1.6,
     "floor": 0.3
+   },
+   "groups": {
+    "x": [
+     [
+      -112,
+      -10
+     ],
+     [
+      10,
+      112
+     ]
+    ],
+    "gap_note": "two panels, each on its own stone slab",
+    "slab": {
+     "h": 4,
+     "pad": 10
+    },
+    "rows_at": 6,
+    "rows": 2
    }
   },
   "scenes": {
@@ -2537,8 +2557,48 @@
     "accent": "#1a9a6c",
     "relief": 0.4,
     "filler": [],
-    "mark_z": 46,
-    "tally_k": 0.72
+    "objects": {
+     "doc": "Within the energy topic the object follows the finding: the finding's measure key (subject.measure: wind, solar, hydro, grid, biomass) when given, else the registered family's entry below. A family entry is a measure key, or mix: then the layout picks (tally cycles the whole mix, the others one object of it). A key not listed refuses.",
+     "measure": {
+      "wind": "turbine_unit",
+      "solar": "solar_unit",
+      "hydro": "dam_unit",
+      "grid": "pylon_unit",
+      "biomass": "biomass_unit"
+     },
+     "family": {
+      "renewable_share": "mix",
+      "electricity_mix": "mix",
+      "installed_capacity": "wind",
+      "electricity_price": "grid",
+      "energy_balance": "grid"
+     },
+     "default": "mix",
+     "mix": {
+      "tally": [
+       "turbine_unit",
+       "solar_unit",
+       "dam_unit",
+       "biomass_unit",
+       "pylon_unit"
+      ],
+      "groups": [
+       "solar_unit"
+      ],
+      "pair": [
+       "solar_unit"
+      ],
+      "rank": [
+       "dam_unit"
+      ],
+      "path": [
+       "turbine_unit"
+      ],
+      "series": [
+       "biomass_unit"
+      ]
+     }
+    }
    },
    "emissions": {
     "unit": "stack_unit",
@@ -2605,17 +2665,13 @@
        "size": 0.9
       }
      }
-    ],
-    "mark_z": 40,
-    "tally_k": 1.0
+    ]
    },
    "people": {
     "unit": "figure_unit",
     "accent": "#d08a1e",
     "relief": 0.3,
-    "filler": [],
-    "mark_z": 30,
-    "tally_k": 1.0
+    "filler": []
    },
    "trade": {
     "unit": "container_unit",
@@ -2652,9 +2708,7 @@
        "size": 1.5
       }
      }
-    ],
-    "mark_z": 22,
-    "tally_k": 1.0
+    ]
    },
    "migration": {
     "unit": "waypoint_unit",
@@ -2790,17 +2844,13 @@
        "yaw": 0
       }
      }
-    ],
-    "mark_z": 32,
-    "tally_k": 1.0
+    ]
    },
    "neutral": {
     "unit": "cairn_unit",
     "accent": "#3c6e91",
     "relief": 0.4,
-    "filler": [],
-    "mark_z": 27,
-    "tally_k": 1.0
+    "filler": []
    }
   },
   "cameras": {
@@ -2829,7 +2879,93 @@
      40
     ],
     "lens": 30
+   },
+   "groups": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
    }
-  }
+  },
+  "units": {
+   "turbine_unit": {
+    "mark_z": 46,
+    "k": 1.0,
+    "tally_k": 0.72,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "solar_unit": {
+    "mark_z": 26,
+    "k": 0.46,
+    "tally_k": 1.0,
+    "groups_k": 1.25,
+    "row_k": 1.0
+   },
+   "dam_unit": {
+    "mark_z": 22,
+    "k": 0.5,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 0.5
+   },
+   "pylon_unit": {
+    "mark_z": 40,
+    "k": 0.9,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 0.8
+   },
+   "biomass_unit": {
+    "mark_z": 18,
+    "k": 0.66,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 0.5
+   },
+   "stack_unit": {
+    "mark_z": 40,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "figure_unit": {
+    "mark_z": 34,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "container_unit": {
+    "mark_z": 22,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "waypoint_unit": {
+    "mark_z": 32,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "cairn_unit": {
+    "mark_z": 27,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   }
+  },
+  "units_doc": "mark_z: how high the leader mark stands over a unit of size 1; k: the unit's footprint against the turbine's, so a wide unit (a dam) is drawn smaller and rows of it do not overlap. tally_k, groups_k, row_k: the extra scale of the unit in a tally, in a groups panel and in the size-coded layouts (rank, series, pair), so a wide unit does not run into its neighbour."
  }
 }
