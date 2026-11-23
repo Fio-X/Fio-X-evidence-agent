@@ -1160,5 +1160,244 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual((notes.get("refused"), notes.get("dropped")), (None, None))
         self.assertEqual(sorted(t["src"] for t in notes["texts"]), ["name:zh_names:iso2:LU+fact:times", "name:zh_names:iso2:SE+fact:gap"])
 
+# I36: the column and change pages' notes that compare a place with coordinates outside the drawn bars, from the same table
+# and basis: the whole (shape.whole, its row at the page year; a change page's at t0 too), the target (shape.target: table,
+# time, place; its row among the page rows) and the previous year (shape.prev, column pages only). The core holds them
+# (next_tree first_holding over CONDITIONS); here a small stand-in of it picks a note from the registry's candidates over a
+# test-only page input, a candidate reading a page input path the input lacks left out (the key is absent when not held),
+# and the leaf prints the picked note.
+NB = json.load(open(os.path.join(HERE, "..", "runtime", "page_tree", "node-bindings.json"), encoding="utf-8"))
+NOTE_DECL = NB["nodes"]["leader_notes"]["declares_by_recipe"]
+NEW_NOTE_WORDS = {"column.note.whole_above": "高出", "column.note.whole_below": "低于", "column.note.whole_above_after": "，高出",
+                  "column.note.last_year_name": "上年"}
+OUTSIDE = ("$shape.whole", "$shape.target", "$shape.prev")
+
+
+class Absent(Exception):
+    pass
+
+
+def sub_in(v, page):
+    """A registry template with every $path read from the page input; a path the input lacks raises Absent."""
+    if isinstance(v, str) and v.startswith("$"):
+        x = page
+        for k in v[1:].split("."):
+            if not isinstance(x, dict) or k not in x: raise Absent(v)
+            x = x[k]
+        return x
+    if isinstance(v, dict): return {sub_in(k, page) if k.startswith("$") else k: sub_in(x, page) for k, x in v.items()}
+    if isinstance(v, list): return [sub_in(x, page) for x in v]
+    return v
+
+
+def put(v, ctx):
+    """`v` with each select reference its code(s) and each {code} the item's code."""
+    if isinstance(v, str):
+        if v.startswith("select:"): return ctx["got"][v[7:]]
+        return v.replace("{code}", ctx["code"])
+    if isinstance(v, dict): return {put(k, ctx): put(x, ctx) for k, x in v.items()}
+    if isinstance(v, list): return [put(x, ctx) for x in v]
+    return v
+
+
+def core_val(facts, rows, key):
+    """A fact's value as the core computes it (next_tree Compute) for the ops the notes use."""
+    if key not in facts:
+        fam, code = key.rsplit(".", 1); q = facts[fam]
+        if q.get("op") == "minus": return core_val(facts, rows, f"{q['a']}.{code}") - core_val(facts, rows, f"{q['b']}.{code}")
+        return sum(float(r["value"]) for r in rows if r["table"] == q["table"] and r["time"] == q["time"] and r["dims"].get(q["each"]) == code)
+    q = facts[key]; op = q.get("op", "value")
+    if op in ("minus", "times", "share"):
+        a, b = core_val(facts, rows, q["a"]), core_val(facts, rows, q["b"])
+        return a - b if op == "minus" else a / b
+    hit = lambda r, t: r["table"] == q["table"] and r["time"] == t and all(r["dims"].get(d) in (c if isinstance(c, list) else [c]) for d, c in q.get("filter", {}).items())
+    if op == "last": at = [r for r in rows if hit(r, q["to"])]
+    else: at = [r for r in rows if hit(r, q["time"])]
+    if not at: raise ValueError(f"{key}: no row")
+    if op == "n": return float(len({r["dims"][q["by"]] for r in at}))
+    return sum(float(r["value"]) for r in at)
+
+
+def holds(c, ctx, facts):
+    """One condition of the core's CONDITIONS, as next_tree condition_holds reads it."""
+    page, v = ctx["page"], lambda k: core_val(facts, page["rows"], c[k])
+    k = c["if"]
+    if k == "sign": x = v("fact"); return {"pos": x > 0, "neg": x < 0, "zero": x == 0}[c["is"]]
+    if k == "prints_nonzero": return f"{v('fact'):.{ctx['dec']}f}" != f"{0.0:.{ctx['dec']}f}"
+    if k == "prints_above": return float(f"{v('fact'):.1f}") > c["than"]
+    if k == "count_at_least": return len(ctx["got"][c["select"]]) >= c["n"]
+    if k == "gap_printable": return c.get("is", True) is True
+    if k == "unit_adds_up": return False  # the test rows are percents
+    if k == "page_is": return page.get(c["path"]) is True
+    if k == "row_above":
+        return any(r["table"] == c["table"] and r["time"] == c["time"] and all(r["dims"].get(d) == x for d, x in c["filter"].items())
+                   and float(r["value"]) > c["than"] for r in page["rows"])
+    if k == "width_at_most":
+        line = "".join(p.replace("{name}", page["names"][ctx["code"]]) if isinstance(p, str) else K.WD.WORDS[p["word"]] for p in c["text"])
+        return sum(c["size"] if ord(ch) > 0x2E7F else 0.58 * c["size"] for ch in line) <= c["max"]
+    raise AssertionError(f"condition {k} is not one the stand-in reads")
+
+
+def pick_note(recipe, end, page, got, code):
+    """The note the core picks for an end: its candidate index, the candidate (paths read, codes put) and its facts' values."""
+    decl = NOTE_DECL[recipe]; ctx = {"page": page, "got": got, "code": code, "dec": 1}
+    kept = []
+    for i, c in enumerate(decl["candidates"][end]):
+        try: kept.append((i, put(sub_in(c, page), ctx)))
+        except Absent: continue
+    facts = put(sub_in(decl["facts"], page), ctx)
+    for _, c in kept: facts.update(c.get("facts", {}))
+    for i, c in kept:
+        if all(holds(w, ctx, facts) for w in c["when"]):
+            vals = {k: core_val(facts, page["rows"], k) for k in c.get("facts", {})}
+            return i, c, vals
+    raise AssertionError(f"{recipe} {end}: no candidate holds")
+
+
+def note_page(**shape):
+    """A test-only column page input over the EU-27 values (VALUES, 2023), EARLIER at 2016 and each place 1.2 lower at 2022, the
+    EU-27's row (24.5 at 2023, 21.3 at 2016) and its 2030 target (42.5) in table tgt; `shape` the outside keys it holds."""
+    rows = [{"table": "t", "dims": {"geo": c}, "time": "2023", "value": str(v)} for c, v in VALUES.items()]
+    rows += [{"table": "t", "dims": {"geo": c}, "time": "2016", "value": str(v)} for c, v in EARLIER.items()]
+    rows += [{"table": "t", "dims": {"geo": c}, "time": "2022", "value": str(round(v - 1.2, 2))} for c, v in VALUES.items()]
+    if "whole" in shape: rows += [{"table": "t", "dims": {"geo": "EU27_2020"}, "time": t, "value": v} for t, v in (("2023", "24.5"), ("2016", "21.3"))]
+    if "target" in shape: rows.append({"table": "tgt", "dims": {"geo": "EU27_2020"}, "time": "2030", "value": "42.5"})
+    return {"shape": {"main": "t", "place": "geo", "year": "2023", "fmt": "pc", "scale": 1, "suffix": "%", **shape}, "picks": {"t0": "2016"},
+            "fmt": {"change": "chg"}, "rows": rows, "names": dict(ZH2, EU27_2020="欧盟"), "gap_order": []}
+
+
+WHOLE_IN = {"whole": "EU27_2020"}
+TARGET_IN = {"target": {"table": "tgt", "time": "2030", "place": "EU27_2020"}}
+PREV_IN = {"prev": "2022"}
+
+
+class OutsideNotes(unittest.TestCase):
+    def column_notes(self, shape):
+        ranked = sorted(VALUES, key=lambda c: -VALUES[c]); got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}
+        page = note_page(**shape)
+        return [pick_note("column", e, page, got, got[s]) for e, s in (("hi", "end_first"), ("lo", "end_last"))]
+
+    def change_notes(self, shape):
+        moved = {c: VALUES[c] - EARLIER[c] for c in VALUES}; ranked = sorted(VALUES, key=lambda c: -moved[c])
+        got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1], "next_first": ranked[1], "prev_last": ranked[-2]}
+        page = note_page(**shape)
+        return [pick_note("change", e, page, got, got[s]) for e, s in (("first", "end_first"), ("last", "end_last"))]
+
+    def drawn(self, notes, values):
+        """The notes through the leaf runner on a column page with no map: each note's printed line (its texts' plain words)."""
+        lines = column_lines({"leader_notes": dict(D, notes=notes)})
+        lines = [lines[0], lines[1], lines[4]]
+        extra = {**{f"fact:{k}": f"{v:.1f} 个百分点" for k, v in values.items()}, "name:zh_names:iso3:EU27_2020": "欧盟", "fact:target_v.t.y": "2030"}
+        out = []
+        for l in lines:
+            d = json.loads(l); d["rows"] = d["rows"] + [{"src": k, "text": v} for k, v in extra.items()]
+            d["knobs"]["labels"] = dict(d["knobs"]["labels"], EU27_2020="欧盟"); out.append(json.dumps(d, ensure_ascii=False))
+        got = child(out)
+        self.assertEqual([g.get("refused") for g in got], [None] * 3)
+        self.assertEqual(got[2].get("dropped") or [], [])
+        return [re.sub(r"<[^>]+>", "", t) for t in re.findall(r"<text [^>]*>(.*?)</text>", got[2]["svg"])]
+
+    def note(self, code, picked):
+        _, c, vals = picked
+        return dict(name=code, text=c["text"], value_text=c["value_text"]), {k: v for k, v in vals.items() if c["value_text"] == f"fact:{k}"}
+
+    def test_the_new_words_are_the_four_listed_and_hold_no_digit(self):
+        for k, v in NEW_NOTE_WORDS.items():
+            self.assertEqual(K.WD.WORDS[k], v, k); self.assertFalse(re.search(r"[0-9０-９]", v), k)
+
+    def test_the_outside_candidates_come_before_the_mean_ones_and_read_only_registered_words_and_conditions(self):
+        kinds = {"sign", "prints_nonzero", "prints_above", "width_at_most", "count_at_least", "unit_adds_up", "covers_whole", "gap_printable", "page_is", "row_above", "layer_before"}
+        for recipe, ends in (("column", ("hi", "lo")), ("change", ("first", "last"))):
+            for end in ends:
+                cs = NOTE_DECL[recipe]["candidates"][end]
+                outside = [i for i, c in enumerate(cs) if any(p in json.dumps(c) for p in OUTSIDE)]
+                mean = [i for i, c in enumerate(cs) if "vs_mean" in c.get("value_text", "")]
+                self.assertTrue(outside and outside == list(range(len(outside))), (recipe, end))
+                self.assertTrue(not mean or max(outside) < min(mean), (recipe, end))
+                for i in outside:
+                    c = cs[i]
+                    self.assertLessEqual({w["if"] for w in c["when"]}, kinds)
+                    self.assertIn(c["value_text"][5:], c["facts"], (recipe, end, i))
+                    for seg in c["text"]:
+                        if "word" in seg: self.assertIn(seg["word"], K.WD.WORDS)
+                        self.assertNotIn("w", seg)
+                # no previous-period note on a change page (it compares t0 with the year already)
+                if recipe == "change": self.assertFalse(any("$shape.prev" in json.dumps(cs[i]) for i in outside))
+        # every fact key two candidates declare is declared one way
+        seen = {}
+        for recipe in ("column", "change"):
+            for cs in NOTE_DECL[recipe]["candidates"].values():
+                for c in cs:
+                    for k, q in c.get("facts", {}).items():
+                        self.assertEqual(seen.setdefault((recipe, k), q), q, k)
+
+    def test_without_the_outside_keys_the_notes_are_the_ones_before(self):
+        for picked in self.column_notes({}) + self.change_notes({}):
+            self.assertFalse(any(p in json.dumps(picked[1]) for p in ("EU27_2020", "tgt", "2022")), picked[1]["value_text"])
+        self.assertEqual([p[1]["value_text"] for p in self.column_notes({})], ["fact:vs_mean", "fact:lo_vs_mean"])
+
+    def test_a_column_page_compares_its_ends_with_the_whole(self):
+        hi, lo = self.column_notes(WHOLE_IN)
+        self.assertEqual((hi[1]["value_text"], lo[1]["value_text"]), ("fact:hi_vs_whole", "fact:lo_vs_whole"))
+        self.assertAlmostEqual(hi[2]["hi_vs_whole"], 66.4 - 24.5); self.assertAlmostEqual(lo[2]["lo_vs_whole"], 24.5 - 11.6)
+        (n1, v1), (n2, v2) = self.note("SE", hi), self.note("LU", lo)
+        lines = self.drawn([dict(n1, at=POINT["SWE"]), dict(n2, at=POINT["LUX"])], {**v1, **v2})
+        self.assertEqual(sorted(lines), sorted([f"{ZH2['SE']} 高出欧盟 41.9 个百分点", f"{ZH2['LU']} 低于欧盟 12.9 个百分点"]))
+        # the whole held, a target and a previous year too: the whole still comes first
+        self.assertEqual([p[1]["value_text"] for p in self.column_notes({**WHOLE_IN, **TARGET_IN, **PREV_IN})], ["fact:hi_vs_whole", "fact:lo_vs_whole"])
+
+    def test_a_sum_whole_above_every_member_gives_no_whole_note(self):
+        # a whole above the highest member (a sum, never a rate's middle): neither end compares with it
+        page = note_page(**WHOLE_IN)
+        for r in page["rows"]:
+            if r["dims"]["geo"] == "EU27_2020" and r["time"] == "2023": r["value"] = "900"
+        ranked = sorted(VALUES, key=lambda c: -VALUES[c]); got = {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}
+        self.assertEqual([pick_note("column", e, page, got, got[s])[1]["value_text"] for e, s in (("hi", "end_first"), ("lo", "end_last"))],
+                         ["fact:vs_mean", "fact:lo_vs_mean"])
+
+    def test_a_column_page_says_how_far_its_ends_are_from_the_target_and_its_year(self):
+        hi, lo = self.column_notes(TARGET_IN)
+        self.assertEqual((hi[1]["value_text"], lo[1]["value_text"]), ("fact:hi_over_target", "fact:lo_to_target"))
+        self.assertAlmostEqual(lo[2]["lo_to_target"], 42.5 - 11.6)
+        (n1, v1), (n2, v2) = self.note("SE", hi), self.note("LU", lo)
+        lines = self.drawn([dict(n1, at=POINT["SWE"]), dict(n2, at=POINT["LUX"])], {**v1, **v2})
+        self.assertEqual(sorted(lines), sorted([f"{ZH2['SE']} 高出欧盟2030 年目标 23.9 个百分点", f"{ZH2['LU']} 低于欧盟2030 年目标 30.9 个百分点"]))
+        # the year is the target fact's own period entry, never a digit in the words
+        self.assertIn({"src": "fact:target_v.t.y"}, lo[1]["text"])
+
+    def test_a_column_page_compares_its_ends_with_the_previous_year(self):
+        hi, lo = self.column_notes(PREV_IN)
+        self.assertEqual((hi[1]["value_text"], lo[1]["value_text"]), ("fact:hi_vs_prev", "fact:lo_vs_prev"))
+        (n1, v1), (n2, v2) = self.note("SE", hi), self.note("LU", lo)
+        lines = self.drawn([dict(n1, at=POINT["SWE"]), dict(n2, at=POINT["LUX"])], {**v1, **v2})
+        self.assertEqual(sorted(lines), sorted([f"{ZH2['SE']} 高出上年 1.2 个百分点", f"{ZH2['LU']} 高出上年 1.2 个百分点"]))
+        # a fall on the year: the lower word
+        page = note_page(**PREV_IN)
+        for r in page["rows"]:
+            if r["time"] == "2022" and r["dims"]["geo"] == "SE": r["value"] = "70.0"
+        ranked = sorted(VALUES, key=lambda c: -VALUES[c])
+        _, c, vals = pick_note("column", "hi", page, {"ranked": ranked, "end_first": ranked[0], "end_last": ranked[-1]}, "SE")
+        self.assertEqual((c["text"], c["value_text"]), ([{"word": "column.note.whole_below"}, {"word": "column.note.last_year_name"}], "fact:hi_prev_drop"))
+        self.assertAlmostEqual(vals["hi_prev_drop"], 70.0 - 66.4)
+
+    def test_a_change_page_compares_its_ends_changes_with_the_whole_s_and_never_the_previous_year(self):
+        first, last = self.change_notes({**WHOLE_IN, **PREV_IN})
+        self.assertEqual((first[1]["value_text"], last[1]["value_text"]), ("fact:first_vs_whole", "fact:last_vs_whole"))
+        moved = {c: VALUES[c] - EARLIER[c] for c in VALUES}; ranked = sorted(VALUES, key=lambda c: -moved[c])
+        self.assertAlmostEqual(first[2]["first_vs_whole"], moved[ranked[0]] - (24.5 - 21.3))
+        self.assertAlmostEqual(last[2]["last_vs_whole"], (24.5 - 21.3) - moved[ranked[-1]])
+        self.assertEqual(first[1]["text"], [{"word": "column.note.rise_most"}, {"word": "column.note.whole_above_after"}, {"name": "EU27_2020", "kind": "place"}])
+        (n1, v1), (n2, v2) = self.note(ranked[0], first), self.note(ranked[-1], last)
+        lines = self.drawn([dict(n1, at=POINT[ISO3[ranked[0]]]), dict(n2, at=POINT[ISO3[ranked[-1]]])], {**v1, **v2})
+        self.assertEqual(sorted(lines), sorted([f"{ZH2[ranked[0]]} 升幅最大，高出欧盟 {v1['first_vs_whole']:.1f} 个百分点",
+                                                f"{ZH2[ranked[-1]]} 降幅最大，低于欧盟 {v2['last_vs_whole']:.1f} 个百分点"]))
+        # with a target only, the level at the page year below it (the first, above it, keeps its plain note: a change page
+        # says only how far a place still is from the target)
+        first, last = self.change_notes(TARGET_IN)
+        self.assertGreater(VALUES[ranked[0]], 42.5)
+        self.assertEqual((first[1]["value_text"], last[1]["value_text"]), ("fact:vs_mean", "fact:last_to_target"))
+        self.assertAlmostEqual(last[2]["last_to_target"], 42.5 - VALUES[ranked[-1]])
+
+
 if __name__ == "__main__":
     unittest.main()
