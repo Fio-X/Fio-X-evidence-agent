@@ -3595,6 +3595,15 @@ fn recipe_request(
     // a group the question names counts its members of one year: the rows of a place that is neither one of them nor named
     // in the question are left out, each kept with why in the page's basis and in an event
     let mut basis = basis_of(&shape, &main_rows, catalogue, question);
+    // a recipe that went without its condition (knobs.json recipes[].without) does not take a group page whose basis must be
+    // said (the member year, the count of the places drawn, the members with no data on the unit line): that page has no such
+    // count of its own and would stop at the fill with no other recipe tried, so the request goes on to the ordinary page
+    if shape.passed_over.is_some() && basis.as_ref().is_some_and(|b| b.line.is_some()) {
+        return Err(shape_err(format!(
+            "not this shape: without {} the page has no count of its own to say the basis of the group the question names",
+            recipe.without.as_ref().map_or("its condition", |w| w.condition.as_str())
+        )));
+    }
     if let Some(first) = basis.take_if(|b| !b.dropped.is_empty()) {
         let why = left_out(&first);
         main_rows.retain(|r| {
@@ -28371,6 +28380,60 @@ for line in sys.stdin:
             let why = reached(id, kept, &WbRanked(wb.clone()));
             assert!(why.contains(story_reached), "World Bank {kept:?}: {why}");
         }
+    }
+
+    /// H2b walk 11-23 (an ASEAN question): a page that went without its condition has no count of its own to say the basis of a
+    /// group the question names, so with a basis line the story page is not this shape and the ordinary page is reached
+    /// (said_basis would stop that page at the fill, no other recipe tried). A question naming the EU over eight members that
+    /// each have a row at the last year has no basis line (union_basis) and still reaches the story page. Over a run folder
+    /// with no candidate sheet, as a_ranking_with_no_target_reaches_the_story_page_and_with_a_target_the_column_page reads it.
+    #[test]
+    fn a_group_with_a_basis_line_and_no_target_goes_on_to_the_ordinary_page() {
+        let run = tempfile::tempdir().unwrap();
+        std::fs::write(run.path().join("sdg_07_40.csv"), "").unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        let years: Vec<String> = (2016..=2025).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let reached = |question: &str, places: &[&str]| -> String {
+            let main = group_rows(places, &years);
+            let prepared = Prepared {
+                id: "sdg_07_40".into(),
+                title: String::new(),
+                file: "sdg_07_40.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                chain: Vec::new(),
+                asked: json!([]),
+                relation: Some(Relation::Change),
+            };
+            let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
+            match leaf_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                &cat,
+                (question, ("标题", "导语", "栏目")),
+                (&Default::default(), None),
+                (false, false),
+            ) {
+                Ok((recipe, _, passed)) => format!("picked {}; {}", recipe.name, passed.join("; ")),
+                Err((recipe, stage, why)) => format!("{recipe}-{stage}: {why}"),
+            }
+        };
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
+        let why = reached("金砖国家近十年的GDP增长率", &brics);
+        assert!(
+            why.contains("page_story: not this shape: without has_target the page has no count of its own to say the basis of the group the question names"),
+            "{why}"
+        );
+        assert!(!why.contains("page_story: shadow/candidate_sheet") && why.contains("change: shadow/candidate_sheet"), "{why}");
+        let eu = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "EU27_2020"];
+        let why = reached("欧盟各国的可再生能源占比", &eu);
+        assert!(why.contains("page_story: shadow/candidate_sheet"), "{why}");
+        assert!(!why.contains("the basis of the group"), "{why}");
     }
 
     /// Fetched with the knowledge group's target rows for the main (Catalogue::targets), as GroupCatalogue hands them in.
