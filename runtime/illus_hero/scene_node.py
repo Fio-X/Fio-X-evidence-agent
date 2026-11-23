@@ -1,11 +1,13 @@
 """Config-driven Blender scene for the illustration node.   Blender -b -P scene_node.py -- <scene.json>
 scene.json is written by run_node.py (from the input JSON + node.json); this file contains no layout numbers of its own.
-Passes and the Freestyle stroke hook are the same as scene_q1.py (shade.png, ids.png, lines.png, strokes.json, hub.json, ids.json)."""
+Passes and the Freestyle stroke hook are the same as scene_q1.py (shade.png, ids.png, lines.png, strokes.json, hub.json, ids.json).
+Every standing part casts a thin shadow wedge on the terrain (contact_shadow), and the parts a scene marks get their projected tops in marks.json (leader lines)."""
 import sys, os, math, json, time
 import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import parts as P, world as Wd
+from mesh import Mesh
 
 CFG = json.load(open(sys.argv[sys.argv.index("--") + 1]))
 RW, RH = CFG["w"], CFG["h"]; OUT = CFG["out"]; os.makedirs(OUT, exist_ok=True)
@@ -22,6 +24,23 @@ def move(meshes, x, y, z):
     return meshes
 
 
+def contact_shadow(x, y, h):
+    """A standing part's cast shadow on the ground (group shadow): a thin wedge from its foot away from the light, `h` tall parts cast
+    longer ones, laid on the terrain so it never floats; CFG["shadow"] gives its length, width and direction (node.json contact_shadow)."""
+    c = CFG.get("shadow")
+    if not c or h <= 0: return []
+    dx, dy = c["dir"]; L = c["len"] * h; w = c["w"] * h; n = 8; V = []; F = []
+    nx, ny = -dy, dx
+    for i in range(n + 1):
+        t = i / n; hw = w * (1 - 0.75 * t) + 0.6; px, py = x + dx * L * t, y + dy * L * t
+        for s in (-1, 1): V.append((px + s * nx * hw, py + s * ny * hw, G(px + s * nx * hw, py + s * ny * hw) + 0.3))
+        if i: F.append((2 * i - 2, 2 * i, 2 * i + 1, 2 * i - 1))
+    m = Mesh("cast", "shadow"); m.add(V, F, outward=False); return [m]
+
+
+SHADOW_H = {"wind_turbine": "height", "hero_turbine": "height", "target_flag": "height", "pylon": "height"}
+
+
 def build_world():
     meshes = []; chain = []
     meshes += P.terrain(HT, -190, 190, -110, 340, cell=4.5)
@@ -34,8 +53,9 @@ def build_world():
         elif k == "track": meshes += P.track(ground=HT, **a)
         elif k == "at_ground":
             x, y = it["at"]; meshes += move(fn(**a), x, y, G(x, y) + it.get("dz", -0.3))
+            if it["fn"] in SHADOW_H: meshes += contact_shadow(x, y, a.get(SHADOW_H[it["fn"]], 0) * (0.5 if it["fn"] == "target_flag" else 1.0))
         elif k == "pylon":
-            x, y = it["at"]; ms, an = fn(**a); meshes += move(ms, x, y, G(x, y) - 0.5); chain.append([(p[0] + x, p[1] + y, p[2] + G(x, y) - 0.5) for p in an])
+            x, y = it["at"]; ms, an = fn(**a); meshes += move(ms, x, y, G(x, y) - 0.5); meshes += contact_shadow(x, y, 0.6 * a.get("height", 34)); chain.append([(p[0] + x, p[1] + y, p[2] + G(x, y) - 0.5) for p in an])
     for a0, a1 in zip(chain, chain[1:]):
         for p, q in zip(a0, a1): meshes += P.wires(p, q, sag=2.2)
     return meshes
@@ -70,6 +90,20 @@ def focus_pixel():
     bpy.context.view_layer.update()
     c = world_to_camera_view(bpy.context.scene, bpy.context.scene.camera, Vector((wx, wy, wz)))
     json.dump({"x": c.x * RW, "y": (1 - c.y) * RH, "w": RW, "h": RH}, open(os.path.join(OUT, "hub.json"), "w"))
+
+
+def mark_pixels():
+    """Where each part's leader mark stands in the picture: the projected top of the part (foot + its mark height), and how far the
+    leader rises from there (px at the 1440 frame); marks.json, read by the painting, in the order the parts were placed."""
+    from bpy_extras.object_utils import world_to_camera_view
+    from mathutils import Vector
+    out = []
+    for it in CFG["items"]:
+        m = it.get("mark")
+        if not m: continue
+        x, y = m["at"]; c = world_to_camera_view(bpy.context.scene, bpy.context.scene.camera, Vector((x, y, G(x, y) + m["z"])))
+        out.append({"x": c.x * RW, "y": (1 - c.y) * RH, "rise": m["rise"], "hero": bool(it.get("hero")), "depth": c.z})
+    json.dump({"w": RW, "h": RH, "marks": out}, open(os.path.join(OUT, "marks.json"), "w"))
 
 
 def render(sc, name):
@@ -107,7 +141,7 @@ def main():
     sc = bpy.context.scene; sc.render.engine = "BLENDER_WORKBENCH"; sc.render.resolution_x, sc.render.resolution_y = RW, RH; sc.render.resolution_percentage = 100
     sc.view_settings.view_transform = "Standard"; sc.view_settings.look = "None"; sc.world = bpy.data.worlds.new("w"); sc.world.color = (1, 1, 1)
     sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGB"
-    focus_pixel(); secs = {}
+    focus_pixel(); mark_pixels(); secs = {}
     sh = sc.display.shading; sh.light = "STUDIO"; sh.color_type = "SINGLE"; sh.single_color = (1, 1, 1); sh.show_shadows = True; sh.shadow_intensity = 0.6
     sh.show_object_outline = False; sh.show_cavity = False; sc.display.render_aa = "8"; sc.render.use_freestyle = False; sc.display.light_direction = (0.55, -0.35, -0.75)
     secs["shade"] = render(sc, "shade.png")

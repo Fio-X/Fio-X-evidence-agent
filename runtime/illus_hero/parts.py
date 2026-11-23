@@ -6,6 +6,7 @@
   pylon(height=34 [15..60], arm_w=7 [3..12], yaw=0)       and  wires(p0, p1, sag=...)
   terrain(height_fn, x0, x1, y0, y1, cell=4)
   target_flag(height=30, cloth=12, wave=0.18, yaw=0, split=None)   and  track(points, ground, width=5)    (a story scene's marker and road)
+  plinth(height=10 [2..40], width=24 [8..40], depth=16 [8..30], yaw=0)   (a stone step: a stair of them is the climb a story needs)
 Groups (what the ID layer paints): wind, solar, hydro (renewable: green in the final drawing) | pylon, terrain, water, spill, track (not green)."""
 import math
 from mesh import Mesh, box, frustum, loft, tube, rot_z, rot_y, rot_x, matmul, mulv, add3
@@ -334,3 +335,13 @@ def track(points, ground, width=5.0, step=3.0, name="track"):
             px, py = x + sx * nx, y + sx * ny; V.append((px, py, ground(px, py) + 0.25))
         if i: F.append((2 * i - 2, 2 * i, 2 * i + 1, 2 * i - 1))   # counter-clockwise from above: the face looks up
     m.add(V, F, outward=False); return [m]
+
+
+def plinth(height=10.0, width=24.0, depth=16.0, yaw=0.0, name="plinth"):
+    """A stone step (a block with a slightly wider cap slab): a row of them, each taller, is a stair that the parts on top climb. Local
+    origin at the ground under its middle; it sinks 6 units into the ground so it never floats on a slope. Group track (a pale hatched
+    block with inked edges); the part standing on it is placed `height` higher (the scene's dz)."""
+    m = Mesh(name, "track"); sink = 6.0; cap = min(1.6, 0.25 * height + 0.4)
+    m.merge(box((0, 0, (height - cap - sink) / 2), (width, depth, height - cap + sink)))
+    m.merge(box((0, 0, height - cap / 2), (width + 1.6, depth + 1.6, cap)))
+    o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]

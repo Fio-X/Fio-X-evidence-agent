@@ -180,6 +180,31 @@ def paint_blades(mask, shade, hub, pal):
     return layers
 
 
+def dot(x, y, r):
+    """A plain round marker as a path (two half arcs): no circle element, no text."""
+    return f"M{x - r:.1f},{y:.1f}a{r},{r} 0 1,0 {2 * r},0a{r},{r} 0 1,0 {-2 * r},0Z"
+
+
+def leader_marks(line, acc):
+    """Leader lines over the parts the scene marks (marks.json): a thin pen line rising from the part's top to a small plain dot, the
+    hero's dot in the accent; a mark whose foot falls outside the frame is left out. Shapes only: no number, no word."""
+    path = os.path.join(H2.IN, "marks.json")
+    if not os.path.exists(path): return []
+    M = json.load(open(path)); k = W / M["w"]; strokes, dots, hero = [], [], []
+    for m in M["marks"]:
+        x, y = m["x"] * k, m["y"] * k
+        if not (10 <= x <= W - 10 and 20 <= y <= H - 4) or m["depth"] <= 0: continue
+        top = max(y - m["rise"], 14.0); y0 = y - 7
+        if y0 - top < 12: continue
+        pth = ink_stroke([(x, y0), (x + 0.6, (y0 + top) / 2), (x, top)], np.array([1.5, 1.7, 1.5]), 0.35, 4, 4)
+        if pth: strokes.append(pth)
+        (hero if m["hero"] else dots).append(dot(x, top - 4.2, 4.6))
+    out = [f'<path d="{"".join(strokes)}" fill="{line}" opacity="0.9"/>'] if strokes else []
+    if dots: out.append(f'<path d="{"".join(dots)}" fill="{line}"/>')
+    if hero: out.append(f'<path d="{"".join(hero)}" fill="{hexc(acc)}" stroke="{line}" stroke-width="1.4"/>')
+    return out
+
+
 def build():
     pal = {k: tuple(v) for k, v in CFG["palette"].items()}; line = hexc(pal["line"]); IN = H2.IN
     names, lab = H2.load_labels(); idx = lambda n: names.index(n) if n in names else None
@@ -188,11 +213,16 @@ def build():
     gj, tooth, crumple = ground_jpeg3(pal)
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
+    body = []   # the background turbines and plants get a pale body under their ink, so they read as things, not as wires
+    for g in ("wind", "coal"):
+        if idx(g) is None: continue
+        body += [f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.0, 30))]
     wash = []
     for g in ("terrain", "hydro", "water", "coal", "track"):
         if idx(g) is None: continue
         wash += [f'<path d="{pd(p, (0, 0), 1.2)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.5, 80))]
     layers.append(f'<g fill="url(#wash)">{"".join(wash)}</g>')
+    if body: layers.append(f'<g fill="{hexc(mix(pal["light"], (250, 246, 238), 0.45))}" opacity="0.55">{"".join(body)}</g>')
     if idx("shadow") is not None:
         sh = "".join(f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(lab == idx("shadow"), 1.0, 30)))
         layers.append(f'<g fill="{hexc(pal["dark"])}" opacity="0.5">{sh}</g>')
@@ -248,6 +278,7 @@ def build():
     layers.insert(0, f"<defs>{defs}</defs>")
     layers.append(f'<path d="{"".join(G["hero_in"])}" fill="#14100e"/>')
     layers.append("".join(f'<path d="{"".join(DIRS[k_])}" fill="#14100e" mask="url(#dry_{k_})"/>' for k_ in ("h", "v", "d")))
+    layers += leader_marks(line, BLADE["base"])
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">' + "".join(layers) + "</svg>"
     open(os.path.join(IN, "hero.svg"), "w").write(svg)
     ys, xs = np.nonzero(hm); allw = np.array(widths["hero_out"] + widths["hero_in"] + widths["bg"])

@@ -71,8 +71,8 @@ class Resolve(unittest.TestCase):
         road, *_ = R.resolve({**RENEW, "lead": "path"}); rank, *_ = R.resolve({**RENEW, "lead": "rank"}); chain, *_ = R.resolve({**RENEW, "lead": "chain"})
         self.assertEqual(parts(road)[-1], "target_flag"); self.assertIn("track", parts(road)); self.assertIn("pylon", parts(road))
         self.assertEqual(road["items"][-1]["args"]["split"], "hero")
-        self.assertEqual(parts(rank)[-1], "hero_turbine"); self.assertEqual(set(parts(rank)), {"wind_turbine", "hero_turbine"})
-        self.assertEqual(set(parts(chain)), {"coal_plant", "pylon", "solar_array", "hero_turbine"})
+        self.assertEqual(parts(rank)[-1], "hero_turbine"); self.assertEqual(set(parts(rank)), {"wind_turbine", "hero_turbine", "track"})   # the row stands on one baseline
+        self.assertEqual(set(parts(chain)), {"coal_plant", "pylon", "solar_array", "hero_turbine", "track"})   # the stations along one track
         need, *_ = R.resolve({**RENEW, "lead": "need"}); self.assertIn("target_flag", parts(need)[:-1])
 
     def test_a_scene_the_tags_cannot_hold_keeps_the_panorama(self):
@@ -95,6 +95,58 @@ class Resolve(unittest.TestCase):
         names = re.search(r"^ANGLES = \[(.*)\]$", src, re.M).group(1)
         self.assertEqual(sorted(n.strip()[len("angle_"):] for n in names.split(",")), sorted(R.REG["stories"]["angles"]))
         for scene in R.REG["stories"]["angles"].values(): self.assertIn(scene, R.REG["scenes"])
+
+    def test_each_story_arc_has_its_own_ground(self):
+        """The arc of the lead's scene picks the ground's tone inside the named family: scenes of one arc share it, the three arcs differ,
+        the panorama keeps the plain palette, cool stays cool, and colours a request gives stand as given under any scene."""
+        A = R.REG["stories"]["arc_grounds"]; pal = lambda inp: R.resolve(inp)[1]
+        happened, in_time, lagging = pal({**RENEW, "lead": "chain"}), pal({**RENEW, "lead": "path"}), pal({**RENEW, "lead": "rank"})
+        self.assertEqual(len({json.dumps(x, sort_keys=True) for x in (happened, in_time, lagging)}), 3)
+        self.assertEqual((happened, in_time, lagging), (A["happened"]["warm"], A["in_time"]["warm"], A["lagging"]["warm"]))
+        self.assertEqual(pal({**RENEW, "lead": "need"}), in_time)
+        for lead in ("spread", "ends", "members", "map"): self.assertEqual(pal({**RENEW, "lead": lead}), lagging)
+        self.assertEqual(pal(RENEW), R.REG["palettes"]["warm"]); self.assertEqual(pal({k: v for k, v in RENEW.items() if k != "ground"}), R.REG["palettes"]["warm"])
+        self.assertEqual(pal({**RENEW, "lead": "chain", "ground": "cool"}), A["happened"]["cool"])
+        g = {"dark": [20, 30, 40], "mid": [60, 80, 90], "light": [120, 140, 150], "line": [5, 10, 15]}
+        self.assertEqual(pal({**RENEW, "lead": "chain", "ground": g}), g)
+
+    def test_arc_grounds_are_complete_and_readable(self):
+        """Every scene names an arc with a warm and a cool ground; on each, the ink line reads on the ground (contrast 3:1 or more over
+        the mid tone, WCAG relative luminance), the tones run dark < mid < light, and no arc is the old deep brown."""
+        A = R.REG["stories"]["arc_grounds"]
+        lum = lambda c: sum(k * ((v / 255) / 12.92 if v / 255 <= 0.04045 else ((v / 255 + 0.055) / 1.055) ** 2.4) for k, v in zip((0.2126, 0.7152, 0.0722), c))
+        for name, sc in R.REG["scenes"].items(): self.assertIn(sc.get("arc"), A, name)
+        for arc, fams in A.items():
+            self.assertEqual(set(fams), {"warm", "cool"})
+            for fam, p in fams.items():
+                self.assertEqual(set(p), {"dark", "mid", "light", "line"})
+                self.assertLess(lum(p["dark"]), lum(p["mid"])); self.assertLess(lum(p["mid"]), lum(p["light"]))
+                self.assertGreaterEqual((lum(p["mid"]) + 0.05) / (lum(p["line"]) + 0.05), 3.0, (arc, fam))
+                self.assertNotEqual(p["mid"], R.REG["palettes"]["warm"]["mid"])
+
+    def test_marks_sit_on_their_parts(self):
+        """A leader mark stands over its part (its foot is the part's place), its height follows the part's knobs, it mirrors with the
+        reading order, and the panorama draws none; every scene marks its hero or at least two parts, so the reading order has dots."""
+        for lead in R.REG["stories"]["angles"]:
+            s, *_ = R.resolve({**RENEW, "lead": lead}); ms = [i for i in s["items"] if i.get("mark")]
+            self.assertGreaterEqual(len(ms), 2, lead)
+            for i in ms:
+                self.assertEqual(set(i["mark"]), {"at", "z", "rise"}); self.assertGreater(i["mark"]["z"], 0); self.assertTrue(10 <= i["mark"]["rise"] <= 80)
+                if "at" in i: self.assertEqual(i["mark"]["at"], i["at"])
+        pano, *_ = R.resolve(RENEW); self.assertFalse([i for i in pano["items"] if i.get("mark")])
+        one, *_ = R.resolve({**RENEW, "lead": "chain"}); big, *_ = R.resolve({**RENEW, "lead": "chain", "composition": {"focus_scale": 1.3}})
+        self.assertGreater(big["items"][-1]["mark"]["z"], one["items"][-1]["mark"]["z"])
+        m, *_ = R.resolve({**RENEW, "lead": "map", "composition": {"reading_order": "right_to_left"}}); o, *_ = R.resolve({**RENEW, "lead": "map"})
+        self.assertEqual([i["mark"]["at"] for i in m["items"] if i.get("mark")], [[-i["mark"]["at"][0], i["mark"]["at"][1]] for i in o["items"] if i.get("mark")])
+
+    def test_steps_scene_is_a_stair(self):
+        """The steps scene stands its turbines on stone steps that rise left to right, the marker's step the tallest; a step's knob outside
+        its range is refused."""
+        s, *_ = R.resolve({**RENEW, "lead": "need"}); steps = [i for i in s["items"] if i["part"] == "plinth"]
+        self.assertGreaterEqual(len(steps), 5)
+        xs = [i["at"][0] for i in steps]; hs = [i["args"]["height"] for i in steps]
+        self.assertEqual(xs, sorted(xs)); self.assertEqual(hs, sorted(hs)); self.assertEqual(s["shadow"], R.REG["contact_shadow"])
+        with self.assertRaises(R.Refused): R.resolve({**RENEW, "lead": "need", "parts": {"plinth": {"height": 90}}})
 
     def test_ground_can_be_given_as_colours(self):
         g = {"dark": [20, 30, 40], "mid": [60, 80, 90], "light": [120, 140, 150], "line": [5, 10, 15]}
@@ -172,6 +224,15 @@ class EndToEnd(unittest.TestCase):
 
     def test_renewables_picture(self): self.check(self.draw(RENEW), 1140)
     def test_gas_picture(self): self.check(self.draw(GAS), 1140)
+
+    def test_three_more_leads_three_more_pictures(self):
+        """The stair, the pair and the atlas are drawn end to end too: shapes only (no text element), each its own picture, a leader
+        line's dot (an arc path) in each, inside the deadline."""
+        seen = set()
+        for lead, scene in (("need", "steps"), ("ends", "pair"), ("map", "atlas")):
+            r = self.draw({**RENEW, "lead": lead}); self.check(r, 1140); self.assertEqual(r["scene"], scene)
+            self.assertIn("a4.6,4.6 0 1,0", r["svg"]); self.assertLess(r["seconds"]["total"], R.TOTAL_DEADLINE); seen.add(r["svg"])
+        self.assertEqual(len(seen), 3)
 
     def test_two_leads_two_pictures(self):
         a, b = self.draw({**RENEW, "lead": "path"}), self.draw({**RENEW, "lead": "chain"})

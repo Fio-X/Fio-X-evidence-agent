@@ -4,6 +4,7 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
         "lead": story angle?, "composition": {focus_scale, reading_order, relief, smoke, seed}?, "parts": {part_id: {knob: value}}?}
         (anything node.json declares as a knob; unknown names and out-of-range values are refused). "lead" is the page's lead finding, one of
         node.json stories.angles; it picks the scene, so a story's opening picture follows its story, not its table (pick_scene).
+        Under a scene a named ground (warm, cool) takes the tone of the scene's story arc (stories.arc_grounds: happened, in_time, lagging); given colours stand as given.
   out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
         "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
@@ -73,6 +74,7 @@ def mirror_item(it):
     if "yaw" in a: a["yaw"] = -a["yaw"]
     if "cx" in a: a["cx"] = -a["cx"]
     if "points" in a: a["points"] = [[-x, y] for x, y in a["points"]]   # a track: every point mirrors
+    if "at" in it.get("mark", {}): it["mark"]["at"] = [-it["mark"]["at"][0], it["mark"]["at"][1]]
     if it["kind"] == "reservoir": a["x0"], a["x1"] = -a["x1"], -a["x0"]      # a span: its ends swap
     elif "x0" in a and "x1" in a: a["x0"], a["x1"] = -a["x0"], -a["x1"]      # a pipe: both ends mirror
     return it
@@ -91,9 +93,27 @@ def pick_scene(inp, tags):
     return name, sc, f"lead {lead}"
 
 
+def ground_palette(inp, c, pal, sc):
+    """The ground colours: given colours stand as given; a named family (warm, cool) is the panorama's palette, or, under a scene, that
+    family's tone for the scene's story arc (node.json stories.arc_grounds), so a lagging story and a story on time do not share one ground."""
+    g = inp.get("ground", c["ground"])
+    if sc is None or not isinstance(g, str): return pal
+    return REG["stories"]["arc_grounds"][sc["arc"]][g]
+
+
+def mark_of(it, args):
+    """A leader mark over a placed part: its foot (the part's own place unless the mark names one) and its height over the ground, an
+    expression over the part's final arguments, so a part made taller by a knob keeps its mark on top."""
+    m = it.get("mark")
+    if m is None: return None
+    at = m.get("at") or it.get("at") or [args["cx"], args["cy"]]
+    return {"at": list(at), "z": float(eval(str(m["z"]), {"__builtins__": {}}, dict(args))), "rise": m["rise"]}
+
+
 def resolve(inp):
     tags, c, pal, acc, over = validate(inp)
     name, sc, _ = pick_scene(inp, tags)
+    pal = ground_palette(inp, c, pal, sc)
     mirror = c["reading_order"] == "right_to_left"; items = []
     if sc is not None and "relief" not in inp.get("composition", {}): c = {**c, "relief": sc["relief"]}
     placed = [(t, it) for t in TAG_ORDER if t in tags for it in (REG["slots"] if sc is None else sc["slots"]).get(t, [])]
@@ -103,18 +123,20 @@ def resolve(inp):
         items.append(it)
     h = REG["heroes"][c["hero"] if sc is None else sc["hero"]["name"]]
     if sc is not None:   # the scene places, sizes and frames its hero
-        h = {**h, **{k: v for k, v in sc["hero"].items() if k in ("at", "dz", "camera")}, "args": {**h.get("args", {}), **sc["hero"].get("args", {})}}
+        h = {**h, **{k: v for k, v in sc["hero"].items() if k in ("at", "dz", "camera", "mark")}, "args": {**h.get("args", {}), **sc["hero"].get("args", {})}}
     hp = next(p for p in REG["parts"] if p["id"] == h["part"])
     args = {k: s["default"] for k, s in hp["knobs"].items()}; args.update(h.get("args", {})); args.update(over.get(h["part"], {}))
     for k in h["scale_args"]: args[k] = args[k] * c["focus_scale"]
     focus = [eval(e, {"__builtins__": {}}, dict(args)) for e in h["focus_local"]]
-    items.append({"part": h["part"], "kind": "at_ground", "fn": h["part"], "at": list(h["at"]), "dz": h["dz"], "args": args})
+    items.append({"part": h["part"], "kind": "at_ground", "fn": h["part"], "at": list(h["at"]), "dz": h["dz"], "args": args, "hero": True, **({"mark": dict(h["mark"])} if "mark" in h else {})})
+    for it in items:
+        if "mark" in it: it["mark"] = mark_of(it, it["args"])
     cam = copy.deepcopy(h["camera"]); yaw = args.get(h["yaw_arg"], 0.0); at = list(h["at"])
     if mirror:
         items = [mirror_item(i) for i in items]; at[0] = -at[0]; yaw = -yaw
         cam["loc"][0] = -cam["loc"][0]; cam["target"][0] = -cam["target"][0]
     r = REG["input"]["render"]
-    return dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, camera=cam, hero=dict(at=at, yaw=yaw, focus_local=focus), scene=name), pal, acc, c
+    return dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, shadow=REG["contact_shadow"], camera=cam, hero=dict(at=at, yaw=yaw, focus_local=focus), scene=name), pal, acc, c
 
 
 
