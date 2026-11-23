@@ -314,7 +314,7 @@ def cl_dot_strip(f, occ):
         spans = [(y_a, Y(ys[0]) - r - 3), (Y(ys[0]) + r + 3, y_b)] if f.two and rf["kind"] != "target" else [(y_a, y_b)]
         for ya, yb in spans:
             o.append(f'<line x1="{xv:.1f}" y1="{ya:.1f}" x2="{xv:.1f}" y2="{yb:.1f}" stroke="var(--t-title)" '
-                     f'stroke-width="{1.4 if rf["kind"] == "target" else 1}"{dash} data-ref="{rf["kind"]}"/>')
+                     f'stroke-width="{1.4 if rf["kind"] == "target" else 1}"{dash} data-rule="{rf["kind"]}"/>')
     # the group averages: a short tick in ink across the row
     for i, g in enumerate(f.groups or []):
         if g["mean"] is not None:

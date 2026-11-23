@@ -149,15 +149,18 @@ class Picture(unittest.TestCase):
     def test_the_target_is_dashed_and_the_average_solid_each_with_its_words(self):
         for n in ("one", "two", "two_narrow"):
             svg = self.out[n][0]
-            self.assertRegex(svg, r'stroke-dasharray="5 4" data-ref="target"')
-            mean = re.findall(r'<line [^>]*data-ref="mean"[^>]*/>', svg)
+            self.assertRegex(svg, r'stroke-dasharray="5 4" data-rule="target"')
+            # data-ref is the page check's mark for a table id: the browser writes a self-closed <line data-ref> back as an open
+            # element, which the check then reads as a table id with no text and refuses the page ('"" is not a table the page names')
+            self.assertNotIn("data-ref", svg, n)
+            mean = re.findall(r'<line [^>]*data-rule="mean"[^>]*/>', svg)
             self.assertEqual(len(mean), 1 if n == "one" else 2, n)   # with two period rows the average's rule breaks over the earlier row
             self.assertTrue(all("dasharray" not in m for m in mean), n)
             self.assertIn(WORDS["dot.mean"], svg)
             self.assertIn('data-src="fact:mean25"', svg); self.assertIn('data-src="fact:target"', svg)
             self.assertNotIn("\u6b27\u76df", svg)   # the whole's name: the average is never called the whole
             # the target rule stands at 42.5 on the dots' scale: between Estonia (42.3) and Austria (44.2)
-            x = float(re.search(r'<line x1="([0-9.]+)"[^>]*data-ref="target"', svg).group(1))
+            x = float(re.search(r'<line x1="([0-9.]+)"[^>]*data-rule="target"', svg).group(1))
             got = dots(svg)
             self.assertLess(got["EE"][0], x); self.assertLess(x, got["AT"][0])
 
@@ -196,7 +199,7 @@ class Picture(unittest.TestCase):
         svg = draw(strip(periods=1, lead=["MT", "LU"]), lead_set="given")[0]
         self.assertEqual({c for c, (_, _, a) in dots(svg).items() if "var(--accent)" in a}, {"MT", "LU"})
         svg = draw(strip(periods=1), refs="target")[0]
-        self.assertIn('data-ref="target"', svg); self.assertNotIn('data-ref="mean"', svg)
+        self.assertIn('data-rule="target"', svg); self.assertNotIn('data-rule="mean"', svg)
 
 
 class Rules(unittest.TestCase):
