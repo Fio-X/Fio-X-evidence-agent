@@ -50,6 +50,16 @@ class TargetFooter(unittest.TestCase):
         # a separator after it is
         scmp.footer({"source": [line(t) + "，目标"], "refs": [t["source_ref"]]})
 
+    def test_an_empty_or_padded_reference_is_refused_not_printed_as_empty_marks(self):
+        # an empty id matches between any two separators: the page would print empty marks and stop at the page check
+        for bad in ("", " ", " nrg_ind_ren", "nrg_ind_ren ", None, 7):
+            with self.assertRaises(FX.Refused, msg=repr(bad)):
+                scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": ["nrg_ind_ren", bad]})
+        with self.assertRaises(FX.Refused):
+            scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": "nrg_ind_ren"})
+        # no refs at all is the table-free footer, as before
+        scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": []})
+
 
 if __name__ == "__main__":
     unittest.main()
