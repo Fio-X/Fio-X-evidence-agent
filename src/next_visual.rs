@@ -113,7 +113,7 @@ pub enum Request<'a> {
     /// lead finding (its first titled section's id, runtime/leaves_py/findings.py), which picks the picture's scene (node.json
     /// stories: a path to a target, a ranking, the members as a map, events in order, ...); none, the set's panorama.
     ///
-    /// `subject` is the lead finding's own rows (the findings child's `illus.subject`: members, a path, a series or groups
+    /// `subject` is the lead finding's own rows (the findings child's `picture.subject`: members, a path, a series or groups
     /// with the values read from the page's rows): with it the child composes the picture from them, in the topic of the
     /// measure family the tables belong to (measure-families.json), the lit units recounted by the child from the rows. The
     /// reply's `omitted` is the members it does not draw.

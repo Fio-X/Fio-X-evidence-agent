@@ -360,7 +360,7 @@ class Req:
 # ---------------------------------------------------------------- the opening picture's subject
 # The lead finding's own rows as the subject the illustration child (runtime/illus_hero/run_hero.py) draws: the values the angle's leaf
 # reads (at the year it reads them, in the page's units: the value format's scale), nothing retyped. An angle with no sensible subject
-# sets none; compose then adds no `illus` and the picture is drawn as before. The family and the measure are the caller's.
+# sets none; compose then adds no `picture` and the picture is drawn as before. The family and the measure are the caller's.
 ILLUS_MEMBERS = (3, 60)   # members a tally, a rank or a pair draws (run_hero members_of)
 ILLUS_YEARS = (4, 30)     # years a series draws (the layout's series min and max)
 
@@ -1572,7 +1572,7 @@ def compose(r):
             if not num.startswith("fact:"): raise Refused(f"findings: the lead finding's claim number {num!r} is no fact")
             lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead),
-                             **({"illus": {"subject": q.illus[c["id"]]}} if c["id"] in q.illus else {})})   # the lead's own rows, for the opening picture
+                             **({"picture": {"subject": q.illus[c["id"]]}} if c["id"] in q.illus else {})})   # the lead's own rows, for the opening picture
         else:
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
                              "text": wording(c["text"])})

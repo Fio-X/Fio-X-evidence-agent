@@ -1,11 +1,11 @@
 """Self-test of the opening picture's subject (runtime/leaves_py/findings.py illus_*): compose's lead section carries
-`illus: {"subject": ...}` built from the rows the angle's own leaf reads, and the illustration child (run_hero.resolve) takes it.
+`picture: {"subject": ...}` built from the rows the angle's own leaf reads, and the illustration child (run_hero.resolve) takes it.
   - for the angles that have a subject (path, need, rank, ends, members, movers, overtake, tiles, map, pace, groups, chain): the subject
     validates through run_hero.resolve (family renewable_share, the angle as lead), every member / year value is the row's own value
     at the page's year (the value format's scale applied), the declared count is the lit count recomputed from the emitted rows,
     the rule's reference is the line the section draws (target, whole, mean) and no family or measure key is given;
   - the angles left out (spread: its rows are changes, the picture draws levels) and the shapes a threshold is missing for (members
-    with no target and no whole) carry no `illus`; a non-lead section never carries one.
+    with no target and no whole) carry no `picture`; a non-lead section never carries one.
 Run: python3 -I -B scripts/test_leaves_illus_subject.py"""
 import os
 import sys
@@ -59,11 +59,11 @@ class Subject(unittest.TestCase):
     def emitted(self, req, angle, ctx):
         composed, lead = compose_lead(req, angle)
         self.assertEqual(lead["id"], angle, ctx)
-        self.assertIn("illus", lead, (ctx, angle))
-        self.assertEqual(list(lead["illus"]), ["subject"], ctx)
-        sub = lead["illus"]["subject"]
-        self.assertNotIn("family", lead["illus"]); self.assertNotIn("measure", sub)   # the angles know no measure key
-        self.assertEqual([s["id"] for s in composed["sections"] if "illus" in s], [angle], ctx)   # the lead's alone
+        self.assertIn("picture", lead, (ctx, angle))
+        self.assertEqual(list(lead["picture"]), ["subject"], ctx)
+        sub = lead["picture"]["subject"]
+        self.assertNotIn("family", lead["picture"]); self.assertNotIn("measure", sub)   # the angles know no measure key
+        self.assertEqual([s["id"] for s in composed["sections"] if "picture" in s], [angle], ctx)   # the lead's alone
         resolve(angle, sub)
         return composed, sub
 
@@ -121,14 +121,14 @@ class Subject(unittest.TestCase):
     def test_members_with_no_line_carry_no_subject(self):
         req, _ = SF.eu27_plain()   # no whole, no target
         composed, lead = compose_lead(req, "members")
-        self.assertEqual(lead["id"], "members"); self.assertNotIn("illus", lead)
-        self.assertFalse(any("illus" in s for s in composed["sections"]))
+        self.assertEqual(lead["id"], "members"); self.assertNotIn("picture", lead)
+        self.assertFalse(any("picture" in s for s in composed["sections"]))
 
     def test_spread_carries_no_subject(self):
         req, _ = SF.eu_request()
         composed, lead = compose_lead(req, "spread")
-        self.assertEqual(lead["id"], "spread"); self.assertNotIn("illus", lead)
-        self.assertFalse(any("illus" in s for s in composed["sections"]))
+        self.assertEqual(lead["id"], "spread"); self.assertNotIn("picture", lead)
+        self.assertFalse(any("picture" in s for s in composed["sections"]))
 
     def test_pace_is_the_members_mean_a_year_with_the_years_after_the_split_lit(self):
         for mk in (SF.eu27_plain, SF.wb24_request):
@@ -183,9 +183,9 @@ class Subject(unittest.TestCase):
             for c in FN.candidates(req)[1]:
                 composed, lead = compose_lead(req, c["id"])
                 if lead["id"] != c["id"]: continue   # the arc may reorder; only a lead is tested
-                if "illus" in lead:
-                    resolve(c["id"], lead["illus"]["subject"]); seen.add(c["id"])
-                self.assertEqual([s["id"] for s in composed["sections"] if "illus" in s], [c["id"]] if "illus" in lead else [])
+                if "picture" in lead:
+                    resolve(c["id"], lead["picture"]["subject"]); seen.add(c["id"])
+                self.assertEqual([s["id"] for s in composed["sections"] if "picture" in s], [c["id"]] if "picture" in lead else [])
         self.assertTrue({"path", "need", "rank", "ends", "members", "pace", "groups"} <= seen, seen)
 
 

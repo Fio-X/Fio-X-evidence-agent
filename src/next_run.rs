@@ -4891,9 +4891,9 @@ fn leaf_page(
         .flatten()
         .find(|s| s.get("title").is_some());
     let lead = lead_section.and_then(|s| s["id"].as_str());
-    // the lead finding's own rows (the findings child's `illus.subject`, read from the same rows its leaf draws): with them the
+    // the lead finding's own rows (the findings child's `picture.subject`, read from the same rows its leaf draws): with them the
     // picture is composed from the finding, not from the table's tags alone
-    let subject = lead_section.and_then(|s| s["illus"].get("subject"));
+    let subject = lead_section.and_then(|s| s["picture"].get("subject"));
     let (strip, hero, strip_ask) = match picked.opening {
         true => match crate::next_flow::visual_call(
             calls,
