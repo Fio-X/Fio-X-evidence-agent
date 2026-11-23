@@ -10805,7 +10805,10 @@ mod tests {
         let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
         let picks = picks_of(&story.picks, &shape, &rows, &[]).unwrap();
         let mut fill = test_fill(story, &shape, &picks, (&rows, &[]), &Scoped(true), ("标题", "导语"), false).unwrap();
-        let input = story_input(&shape, shape.target.as_ref().unwrap(), (&rows, &targets), "可再生能源占比").unwrap();
+        let mut input = story_input(&shape, shape.target.as_ref().unwrap(), (&rows, &targets), "可再生能源占比").unwrap();
+        // the members' points, as recipe_request gives them the findings' map and tile angles
+        let members: Vec<String> = input["main"]["members"].as_array().unwrap().iter().map(|m| m.as_str().unwrap().to_string()).collect();
+        if wide { input["points"] = json!(Scoped(true).place_points(&members).unwrap()); }
         let child = crate::next_leaf::Runner::python(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
         );
