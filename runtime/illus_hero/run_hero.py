@@ -95,10 +95,10 @@ def pick_scene(inp, tags):
 
 def ground_palette(inp, c, pal, sc):
     """The ground colours: given colours stand as given; a named family (warm, cool) is the panorama's palette, or, under a scene, that
-    family's tone for the scene's story arc (node.json stories.arc_grounds), so a lagging story and a story on time do not share one ground."""
+    family's tone for the lead's story arc (the scene's own unless stories.angle_arcs names another; stories.arc_grounds), so a lagging story and a story on time do not share one ground."""
     g = inp.get("ground", c["ground"])
     if sc is None or not isinstance(g, str): return pal
-    return REG["stories"]["arc_grounds"][sc["arc"]][g]
+    return REG["stories"]["arc_grounds"][REG["stories"].get("angle_arcs", {}).get(inp.get("lead"), sc["arc"])][g]
 
 
 def mark_of(it, args):

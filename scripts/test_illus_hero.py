@@ -89,6 +89,24 @@ class Resolve(unittest.TestCase):
         mt = next(i for i in m["items"] if i["part"] == "track")["args"]["points"]; ot = next(i for i in o["items"] if i["part"] == "track")["args"]["points"]
         self.assertEqual(mt, [[-x, y] for x, y in ot])
 
+    def test_the_three_newer_angles_open_on_their_own_scenes_in_the_lagging_arc(self):
+        """movers (who changed most) climbs the steps, overtake (who passed whom) lines the members up, tiles (one tile per member) lays out
+        the atlas; each gives the same scene twice, keeps its leader dots, and all three are drawn on the lagging arc's ground."""
+        want = {"movers": "steps", "overtake": "lineup", "tiles": "atlas"}
+        with open(os.path.join(HERE, "..", "runtime", "leaves_py", "findings.py")) as f: src = f.read()
+        arc_of = eval(re.search(r"^ARC_OF = (\{.*?\})\n", src, re.M | re.S).group(1))
+        for lead, scene in want.items():
+            s, *_ = R.resolve({**RENEW, "lead": lead}); again, *_ = R.resolve({**RENEW, "lead": lead})
+            self.assertEqual(s, again); self.assertEqual(s["scene"], scene, lead)
+            self.assertGreaterEqual(len([i for i in s["items"] if i.get("mark")]), 2, lead)
+            self.assertEqual(arc_of[lead], "lagging")
+        A = R.REG["stories"]["arc_grounds"]; pal = lambda lead: R.resolve({**RENEW, "lead": lead})[1]
+        for lead in want: self.assertEqual(pal(lead), A["lagging"]["warm"], lead)   # the steps scene is the on-time story's too, but the movers' ground is the lagging one
+        self.assertEqual(pal("need"), A["in_time"]["warm"])
+        # every angle's ground arc (its own, else its scene's) is the arc the findings give the angle
+        for lead, scene in R.REG["stories"]["angles"].items():
+            self.assertEqual(R.REG["stories"].get("angle_arcs", {}).get(lead, R.REG["scenes"][scene]["arc"]), arc_of[lead], lead)
+
     def test_every_story_angle_has_a_scene(self):
         """The angles the findings child names (findings.py ANGLES) are the angles the registry maps, so no lead the flow sends is refused."""
         with open(os.path.join(HERE, "..", "runtime", "leaves_py", "findings.py")) as f: src = f.read()
@@ -104,7 +122,7 @@ class Resolve(unittest.TestCase):
         self.assertEqual(len({json.dumps(x, sort_keys=True) for x in (happened, in_time, lagging)}), 3)
         self.assertEqual((happened, in_time, lagging), (A["happened"]["warm"], A["in_time"]["warm"], A["lagging"]["warm"]))
         self.assertEqual(pal({**RENEW, "lead": "need"}), in_time)
-        for lead in ("spread", "ends", "members", "map"): self.assertEqual(pal({**RENEW, "lead": lead}), lagging)
+        for lead in ("spread", "ends", "members", "map", "movers", "overtake", "tiles"): self.assertEqual(pal({**RENEW, "lead": lead}), lagging)
         self.assertEqual(pal(RENEW), R.REG["palettes"]["warm"]); self.assertEqual(pal({k: v for k, v in RENEW.items() if k != "ground"}), R.REG["palettes"]["warm"])
         self.assertEqual(pal({**RENEW, "lead": "chain", "ground": "cool"}), A["happened"]["cool"])
         g = {"dark": [20, 30, 40], "mid": [60, 80, 90], "light": [120, 140, 150], "line": [5, 10, 15]}

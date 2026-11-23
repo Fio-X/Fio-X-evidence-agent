@@ -856,8 +856,15 @@
    "ends": "pair",
    "members": "atlas",
    "map": "atlas",
+   "movers": "steps",
+   "overtake": "lineup",
+   "tiles": "atlas",
    "chain": "sequence"
   },
+  "angle_arcs": {
+   "movers": "lagging"
+  },
+  "angle_arcs_doc": "An angle whose story arc is not its scene's (the steps scene is drawn for the on-time story and for the movers, who belong to the lagging story) gives the ground the angle's arc; scripts/test_illus_hero.py holds every angle's arc equal to findings.py ARC_OF.",
   "arcs_doc": "Each scene belongs to one story arc (findings: what happened, on time for a target, lagging behind); the arc gives the ground its tone, so the opening pictures of different stories do not share one ground. A request's named ground (warm, cool) picks the family, given colours replace it; the panorama keeps palettes.",
   "arc_grounds": {
    "happened": {
