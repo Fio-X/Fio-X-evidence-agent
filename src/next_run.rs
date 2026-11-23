@@ -4733,13 +4733,21 @@ fn leaf_page(
     };
     // a page with an opening slot asks for its opening picture (IllusHero); when it cannot be made here the visual group
     // answers with the strip instead, owed as page_strip's; a refusal or a failed call owes the strip and gives none, so the
-    // page check strip_placed fails it, its event saying why
+    // page check strip_placed fails it, its event saying why. The picture follows the page's story: the lead finding's angle
+    // (the first titled section's id, which the findings child names) picks its scene
+    let lead = fill["knobs"]["spec"]["sections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|s| s.get("title").is_some())
+        .and_then(|s| s["id"].as_str());
     let (strip, hero, strip_ask) = match picked.opening {
         true => match crate::next_flow::visual_call(
             calls,
             "illus_hero",
             Request::IllusHero {
                 tables: &page.refs,
+                lead,
                 width: page.w,
                 runtime: &runtime,
             },

@@ -109,9 +109,12 @@ pub enum Request<'a> {
     /// and holds a `hero` block gives the semantic tags of its parts, which the hero child (runtime/illus_hero/run_hero.py:
     /// Blender's scene, then the painting) draws in the set's ground and accent. Blender or a package missing, or a child that
     /// takes longer than the deadline, leaves the hero out and the page's strip (IllusStrip's own answer) stands in for it, with
-    /// the reason in the note. A request the child refuses is an error. Nothing is written.
+    /// the reason in the note. A request the child refuses is an error. Nothing is written. `lead` is the angle of the page's
+    /// lead finding (its first titled section's id, runtime/leaves_py/findings.py), which picks the picture's scene (node.json
+    /// stories: a path to a target, a ranking, the members as a map, events in order, ...); none, the set's panorama.
     IllusHero {
         tables: &'a [String],
+        lead: Option<&'a str>,
         width: f64,
         runtime: &'a Path,
     },
@@ -202,9 +205,11 @@ fn illus_strip(
 
 /// The opening illustration of a page of `tables` (Request::IllusHero): (the hero, the strip standing in for it, why). The hero
 /// is drawn from the semantic tags the set's `hero` block gives the tables (the union over the tables it names), its hero
-/// part, ground and accent; when the child cannot make it here the strip of the same tables stands in, and the note says why.
+/// part, ground and accent, in the scene the page's lead finding (`lead`, its angle) asks for; when the child cannot make it
+/// here the strip of the same tables stands in, and the note says why.
 fn illus_hero(
     tables: &[String],
+    lead: Option<&str>,
     width: f64,
     runtime: &Path,
 ) -> Result<(Option<Strip>, Option<Strip>, String), String> {
@@ -238,17 +243,21 @@ fn illus_hero(
             "the {name} set gives no hero parts to these tables"
         ));
     }
-    let request = json!({"tags": tags, "hero": block["hero"], "width": width, "ground": block["ground"], "accent": block["accent"]});
+    let mut request = json!({"tags": tags, "hero": block["hero"], "width": width, "ground": block["ground"], "accent": block["accent"]});
+    if let Some(lead) = lead {
+        request["lead"] = json!(lead);
+    }
     let runner = Runner::python(&runtime.join("illus_hero/run_hero.py"));
     match hero(&runner, &request) {
         Ok(h) => {
             let note = format!(
-                "illus_hero: {name} {} drawn {}x{} in {} ms, parts {}",
+                "illus_hero: {name} {} drawn {}x{} in {} ms, parts {}, lead {}",
                 block["hero"].as_str().unwrap_or(""),
                 h.w,
                 h.h,
                 h.ms,
-                tags.join(",")
+                tags.join(","),
+                lead.unwrap_or("none")
             );
             Ok((Some(h), None, note))
         }
@@ -1108,10 +1117,11 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         }
         Request::IllusHero {
             tables,
+            lead,
             width,
             runtime,
         } => {
-            let (drawn, instead, note) = illus_hero(tables, width, runtime)?;
+            let (drawn, instead, note) = illus_hero(tables, lead, width, runtime)?;
             Reply::Opening {
                 drawn,
                 instead,
@@ -1491,9 +1501,18 @@ mod tests {
     }
 
     fn hero_for(tables: &[&str], runtime: &Path) -> (Option<Strip>, Option<Strip>, String) {
+        lead_hero_for(tables, None, runtime)
+    }
+
+    fn lead_hero_for(
+        tables: &[&str],
+        lead: Option<&str>,
+        runtime: &Path,
+    ) -> (Option<Strip>, Option<Strip>, String) {
         let tables: Vec<String> = tables.iter().map(|t| t.to_string()).collect();
         match call(Request::IllusHero {
             tables: &tables,
+            lead,
             width: 1140.0,
             runtime,
         }) {
@@ -1548,5 +1567,24 @@ mod tests {
             note.starts_with("illus_hero: energy wind drawn 1140x"),
             "{note}"
         );
+        assert!(note.ends_with(", lead none"), "{note}");
+    }
+
+    /// The same tables under two lead findings get two different pictures (the path to a target, a ranking), each a hero's
+    /// shapes only; the note names the lead. Run with `-- --ignored` on a machine that draws heroes.
+    #[test]
+    #[ignore = "needs Blender and numpy, scipy, shapely, pillow, contourpy for python3"]
+    fn the_lead_finding_picks_the_opening_scene() {
+        let rt = Path::new("runtime");
+        let (path, _, a) = lead_hero_for(&["nrg_ind_ren"], Some("path"), rt);
+        let (rank, _, b) = lead_hero_for(&["nrg_ind_ren"], Some("rank"), rt);
+        let (path, rank) = (path.expect(&a), rank.expect(&b));
+        assert!(
+            a.ends_with(", lead path") && b.ends_with(", lead rank"),
+            "{a}\n{b}"
+        );
+        assert_ne!(path.svg, rank.svg);
+        assert!(crate::next_leaf::hero_faults(&path.svg).is_empty());
+        assert!(crate::next_leaf::hero_faults(&rank.svg).is_empty());
     }
 }

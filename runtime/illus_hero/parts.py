@@ -5,7 +5,9 @@
   solar_array(rows=5 [1..12], cols=12 [1..30], tilt=28 [10..45], pitch_x=3.1, pitch_y=5.2, scale=1 [0.5..4: illustration exaggeration])
   pylon(height=34 [15..60], arm_w=7 [3..12], yaw=0)       and  wires(p0, p1, sag=...)
   terrain(height_fn, x0, x1, y0, y1, cell=4)
-Groups (what the ID layer paints): wind, solar, hydro (renewable: green in the final drawing) | pylon, terrain, water, spill (not green)."""
+  target_flag(height=30, cloth=12, wave=0.18, yaw=0, split=None)   and  track(points, ground, width=5)    (a story scene's marker and road)
+  plinth(height=10 [2..40], width=24 [8..40], depth=16 [8..30], yaw=0)   (a stone step: a stair of them is the climb a story needs)
+Groups (what the ID layer paints): wind, solar, hydro (renewable: green in the final drawing) | pylon, terrain, water, spill, track (not green)."""
 import math
 from mesh import Mesh, box, frustum, loft, tube, rot_z, rot_y, rot_x, matmul, mulv, add3
 
@@ -288,3 +290,58 @@ def gas_valve_hero(length=100.0, r=3.2, lift=4.0, valve_at=0.55, yaw=0.0, tilt=5
     for m in (pipe, valve):
         o = Mesh(m.name, m.group); o.smooth, o.subsurf = m.smooth, m.subsurf; o.merge(m, rot=rot_z(yaw)); out.append(o)
     return out
+
+
+def target_flag(height=30.0, cloth=12.0, wave=0.18, yaw=0.0, split=None, name="flag"):
+    """A surveyor's target marker: a mast on a cairn of stones with a waving pennant at the top (the end of a path, the level a story
+    runs to). Local origin at the cairn's foot; the cloth flies towards +x. split="hero": [mast (hero_body), cloth (hero_blade = the
+    accent part)]; otherwise one mesh in group pylon (a background line drawing)."""
+    H = height; mast = Mesh(name + "_mast", "hero_body" if split else "pylon"); mast.smooth = bool(split)
+    r = max(0.012 * H, 0.22)
+    mast.merge(loft([_ring(r * 1.3, r * 1.3, 0.0, 12), _ring(r, r, H, 12)]))
+    mast.merge(frustum((0, 0, H), r * 2.0, 0.0, r * 3.0, n=12))                    # finial
+    for k, (dx, dy, s) in enumerate(((-1.4, 0.2, 1.6), (1.2, -0.4, 1.4), (0.1, 1.3, 1.5), (-0.6, -1.2, 1.2), (0.3, 0.0, 1.1))):   # cairn
+        z = 0.5 * s if k < 4 else 1.5 * s
+        mast.merge(box((dx * 0.06 * H / 1.6, dy * 0.06 * H / 1.6, z * 0.05 * H / 1.4), (0.07 * H * s / 1.4, 0.06 * H * s / 1.4, 0.05 * H * s / 1.4), rot=rot_z(25 * k)))
+    for z0 in (0.33 * H, 0.66 * H):                                               # guy rings
+        mast.merge(loft([_ring(r * 1.6, r * 1.6, z0 - 0.2, 12), _ring(r * 1.6, r * 1.6, z0 + 0.2, 12)]))
+    cl = Mesh(name + "_cloth", "hero_blade" if split else "pylon"); cl.smooth = bool(split); cl.subsurf = 1 if split else 0
+    top, drop, n = H - 0.04 * H, 0.55 * cloth, 10
+    rings = []
+    for i in range(n + 1):                                                          # a pennant: the drop narrows to a point, a travelling wave along x
+        t = i / n; x = r + t * cloth; d = drop * (1 - 0.85 * t); w = wave * cloth * math.sin(2.4 * math.pi * t) * t
+        zc = top - d / 2 - 0.08 * cloth * t
+        rings.append([(x, w - 0.06, zc + d / 2), (x, w + 0.06, zc + d / 2), (x, w + 0.06, zc - d / 2), (x, w - 0.06, zc - d / 2)])
+    cl.merge(loft(rings))
+    out = []
+    for m in (mast, cl):
+        o = Mesh(m.name, m.group); o.smooth, o.subsurf = m.smooth, m.subsurf; o.merge(m, rot=rot_z(yaw)); out.append(o)
+    return out if split else [Mesh(name, "pylon").merge(out[0]).merge(out[1])]
+
+
+def track(points, ground, width=5.0, step=3.0, name="track"):
+    """A dirt track on the ground through `points` [(x, y), ...]: a flat ribbon `width` wide, laid every `step` units on the terrain
+    (ground(x, y) -> height) so it follows the hills. Group track (a pale hatched band with its two edges inked)."""
+    pts = []
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / step))
+        pts += [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(n)]
+    pts.append(tuple(points[-1]))
+    m = Mesh(name, "track"); V, F = [], []
+    for i, (x, y) in enumerate(pts):
+        a, b = pts[max(i - 1, 0)], pts[min(i + 1, len(pts) - 1)]; dx, dy = b[0] - a[0], b[1] - a[1]; L = math.hypot(dx, dy) or 1
+        nx, ny = -dy / L * width / 2, dx / L * width / 2
+        for sx in (-1, 1):
+            px, py = x + sx * nx, y + sx * ny; V.append((px, py, ground(px, py) + 0.25))
+        if i: F.append((2 * i - 2, 2 * i, 2 * i + 1, 2 * i - 1))   # counter-clockwise from above: the face looks up
+    m.add(V, F, outward=False); return [m]
+
+
+def plinth(height=10.0, width=24.0, depth=16.0, yaw=0.0, name="plinth"):
+    """A stone step (a block with a slightly wider cap slab): a row of them, each taller, is a stair that the parts on top climb. Local
+    origin at the ground under its middle; it sinks 6 units into the ground so it never floats on a slope. Group track (a pale hatched
+    block with inked edges); the part standing on it is placed `height` higher (the scene's dz)."""
+    m = Mesh(name, "track"); sink = 6.0; cap = min(1.6, 0.25 * height + 0.4)
+    m.merge(box((0, 0, (height - cap - sink) / 2), (width, depth, height - cap + sink)))
+    m.merge(box((0, 0, height - cap / 2), (width + 1.6, depth + 1.6, cap)))
+    o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]

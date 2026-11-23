@@ -309,6 +309,84 @@
      "max": 85
     }
    }
+  },
+  {
+   "id": "target_flag",
+   "fn": "target_flag",
+   "file": "parts.py",
+   "tags": [],
+   "group": "pylon | hero_body+hero_blade",
+   "role": "hero or background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 15,
+     "max": 90
+    },
+    "cloth": {
+     "default": 12,
+     "min": 5,
+     "max": 40
+    },
+    "wave": {
+     "default": 0.18,
+     "min": 0.0,
+     "max": 0.4
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   },
+   "note": "a surveyor's target marker (mast, cairn, pennant): the end of a path, the level a story runs to; it belongs to no topic (no tag), so only a scene places it"
+  },
+  {
+   "id": "track",
+   "fn": "track",
+   "file": "parts.py",
+   "tags": [],
+   "group": "track",
+   "role": "background",
+   "knobs": {
+    "width": {
+     "default": 5.0,
+     "min": 2.0,
+     "max": 12.0
+    }
+   },
+   "note": "a dirt track laid on the terrain through its points (a scene's list); belongs to no topic, so only a scene places it"
+  },
+  {
+   "id": "plinth",
+   "fn": "plinth",
+   "file": "parts.py",
+   "tags": [],
+   "group": "track",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 10,
+     "min": 2,
+     "max": 40
+    },
+    "width": {
+     "default": 24,
+     "min": 8,
+     "max": 40
+    },
+    "depth": {
+     "default": 16,
+     "min": 8,
+     "max": 30
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   },
+   "note": "a stone step; a row of them, each taller, is the stair of the steps scene (the climb a target needs); belongs to no topic, so only a scene places it"
   }
  ],
  "heroes": {
@@ -386,6 +464,42 @@
     "lens": 30
    },
    "focus_note": "centre of the valve wheel"
+  },
+  "flag": {
+   "part": "target_flag",
+   "needs_tag": null,
+   "at": [
+    20,
+    110
+   ],
+   "dz": -0.3,
+   "scale_args": [
+    "height",
+    "cloth"
+   ],
+   "yaw_arg": "yaw",
+   "args": {
+    "split": "hero"
+   },
+   "focus_local": [
+    "0.4*cloth",
+    "0",
+    "0.96*height-0.2*cloth"
+   ],
+   "focus_note": "middle of the pennant",
+   "camera": {
+    "loc": [
+     6,
+     -112,
+     50
+    ],
+    "target": [
+     -4,
+     150,
+     18
+    ],
+    "lens": 30
+   }
   }
  },
  "slots": {
@@ -683,7 +797,8 @@
     "cool",
     "<{dark,mid,light,line} as [r,g,b]>"
    ],
-   "default": "warm"
+   "default": "warm",
+   "note": "named family or given colours; under a story scene the named family takes its arc's tone (stories.arc_grounds)"
   },
   "accent": {
    "default": "#1a9a6c",
@@ -730,5 +845,1582 @@
    "hero_bbox_area_pct"
   ],
   "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame"
+ },
+ "stories": {
+  "doc": "The opening picture follows the page's story, not its table: the caller names the lead finding's angle (findings.py ANGLES, the page's first titled section) as `lead`, and the scene it maps to here is drawn: its hero (placed, sized and framed by the scene), its own layout of the request's tags (a tag the scene has no slot for is left out), and the parts it always places. An angle with no scene, a scene whose tags or hero the request lacks, or no lead keeps the panorama (heroes + slots). Same input, same picture: nothing is random or read from words.",
+  "angles": {
+   "path": "road",
+   "need": "steps",
+   "rank": "lineup",
+   "spread": "lineup",
+   "ends": "pair",
+   "members": "atlas",
+   "map": "atlas",
+   "chain": "sequence"
+  },
+  "arcs_doc": "Each scene belongs to one story arc (findings: what happened, on time for a target, lagging behind); the arc gives the ground its tone, so the opening pictures of different stories do not share one ground. A request's named ground (warm, cool) picks the family, given colours replace it; the panorama keeps palettes.",
+  "arc_grounds": {
+   "happened": {
+    "warm": {
+     "dark": [
+      110,
+      106,
+      96
+     ],
+     "mid": [
+      146,
+      142,
+      130
+     ],
+     "light": [
+      182,
+      178,
+      166
+     ],
+     "line": [
+      34,
+      30,
+      26
+     ]
+    },
+    "cool": {
+     "dark": [
+      70,
+      84,
+      96
+     ],
+     "mid": [
+      104,
+      120,
+      132
+     ],
+     "light": [
+      146,
+      160,
+      170
+     ],
+     "line": [
+      18,
+      26,
+      34
+     ]
+    }
+   },
+   "in_time": {
+    "warm": {
+     "dark": [
+      150,
+      102,
+      82
+     ],
+     "mid": [
+      184,
+      136,
+      112
+     ],
+     "light": [
+      212,
+      172,
+      150
+     ],
+     "line": [
+      54,
+      30,
+      22
+     ]
+    },
+    "cool": {
+     "dark": [
+      62,
+      88,
+      90
+     ],
+     "mid": [
+      94,
+      120,
+      120
+     ],
+     "light": [
+      134,
+      158,
+      156
+     ],
+     "line": [
+      16,
+      30,
+      32
+     ]
+    }
+   },
+   "lagging": {
+    "warm": {
+     "dark": [
+      98,
+      86,
+      96
+     ],
+     "mid": [
+      132,
+      118,
+      126
+     ],
+     "light": [
+      168,
+      154,
+      158
+     ],
+     "line": [
+      32,
+      24,
+      32
+     ]
+    },
+    "cool": {
+     "dark": [
+      62,
+      66,
+      88
+     ],
+     "mid": [
+      94,
+      98,
+      120
+     ],
+     "light": [
+      134,
+      138,
+      158
+     ],
+     "line": [
+      18,
+      18,
+      34
+     ]
+    }
+   }
+  }
+ },
+ "scenes": {
+  "road": {
+   "note": "the path to a target: a wide track winds from the near ground to the horizon, a line of pylons walks beside it, turbines and a solar field line the right, the target marker (the accent) on the far ridge where the track ends",
+   "needs_tags": [
+    "grid"
+   ],
+   "relief": 0.9,
+   "hero": {
+    "name": "flag",
+    "at": [
+     34,
+     116
+    ],
+    "args": {
+     "height": 64,
+     "cloth": 30
+    },
+    "camera": {
+     "loc": [
+      0,
+      -150,
+      34
+     ],
+     "target": [
+      6,
+      150,
+      22
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -58,
+       -24
+      ],
+      "args": {
+       "height": 40,
+       "yaw": 34
+      },
+      "mark": {
+       "z": "height",
+       "rise": 40
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -40,
+       16
+      ],
+      "args": {
+       "height": 38,
+       "yaw": 32
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -26,
+       50
+      ],
+      "args": {
+       "height": 36,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -12,
+       78
+      ],
+      "args": {
+       "height": 34,
+       "yaw": 28
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       6,
+       100
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 26
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       62,
+       -36
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 7,
+       "tilt": 28,
+       "scale": 2.6
+      },
+      "mark": {
+       "z": "4",
+       "rise": 60
+      }
+     }
+    ],
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       78,
+       40
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 40,
+       "blade_len": 21,
+       "rotor_deg": 20,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       112,
+       76
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 36,
+       "blade_len": 19,
+       "rotor_deg": 70,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       138,
+       112
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 32,
+       "blade_len": 17,
+       "rotor_deg": 100,
+       "yaw": 8
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -110,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 16,
+       "rotor_deg": 40,
+       "yaw": 4
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -6,
+        -110
+       ],
+       [
+        4,
+        -70
+       ],
+       [
+        18,
+        -30
+       ],
+       [
+        24,
+        6
+       ],
+       [
+        14,
+        40
+       ],
+       [
+        4,
+        68
+       ],
+       [
+        14,
+        94
+       ],
+       [
+        32,
+        114
+       ]
+      ],
+      "width": 10
+     }
+    }
+   ],
+   "arc": "in_time"
+  },
+  "steps": {
+   "note": "the climb a target needs: a stair of stone steps rises to the right, each carrying a taller turbine, the accent turbine on the highest built step, the marker on a taller step still ahead",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     60,
+     40
+    ],
+    "dz": 38,
+    "args": {
+     "height": 48,
+     "blade_len": 26,
+     "rotor_deg": 20,
+     "yaw": -8
+    },
+    "mark": {
+     "z": "height+0.75*blade_len+38",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -236,
+      64
+     ],
+     "target": [
+      0,
+      140,
+      58
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -120,
+       40
+      ],
+      "dz": 6,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 10,
+       "yaw": 6
+      },
+      "mark": {
+       "z": "height+blade_len+6",
+       "rise": 34
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -75,
+       40
+      ],
+      "dz": 14,
+      "args": {
+       "height": 32,
+       "blade_len": 17,
+       "rotor_deg": 50,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -30,
+       40
+      ],
+      "dz": 22,
+      "args": {
+       "height": 38,
+       "blade_len": 20,
+       "rotor_deg": 85,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       15,
+       40
+      ],
+      "dz": 30,
+      "args": {
+       "height": 44,
+       "blade_len": 23,
+       "rotor_deg": 30,
+       "yaw": 2
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -120,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 6,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -75,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 14,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -30,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 22,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      15,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 30,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      60,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 38,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      108,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 40,
+      "width": 24,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "target_flag",
+     "kind": "at_ground",
+     "fn": "target_flag",
+     "at": [
+      108,
+      40
+     ],
+     "dz": 40,
+     "args": {
+      "height": 76,
+      "cloth": 20,
+      "yaw": 0
+     },
+     "mark": {
+      "z": "height+40",
+      "rise": 20
+     }
+    },
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -170,
+        24
+       ],
+       [
+        -60,
+        22
+       ],
+       [
+        60,
+        22
+       ],
+       [
+        170,
+        24
+       ]
+      ],
+      "width": 6
+     }
+    }
+   ],
+   "arc": "in_time"
+  },
+  "lineup": {
+   "note": "a ranking: a row of turbines from the tallest down across the whole frame, standing on one baseline, one of them (the accent) among the others",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     -62,
+     46
+    ],
+    "args": {
+     "height": 46,
+     "blade_len": 23,
+     "rotor_deg": 0,
+     "yaw": -6
+    },
+    "mark": {
+     "z": "height+blade_len",
+     "rise": 30
+    },
+    "camera": {
+     "loc": [
+      0,
+      -176,
+      30
+     ],
+     "target": [
+      0,
+      140,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -128,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 60,
+       "blade_len": 30,
+       "rotor_deg": 15,
+       "yaw": 4
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 30
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -95,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 54,
+       "blade_len": 27,
+       "rotor_deg": 75,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -28,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 40,
+       "blade_len": 20,
+       "rotor_deg": 40,
+       "yaw": 2
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       4,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 35,
+       "blade_len": 18,
+       "rotor_deg": 100,
+       "yaw": 2
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       36,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 15,
+       "rotor_deg": 5,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       66,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 13,
+       "rotor_deg": 65,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       94,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 23,
+       "blade_len": 11,
+       "rotor_deg": 30,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       120,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 21,
+       "blade_len": 10,
+       "rotor_deg": 90,
+       "yaw": 0
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 50
+      }
+     }
+    ]
+   },
+   "arc": "lagging",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        38
+       ],
+       [
+        -60,
+        36
+       ],
+       [
+        60,
+        36
+       ],
+       [
+        190,
+        38
+       ]
+      ],
+      "width": 7
+     }
+    }
+   ]
+  },
+  "pair": {
+   "note": "the two ends: on the left a tall turbine (the accent) in a full wind farm over a solar field, on the right across the track one low turbine by the old plant; the track between them is the gap",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.7,
+   "hero": {
+    "name": "wind",
+    "at": [
+     -58,
+     4
+    ],
+    "args": {
+     "height": 44,
+     "blade_len": 26,
+     "rotor_deg": 40,
+     "yaw": -10
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -150,
+      32
+     ],
+     "target": [
+      0,
+      150,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -110,
+       50
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 34,
+       "blade_len": 18,
+       "rotor_deg": 70,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -70,
+       86
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 16,
+       "rotor_deg": 20,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -130,
+       110
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 28,
+       "blade_len": 15,
+       "rotor_deg": 100,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -28,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 28,
+       "blade_len": 15,
+       "rotor_deg": 50,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       44,
+       -4
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 20,
+       "blade_len": 10,
+       "rotor_deg": 70,
+       "yaw": 6
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 30
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       -104,
+       -20
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 6,
+       "tilt": 28,
+       "scale": 2.4
+      }
+     }
+    ],
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": 108,
+       "cy": 90,
+       "towers": 2,
+       "chimney_h": 40,
+       "yaw": -10,
+       "scale": 0.75
+      }
+     }
+    ]
+   },
+   "arc": "lagging",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        10,
+        -110
+       ],
+       [
+        12,
+        -50
+       ],
+       [
+        6,
+        10
+       ],
+       [
+        14,
+        70
+       ],
+       [
+        8,
+        140
+       ]
+      ],
+      "width": 8
+     }
+    }
+   ]
+  },
+  "atlas": {
+   "note": "the members side by side, as on a map: an oblique view from high up over the whole land, each kind of plant in its own patch with a leader dot over it, the accent turbine standing in the wind farm on the right",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 1.0,
+   "hero": {
+    "name": "wind",
+    "at": [
+     96,
+     40
+    ],
+    "args": {
+     "height": 32,
+     "blade_len": 18,
+     "rotor_deg": 40,
+     "yaw": 0
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -190,
+      120
+     ],
+     "target": [
+      0,
+      70,
+      6
+     ],
+     "lens": 28
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       130,
+       20
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 10,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       150,
+       62
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 70,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       70,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 30,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       124,
+       96
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 100,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       60,
+       10
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 50,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       170,
+       120
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 22,
+       "blade_len": 12,
+       "rotor_deg": 20,
+       "yaw": 0
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       -70,
+       -10
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 4,
+       "cols": 9,
+       "tilt": 28,
+       "scale": 3.0
+      },
+      "mark": {
+       "z": "6",
+       "rise": 46
+      }
+     },
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       24,
+       -60
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 6,
+       "tilt": 28,
+       "scale": 2.4
+      }
+     }
+    ],
+    "hydro": [
+     {
+      "part": "reservoir",
+      "kind": "reservoir",
+      "args": {
+       "level": 46,
+       "x0": -190,
+       "x1": 120,
+       "y0": 203,
+       "y1": 336
+      }
+     },
+     {
+      "part": "arch_dam",
+      "kind": "dam",
+      "args": {
+       "height": 30,
+       "width": 76
+      },
+      "mark": {
+       "at": [
+        -38,
+        205
+       ],
+       "z": "height+16",
+       "rise": 30
+      }
+     }
+    ],
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": -140,
+       "cy": 90,
+       "towers": 2,
+       "chimney_h": 44,
+       "yaw": -8,
+       "scale": 0.8
+      },
+      "mark": {
+       "z": "chimney_h*scale",
+       "rise": 30
+      }
+     }
+    ],
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -150,
+       20
+      ],
+      "args": {
+       "height": 30,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -104,
+       40
+      ],
+      "args": {
+       "height": 30,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -50,
+       60
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       4,
+       80
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       50,
+       100
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        -50
+       ],
+       [
+        -120,
+        -40
+       ],
+       [
+        -60,
+        -46
+       ],
+       [
+        0,
+        -20
+       ],
+       [
+        40,
+        0
+       ],
+       [
+        110,
+        -10
+       ],
+       [
+        190,
+        10
+       ]
+      ],
+      "width": 6
+     }
+    },
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        20,
+        -150
+       ],
+       [
+        10,
+        -80
+       ],
+       [
+        0,
+        -20
+       ]
+      ],
+      "width": 5
+     }
+    }
+   ],
+   "arc": "lagging"
+  },
+  "sequence": {
+   "note": "events in order, read left to right along one track: the old plant (or the gas line), then the wires, then the solar field, then the turbine (the accent), a leader dot over each station",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     80,
+     30
+    ],
+    "args": {
+     "height": 52,
+     "blade_len": 28,
+     "rotor_deg": 40,
+     "yaw": -10
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -160,
+      22
+     ],
+     "target": [
+      0,
+      140,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": -104,
+       "cy": 40,
+       "towers": 2,
+       "chimney_h": 50,
+       "yaw": -4,
+       "scale": 1.1
+      },
+      "mark": {
+       "z": "chimney_h*scale",
+       "rise": 30
+      }
+     }
+    ],
+    "gas": [
+     {
+      "part": "gas_pipe",
+      "kind": "gas_pipe",
+      "args": {
+       "x0": -160,
+       "y0": 20,
+       "x1": -70,
+       "y1": 24
+      },
+      "mark": {
+       "at": [
+        -115,
+        22
+       ],
+       "z": "8",
+       "rise": 60
+      }
+     }
+    ],
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -62,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -36,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      },
+      "mark": {
+       "z": "height",
+       "rise": 40
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -10,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       26,
+       10
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 4,
+       "cols": 7,
+       "tilt": 28,
+       "scale": 3.0
+      },
+      "mark": {
+       "z": "6",
+       "rise": 70
+      }
+     }
+    ]
+   },
+   "arc": "happened",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        4
+       ],
+       [
+        -100,
+        0
+       ],
+       [
+        0,
+        -4
+       ],
+       [
+        100,
+        0
+       ],
+       [
+        190,
+        4
+       ]
+      ],
+      "width": 7
+     }
+    }
+   ]
+  }
+ },
+ "contact_shadow": {
+  "len": 0.55,
+  "w": 0.06,
+  "dir": [
+   0.8,
+   -0.6
+  ],
+  "note": "every standing part (turbine, pylon, marker) casts a thin wedge on the terrain from its foot, length len x its height, towards dir (x, y), so nothing in a picture floats; not mirrored with the reading order, as the light is not"
  }
 }
