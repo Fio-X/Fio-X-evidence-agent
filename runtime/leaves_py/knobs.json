@@ -1542,6 +1542,22 @@
      "what": "rows kept (0 = all); the rest merge into the last other row (needs other_row)"
     },
     {
+     "name": "fold_over",
+     "default": 20,
+     "min": 0,
+     "max": 80,
+     "step": 1,
+     "what": "a rank of more rows than this folds when the spec gives omit words (0 = never)"
+    },
+    {
+     "name": "fold_to",
+     "default": 16,
+     "min": 8,
+     "max": 40,
+     "step": 1,
+     "what": "rows a folded rank keeps: the highest ones, the highlighted row and the lowest 5"
+    },
+    {
      "name": "sort",
      "default": "value",
      "options": [

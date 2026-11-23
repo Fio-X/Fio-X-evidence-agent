@@ -43,7 +43,7 @@ PAGE_W = 1140
 # The page's type scale (12, 14, 16 and 24 px, the numbers 58, the page title's): its leaves' label, head and value sizes, so no leaf adds a tier of its own.
 FIXED = {**{n: {"width": PAGE_W} for n in TEXT_BLOCKS}, "bignums": {"cols": 3, "width": PAGE_W, "size": 58},
          "thesis_claims": {"width": PAGE_W, "size": 14, "num_size": 24}, "risk_notes": {"width": PAGE_W, "size": 14, "title_size": 16},
-         "winners_losers": {"size": 12, "value_size": 16}, "rankbar": {"size": 14}, "pair_bars": {"size": 12, "head_size": 14, "width": PAGE_W}}
+         "winners_losers": {"size": 12, "value_size": 16}, "rankbar": {"size": 14, "row_h": 24}, "pair_bars": {"size": 12, "head_size": 14, "width": PAGE_W}}
 
 
 def cl_bignums(f, occ):
@@ -195,6 +195,17 @@ def count_lines(text, size, w):
     return max(1, len(K.lay([(text, None)], size, w * 0.97))) if text else 0
 
 
+def repeats(layer, notes, printed):
+    """A note adds to its section's title and text: refuse a note whose numbers (its own and the ledger entries in its words) are all
+    ledger entries the title or the text already prints (the same fact, whatever its part: .n and .r are one), so no card only says again."""
+    base = lambda src: re.sub(r"\.(n|r)$", "", src)
+    have = {base(m) for m in re.findall(r'data-src="((?:fact|series|record):[^"]*)"', printed)}
+    for j, (num, sg) in enumerate(notes):
+        nums = {base(num)} | {base(x["src"]) for x in sg if isinstance(x, dict) and "src" in x}
+        if nums <= have:
+            raise FX.Refused(f"page: {layer}'s note {j + 1} ({num}) prints only numbers its section's title or text already prints; a note adds a number and what it is set against")
+
+
 def pieces(spec, c, secs, kn):
     """What each titled section prints around its picture, {index: dict(kicker, t_html, x_html, head, notes: [(num src, segs)], note_list,
     title, text, items)}: the markup, and its plain words for the layout to count."""
@@ -205,7 +216,9 @@ def pieces(spec, c, secs, kn):
         x_html = FX.worded(spec, c.F, f"sections.{i}.text", text) if text is not None else ""
         head = (f'{f"<div class=kick>{prod.esc(kicker)}</div>" if kicker else ""}<h2 data-section="{sid}">{t_html}</h2>'
                 f'{f"<p>{x_html}</p>" if x_html else ""}')
-        items = [(FX.text(num), plain(seg_html(sg, "a note"))) for num, sg in notes_items(spec, layer, kn)]
+        notes = notes_items(spec, layer, kn)
+        repeats(layer, notes, t_html + x_html)
+        items = [(FX.text(num), plain(seg_html(sg, "a note"))) for num, sg in notes]
         out[i] = dict(kicker=kicker, t_html=t_html, x_html=x_html, head=head, note_list=notes_html(spec, layer, kn), title=plain(t_html), text=plain(x_html), items=items)
     return out
 

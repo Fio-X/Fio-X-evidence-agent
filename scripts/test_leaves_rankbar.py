@@ -102,6 +102,35 @@ class Rankbar(unittest.TestCase):
     def test_every_row_draws_without_the_share_column(self):
         self.assertEqual(self.good("rankbar-all", hero(NO_OTHER, show_share="off")).count("<rect"), len(GEOS))
 
+    def test_a_long_rank_folds_to_its_ends_and_the_highlighted_row(self):
+        """More than fold_over rows with omit words: the highest fold_to - 6, the highlighted row, the lowest 5, a line of the omit
+        words wherever kept rows are not next to each other; every kept row is still the ledger's row, in the rank's order."""
+        omit = W("中间的成员未画出")
+        n = len(GEOS)
+        self.assertGreater(n, 20)
+        mid = GEOS[12]
+        svg = self.good("rankbar-fold", hero({**NO_OTHER, "omit": omit}, highlight_row=mid))
+        self.assertEqual(svg.count("<rect"), 16)  # 10 + the highlighted + 5
+        self.assertEqual(svg.count("中间的成员未画出"), 2)  # before and after the highlighted row
+        shown = [re.sub(r"<[^>]+>", "", t) for t in re.findall(r'<text [^>]*text-anchor="end"[^>]*font-weight="700"[^>]*>(.*?)</text>', svg)]
+        self.assertEqual(shown, [ZH2[g] for g in GEOS[:10] + [mid] + GEOS[-5:]])
+        svg = self.good("rankbar-fold-next", hero({**NO_OTHER, "omit": omit}, highlight_row=GEOS[10]))
+        self.assertEqual((svg.count("<rect"), svg.count("中间的成员未画出")), (16, 1))  # next to the ten: one line only
+        svg = self.good("rankbar-fold-top", hero({**NO_OTHER, "omit": omit}, highlight_row=GEOS[0]))
+        self.assertEqual((svg.count("<rect"), svg.count("中间的成员未画出")), (15, 1))  # the highlighted row is one of the ten
+        h = lambda **kv: hero({**NO_OTHER, "omit": omit}, highlight_row=mid, **kv)
+        self.assertEqual(self.good("rankbar-fold-to", h(fold_to=12)).count("<rect"), 12)
+        self.assertEqual(self.good("rankbar-no-fold", h(fold_over=n)).count("<rect"), n)  # a rank of at most fold_over rows keeps every row
+        self.assertEqual(self.good("rankbar-never", h(fold_over=0)).count("<rect"), n)
+        self.assertEqual(self.good("rankbar-no-omit", hero(NO_OTHER, highlight_row=mid)).count("<rect"), n)  # no omit words: no fold
+        folded, plain = draw(h())[2], draw(hero(NO_OTHER, highlight_row=mid))[2]
+        self.assertLess(folded, plain * 0.6)
+
+    def test_a_rank_with_the_words_of_the_omit_line_holding_a_digit_refuses(self):
+        with self.assertRaises(Refused) as e:
+            draw(hero({**NO_OTHER, "omit": W("其余 12 个")}, highlight_row=GEOS[12]))
+        self.assertIn("hold a digit", str(e.exception))
+
     def test_the_refusals(self):
         for tag, h, rows, labels, why in [
             ("knob-not-codes", hero(DATA, highlight_row='x"/><script>'), ROWS, LABELS, "comma list of codes"),

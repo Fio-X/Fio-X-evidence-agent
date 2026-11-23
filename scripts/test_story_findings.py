@@ -371,11 +371,12 @@ class Findings(unittest.TestCase):
 
     # ---------------------------------------------------------------- the header: three big numbers above the thesis
 
-    def _page(self, req, names, picks, style=None):
+    def _page(self, req, names, picks, style=None, edit=None, refused=False):
         """The composed page drawn by the real child: (composed, facts, {layer: its svg or html}, the page's html); `style` is hero.style
         (the page layout's knobs)."""
         import json, subprocess
         composed = FN.compose({**req, "picks": picks})
+        if edit: edit(composed)
         rows, facts = ledger(req, composed, names)
         spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
@@ -387,6 +388,7 @@ class Findings(unittest.TestCase):
         go = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
                                                                capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
         got = go(lines)
+        if refused: return [g for g in got if "refused" in g or "error" in g]  # what the child refused, for a test of a rule
         self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
         self.assertTrue(got[0]["w"] > 0 and got[0]["h"] > 0, got[0])  # the size phase tells layer 1 a panel it can take
         bodies = {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}
@@ -674,13 +676,97 @@ class Findings(unittest.TestCase):
             for n in data["notes"]: self.assertIn(n["num"][5:], composed["facts"], (sid, n))  # a fact the page declares (the section's angle's)
         bare = _re.sub(r"<[^>]+>", "", _re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", "".join(_re.findall(r'<ul class="notes".*?</ul>', page_html, _re.S))))
         self.assertFalse(_re.search(r"[0-9]", bare), bare)
-        # the knobs: none, three, the leader and the size
+        # the knobs: none, one, three (no section has a third that adds a number), the leader and the size
         _, _, _, none = self._page(req, names, picks, style={"story_layout": {"notes": 0}})
         self.assertNotIn('class="notes"', none)
+        _, _, _, one = self._page(req, names, picks, style={"story_layout": {"notes": 1}})
+        self.assertEqual(len(_re.findall(r'<li class="note">', one)), 4)
         _, _, _, three = self._page(req, names, picks, style={"story_layout": {"notes": 3, "lead": 48, "note_size": 16}})
-        self.assertEqual(len(_re.findall(r'<li class="note">', three)), 3 + 3 + 2 + 3)  # the map has two notes only
+        self.assertEqual(len(_re.findall(r'<li class="note">', three)), 2 + 2 + 2 + 2)  # each angle writes two notes
         self.assertIn("--lead:48px;--ns:16px", three)
-        self.assertGreater(len(_re.findall(r'<li class="note">', three)), len(_re.findall(r'<li class="note">', page_html)))
+        self.assertGreater(len(_re.findall(r'<li class="note">', page_html)), len(_re.findall(r'<li class="note">', one)))
+
+    def _srcs(self, segs):
+        return {x["src"] for x in segs if isinstance(x, dict) and "src" in x}
+
+    def test_every_note_prints_a_number_its_title_and_text_do_not(self):
+        """The notes of every angle, on the EU and the World Bank shapes: a note adds a ledger number its section's title and text
+        do not print, and says what it is in words of its own."""
+        import re as _re
+        base = lambda src: _re.sub(r"\.(n|r)$", "", src)
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        req["points"] = self._points(EU_MEMBERS)
+        wreq, wnames = self._wb8()
+        seen = set()
+        for r, picks in ((req, ["path", "need", "rank", "ends"]), (req, ["chain", "map", "members", "spread"]),
+                         (wreq, ["map", "ends", "rank", "spread"]), (wreq, ["members", "rank"])):
+            composed = FN.compose({**r, "picks": picks})
+            for sec in composed["sections"]:
+                data = composed["leaves"][sec["layer"]]
+                if not sec.get("title"): continue
+                printed = {base(x) for x in self._srcs(sec["title"]) | self._srcs(sec.get("text") or [])}
+                for n in data.get("notes", []):
+                    mine = {base(n["num"])} | {base(x) for x in self._srcs(n["text"])}
+                    self.assertTrue(mine - printed, (sec["id"], n["num"], "says again what the title and the text print"))
+                    self.assertIn(n["num"][5:], composed["facts"])
+                    self.assertTrue(len(n["text"]) >= 1 and any("w" in x or "word" in x for x in n["text"]), (sec["id"], n["num"], "says nothing of what it is"))
+                    seen.add(sec["id"])
+        self.assertEqual(seen, {"path", "need", "rank", "ends", "chain", "map", "members", "spread"})
+
+    def test_a_note_that_only_says_again_is_refused_by_the_page(self):
+        req, names = eu_chain_request()
+        def again(composed):  # the old rank note: the position the title already prints
+            sec = next(x for x in composed["sections"] if x["id"] == "rank")
+            data = composed["leaves"]["rankbar"]
+            data["notes"] = [{"num": "fact:pos", "text": FN.ST("story.note.rank.hi", hi="SE", w="EU27_2020", rw="r_eu27_2020")}] + data["notes"]
+        bad = self._page(req, names, ["path", "rank"], edit=again, refused=True)
+        self.assertTrue(bad, "the page took a note that only says again")
+        self.assertIn("already prints", str(bad[0])); self.assertIn("rankbar's note 1", str(bad[0]))
+        # the notes the angles write now are no such note
+        self.assertEqual(self._page(req, names, ["path", "rank"], refused=True), [])
+
+    def _many(self, n, wb=False):
+        """The EU shape with n members (the whole among them), or the world shape with n economies."""
+        import random
+        r = random.Random(5)
+        old = (globals()["EU_MEMBERS"], globals()["EU_NAMES"], globals()["WB"], globals()["WB_NAMES"])
+        try:
+            if wb:
+                globals()["WB"] = {f"W{i:02d}": (r.uniform(3, 18), r.uniform(-0.15, 0.2)) for i in range(n)}
+                globals()["WB_NAMES"] = {c: f"经济{chr(0x4e00 + i)}" for i, c in enumerate(globals()["WB"])}
+                return wb_request()
+            globals()["EU_MEMBERS"] = {f"X{i:02d}": (r.uniform(8, 55), r.uniform(-0.1, 0.9)) for i in range(n)}
+            globals()["EU_NAMES"] = {"EU27_2020": "欧盟", **{c: f"成员{chr(0x4e00 + i)}" for i, c in enumerate(globals()["EU_MEMBERS"])}}
+            return eu_request()
+        finally:
+            globals()["EU_MEMBERS"], globals()["EU_NAMES"], globals()["WB"], globals()["WB_NAMES"] = old
+
+    def test_a_long_rank_folds_on_the_page_and_a_short_one_does_not(self):
+        import re as _re
+        omit = "中间的成员未画出"
+        rects = lambda html: len(_re.findall(r'<rect [^>]*fill="var\(--(?:accent|t-sec)\)"', _re.search(r'<svg class="rankbar.*?</svg>', html, _re.S).group(0)))
+        def expect(req, composed):  # the rows a fold keeps and the lines between them, worked out from the rank's data
+            d = composed["leaves"]["rankbar"]; val = {r["src"]: r["value"] for r in req["rows"]}
+            order = sorted(d["rows"], key=lambda r: -float(val[r["value"]]))
+            keep = [i for i, r in enumerate(order) if i < 10 or i >= len(order) - 5 or r["code"] == d["highlight"]]
+            return len(keep), sum(1 for a, b in zip(keep, keep[1:]) if b != a + 1)
+        for tag, n, wb in (("EU 26", 26, False), ("world 24", 24, True)):
+            req, names = self._many(n, wb)
+            composed, _, bodies, page_html = self._page(req, names, ["ends", "rank"] if wb else ["path", "rank"])
+            self.assertEqual(len(composed["leaves"]["rankbar"]["rows"]), n + (0 if wb else 1), tag)  # the data keeps every member
+            kept, lines = expect(req, composed)
+            self.assertEqual((rects(page_html), page_html.count(omit)), (kept, lines), tag)
+            self.assertTrue(kept in (15, 16) and lines >= 1, (tag, kept, lines))  # 10 + the highlighted row (unless one of the ten or the five) + 5
+        req, names = self._many(19)  # 19 members and the whole: 20 rows, at most fold_over: every row stays
+        _, _, _, page_html = self._page(req, names, ["path", "rank"])
+        self.assertEqual((rects(page_html), page_html.count(omit)), (20, 0))
+        req, names = self._many(20)  # 21 rows: folds
+        composed, _, _, page_html = self._page(req, names, ["path", "rank"])
+        self.assertEqual((rects(page_html), page_html.count(omit)), expect(req, composed))
+        req, names = eu_request()  # the nine members of the shape: no fold
+        _, _, _, page_html = self._page(req, names, ["path", "rank"])
+        self.assertEqual((rects(page_html), page_html.count(omit)), (10, 0))
 
     def test_the_legend_follows_the_pictures_on_the_page(self):
         import re as _re
