@@ -37,6 +37,9 @@ import member_map
 import change_dots
 import rank_slope
 import tile_map
+import unit_grid
+import glyph_row
+import dot_strip
 import story
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
@@ -79,8 +82,14 @@ RECIPES = [
     # a long page of sections (the sample page's shape: an opening picture, the thesis, the one-axis answer, sections each with its
     # kicker, conclusion title, text and one picture, the notes under it): the leaves are story.STORY_LAYERS and the sections, their
     # titles and texts are the request's (spec.sections), so the page is tried first for a request that carries a target (has_target:
-    # a row the page runs to), before the one-line page of the same table. Layers print from the sections the flow writes
+    # a row the page runs to), before the one-line page of the same table. Layers print from the sections the flow writes.
+    # With no target row (pj004-23, 11-23) the page is still tried first, without has_target, behind the minimums of "without": the
+    # arcs that need no target ("happened", "lagging", findings.py ARCS) tell three findings of different kinds (a lead, the
+    # finding its arc needs, one more), and the comparisons that say who lags (rank, members, map, findings.py MAP_MIN) need a
+    # field of eight members at least; a smaller field or fewer findings goes on to the ordinary page
     dict(name="page_story", layers=list(story.STORY_LAYERS), eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends", "has_target"],
+         without=dict(condition="has_target", members=8, findings=3, relations=["Ranking"],
+                      why="with no target: three findings of different kinds make an arc, eight members at least say who lags; a table step that kept a ranking (who lags, how far apart) holds the same years, so the arcs read it too"),
          charts=[], picks=[], exposes=[], strip=True, opening=True, relation="Change"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
@@ -137,7 +146,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             dumbbell=["annual", "years_2", "one_place", "one_unit", "two_ends"],
             waterfall=["annual", "one_unit", "composition_groups"],
             waffle=["annual", "one_unit", "composition_groups"], stacked_area=["one_freq", "one_unit", "composition_groups"],
-            gap_axis=["annual", "one_unit"], winners_losers=["one_unit"], event_chain=[], target_path=["annual", "one_unit"], pair_bars=["one_unit"], thesis_claims=[], risk_notes=[], small_multiples=["annual", "one_unit"], member_map=["annual", "one_unit"], change_dots=["annual", "one_unit"], rank_slope=["annual", "one_unit"], tile_map=["annual", "one_unit"])
+            gap_axis=["annual", "one_unit"], winners_losers=["one_unit"], event_chain=[], target_path=["annual", "one_unit"], pair_bars=["one_unit"], thesis_claims=[], risk_notes=[], small_multiples=["annual", "one_unit"], member_map=["annual", "one_unit"], change_dots=["annual", "one_unit"], rank_slope=["annual", "one_unit"], tile_map=["annual", "one_unit"], unit_grid=["annual", "one_unit"], glyph_row=["one_unit"], dot_strip=["annual", "one_unit"])
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
@@ -280,6 +289,12 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
+        w = r.get("without")
+        if w is not None and (set(w) != {"condition", "members", "findings", "relations", "why"} or w["condition"] not in r["eats"]
+                              or not isinstance(w["relations"], list) or not set(w["relations"]) <= set(RELATIONS) - {r.get("relation")}
+                              or not all(isinstance(w[k], int) and not isinstance(w[k], bool) and w[k] >= 1 for k in ("members", "findings"))
+                              or not isinstance(w["why"], str) or not w["why"].strip()):
+            raise SystemExit(f"{r['name']}: without {w!r}; one of its eats as condition, members and findings whole numbers of 1 or more, and why")
         if r.get("relation") not in RELATIONS:
             raise SystemExit(f"{r['name']}: relation {r.get('relation')!r}; one of {RELATIONS}, the one its page answers")
         if r.get("blocks_only", False) not in (True, False) or (r.get("blocks_only") and "blocks" in r["eats"]):

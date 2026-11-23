@@ -147,6 +147,22 @@ pub struct Recipe {
     pub relation: Option<String>,
     /// Only a block of a many-block page draws it (knobs.json recipes[].blocks_only, from knobs.py): a short page passes over it.
     pub blocks_only: bool,
+    /// The one condition of its eats the recipe may go without, and the minimums it then takes the page behind (knobs.json
+    /// recipes[].without, from knobs.py, the reason beside them there): next_run shape_for, recipe_request.
+    pub without: Option<Without>,
+}
+
+/// A recipe's minimums when it goes without one of its conditions (knobs.json recipes[].without): the condition passed over
+/// when the tables do not meet it, the countries the main must then hold at least, and the findings its findings step must
+/// then give at least. All three are data in the registry; layer 1 compares counts only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Without {
+    pub condition: String,
+    pub members: usize,
+    pub findings: usize,
+    /// The relations, besides the recipe's own, the table step may have kept when the recipe went without its condition
+    /// (a ranking of the last year has the years' rows too): with its condition met, only the recipe's own relation counts.
+    pub relations: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -303,6 +319,26 @@ pub fn leaves() -> &'static Leaves {
                     v => v
                         .as_bool()
                         .expect("knobs.json: a recipe's blocks_only is true or false"),
+                },
+                without: match &r["without"] {
+                    Value::Null => None,
+                    w => {
+                        let n = |k: &str| {
+                            w[k].as_u64()
+                                .expect("knobs.json: a recipe's without minimum is a whole number") as usize
+                        };
+                        Some(Without {
+                            condition: word(&w["condition"]).to_string(),
+                            members: n("members"),
+                            findings: n("findings"),
+                            relations: w["relations"]
+                                .as_array()
+                                .expect("knobs.json: a recipe's without relations is a list")
+                                .iter()
+                                .map(|r| r.as_str().expect("knobs.json: a relation is a name").to_string())
+                                .collect(),
+                        })
+                    }
                 },
             });
         Leaves {
@@ -2951,6 +2987,32 @@ mod tests {
         assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
     }
 
+    /// st4 11-23: the type check scrolls a text into view before it reads what is under the text's centre, and a centre in the
+    /// window's last pixel row (an earlier text's scroll left it there) read nothing (elementsFromPoint gives none there): the
+    /// text was counted unmeasured. The page's script, at load, puts text A's centre at `a` (a whole number less half the
+    /// window: the check's scroll to A's centre lands on a whole pixel) below the window and text B's at `a + innerHeight / 2 -
+    /// 0.1`, so once A is scrolled to the window's middle B's centre is 0.1 px above the window's bottom edge. With the 2 px
+    /// margin B is scrolled into view too and both are measured, dark on the page's white.
+    #[test]
+    fn the_bake_measures_a_text_whose_centre_falls_in_the_windows_last_row() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let text = |id: &str, words: &str| {
+            format!("<div id=\"{id}\" style=\"position:absolute;left:100px;top:0px;font-size:16px;line-height:20px;color:#222\">{words}</div>")
+        };
+        let page = format!(
+            "<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\" style=\"position:relative;height:6000px\">{}{}</div>\
+             <script>(()=>{{const ih=innerHeight;\
+             const mid=(e)=>{{const g=document.createRange();g.selectNodeContents(e.firstChild);const r=g.getBoundingClientRect();return r.top+r.height/2+scrollY;}};\
+             const put=(id,want)=>{{const e=document.getElementById(id);e.style.top=(parseFloat(e.style.top)+want-mid(e))+'px';}};\
+             const a=Math.max(1000,ih+200)+ih/2-Math.floor(ih/2);put('a',a);put('b',a+ih/2-0.1);}})()</script></body>",
+            text("a", "甲地的文字"),
+            text("b", "乙地的文字")
+        );
+        let baked = bake(&real, &page, "", 1440).unwrap();
+        let typed = baked.type_measured.as_ref().expect("the bake's type");
+        assert_eq!((&typed["texts"], &typed["unmeasured"]), (&json!(2), &json!(0)), "{typed}");
+    }
+
     #[test]
     fn the_bake_refuses_a_text_over_a_text_out_of_its_svg_or_over_a_note_and_passes_a_clean_page() {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
@@ -3523,8 +3585,8 @@ mod tests {
         // bars (9: its highlight a list of codes), the line leaf (8: its highlight one code), the rank lines (10: its highlight
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
         // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
-        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them, change dots 7, rank slope 7 and tile map 6 last)
-        assert_eq!((t.nodes.len(), knobs), (55, 302));
+        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them, change dots 7, rank slope 7 and tile map 6, then unit grid, glyph row and dot strip last)
+        assert_eq!((t.nodes.len(), knobs), (58, 334));
         let reserve: Vec<_> = t
             .nodes
             .iter()
@@ -3601,7 +3663,10 @@ mod tests {
                 "member_map",
                 "change_dots",
                 "rank_slope",
-                "tile_map"
+                "tile_map",
+                "unit_grid",
+                "glyph_row",
+                "dot_strip"
             ]
         );
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer

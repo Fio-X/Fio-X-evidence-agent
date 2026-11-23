@@ -50,6 +50,28 @@ class TargetFooter(unittest.TestCase):
         # a separator after it is
         scmp.footer({"source": [line(t) + "，目标"], "refs": [t["source_ref"]]})
 
+    def test_an_empty_or_padded_reference_is_refused_not_printed_as_empty_marks(self):
+        # an empty id matches between any two separators: the page would print empty marks and stop at the page check
+        for bad in ("", " ", " nrg_ind_ren", "nrg_ind_ren ", None, 7):
+            with self.assertRaises(FX.Refused, msg=repr(bad)):
+                scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": ["nrg_ind_ren", bad]})
+        with self.assertRaises(FX.Refused):
+            scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": "nrg_ind_ren"})
+        # no refs at all is the table-free footer, as before
+        scmp.footer({"source": ["欧盟统计局 nrg_ind_ren"], "refs": []})
+
+    def test_a_table_the_request_holds_no_row_of_is_a_reference_only_and_a_fact_over_it_still_stops(self):
+        # the law's clause is a spec table with no rows (the page's notes no longer read the target): loading the page's tables
+        # does not stop on it, and a fact that does read it still refuses
+        FX.TABLES = {"t": [{"geo": "DE", "TIME_PERIOD": "2024", "OBS_VALUE": "1"}]}
+        try:
+            spec = {"tables": {"t": {"id": "t"}, "targets_ren": {"id": "2023/2413"}}}
+            self.assertEqual(sorted(FX.load(spec)), ["t"])
+            with self.assertRaises(KeyError):
+                FX._rows(FX.load(spec), {"table": "targets_ren"})
+        finally:
+            FX.TABLES = None
+
 
 if __name__ == "__main__":
     unittest.main()

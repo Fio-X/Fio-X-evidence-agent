@@ -31,7 +31,7 @@ from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "risk_notes"]
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "unit_grid", "glyph_row", "dot_strip", "risk_notes"]
 TEXT_BLOCKS = {"thesis_claims": "story.claims.label", "risk_notes": "story.notes.title"}  # a block of words drawn as svg, and the word that names it for a screen reader
 # the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
 HTML_BLOCKS = ("bignums",)
@@ -80,12 +80,14 @@ prod.KNOBS[LAYOUT] = dict(
     legend=("on", ("on", "off"), "the 'how to read this page' block under the thesis"))
 # What each leaf's picture takes when it sits on a titled section: beside its words ("side"), paired with a neighbour that is also
 # "pair" ("pair"), or across the page ("stack": the picture needs the page's width, e.g. panels linked left to right).
-PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "change_dots": "side", "rank_slope": "side", "tile_map": "side", "gap_axis": "stack", "event_chain": "stack",
+PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "change_dots": "side", "rank_slope": "side", "tile_map": "side", "unit_grid": "side", "glyph_row": "side", "dot_strip": "stack", "gap_axis": "stack", "event_chain": "stack",
          "winners_losers": "side", "pair_bars": "pair", "rankbar": "pair"}
 
 
+# The chart name's size (px) of the leaves a section draws with a head (their title_size knob's default; FIXED sets none).
+HEAD_TITLE_PX = 16
 # The narrowest picture (px) each leaf draws without refusing; a place that would be narrower falls back (pair to side, side to stack).
-NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "pair_bars": 500, "rankbar": 480}
+NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "unit_grid": 500, "glyph_row": 420, "dot_strip": 560, "pair_bars": 500, "rankbar": 480}
 
 
 def layout_knobs(h):
@@ -100,10 +102,19 @@ def plan(spec):
     secs = sections(spec); kn = layout_knobs(spec["hero"])
     text_w = round(PAGE_W * kn["share"]); side_w = PAGE_W - text_w - kn["gutter"]; half_w = (PAGE_W - kn["gutter"]) // 2
     rows, width, i = [], {}, 0
+    leaves = spec["hero"].get("leaves") or {}
+    def need(layer):
+        """The leaf's narrowest picture (NEEDS), or wider when its head (the chart name in bold, the unit beside it, as wbkit.head
+        lays them from x 8) needs more: a measure's whole reviewed name may run past half the page (q4 11-23)."""
+        d = leaves.get(layer) or {}
+        if not (isinstance(d, dict) and d.get("title") and d.get("unit")): return NEEDS.get(layer, 0)
+        size = FIXED.get(layer, {}).get("size", 13)
+        head = 8 + K.tw(K.plain(d["title"], "title"), HEAD_TITLE_PX) + 8 + K.tw(K.plain(d["unit"], "unit"), size) + 8
+        return max(NEEDS.get(layer, 0), head)
     def mode(s):
         m = "stack" if kn["layout"] == "stack" else PLACE.get(s[2], "stack")
-        if m == "pair" and half_w < NEEDS.get(s[2], 0): m = "side"
-        if m == "side" and side_w < NEEDS.get(s[2], 0): m = "stack"
+        if m == "pair" and half_w < need(s[2]): m = "side"
+        if m == "side" and side_w < need(s[2]): m = "stack"
         return m
     while i < len(secs):
         s = secs[i]
@@ -112,7 +123,7 @@ def plan(spec):
         nxt = secs[i + 1] if i + 1 < len(secs) else None
         if m == "pair" and kn["pair"] and nxt is not None and nxt[4] is not None and mode(nxt) == "pair":
             rows.append(("pair", [s[0], nxt[0]])); width[s[0]] = width[nxt[0]] = half_w; i += 2; continue
-        if m == "pair": m = "side" if side_w >= NEEDS.get(s[2], 0) else "stack"
+        if m == "pair": m = "side" if side_w >= need(s[2]) else "stack"
         rows.append((m, [s[0]])); width[s[0]] = side_w if m == "side" else PAGE_W; i += 1
     return width, rows, dict(kn, text_w=text_w)
 
@@ -159,21 +170,35 @@ def notes_html(spec, layer, kn):
 
 # What the page's picture kinds need explained: (swatch, word) a layer adds to the legend block under the thesis; the accent line is always there.
 LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", "story.legend.chain"), "small_multiples": ("pale", "story.legend.members"),
-          "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank")}
+          "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank"),
+          "unit_grid": ("accent", "grid.legend"), "glyph_row": ("area", "glyph.legend"), "dot_strip": ("dash", "dot.legend")}
 
 
-def legend_rows(layers):
-    """The accent line, then each picture kind's line once (the map and the tile map share one)."""
+# The small multiples' line on a page with no target (the findings name it in leaves.small_multiples.legend): the whole as a pale
+# line when it is drawn, never a target's dashed level; a page with a target keeps LEGEND's line.
+LEGEND_NO_TARGET = ("story.legend.members_ref", "story.legend.members_plain")
+# The dot strip's line on a page whose strip draws no target (the findings name it in leaves.dot_strip.legend): the average's rule only.
+DOT_NO_TARGET = ("dot.legend_plain",)
+
+
+def legend_rows(layers, leaves=None):
+    """The accent line, then each picture kind's line once (the map and the tile map share one); the small multiples' word is the
+    one its leaf data names when it is one of LEGEND_NO_TARGET."""
     out = [("accent", "story.legend.accent")]
+    named = ((leaves or {}).get("small_multiples") or {}).get("legend")
     for n in layers:
-        if n in LEGEND and LEGEND[n] not in out: out.append(LEGEND[n])
+        row = LEGEND.get(n)
+        if n == "small_multiples" and named in LEGEND_NO_TARGET: row = (row[0], named)
+        dot = ((leaves or {}).get("dot_strip") or {}).get("legend")
+        if n == "dot_strip" and dot in DOT_NO_TARGET: row = ("pale", dot)
+        if row and row not in out: out.append(row)
     return out
 
 
-def legend_html(layers, box=None):
+def legend_html(layers, box=None, leaves=None):
     """The 'how to read this page' block: the accent line, then a line for each picture kind on the page that needs one (no number in it);
     `box` is the layout's (x, y, w, h) of it."""
-    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers))
+    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers, leaves))
     return f'<section class="sec" data-id="legend" data-layout="bare"{place(box)}><div class="legend" data-legend="story"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
 
 
@@ -241,11 +266,11 @@ def notes_height(pc, w, kn):
     return tot + NOTE_GAP * max(0, len(pc["items"]) - 1)
 
 
-def legend_height(layers):
+def legend_height(layers, leaves=None):
     """The legend block (padding 14 px a side): its title's line, 20 px, and its items' lines. With the title the items fill one line when they fit
     beside it; otherwise they take the lines under it, each (a row of items that wraps) 40 px high but the last, 20, a 26 px gap between two."""
     title = K.tw(word("story.legend.title"), 14)
-    items = [26 + 8 + K.tw(word(w), 12) for _, w in legend_rows(layers)]
+    items = [26 + 8 + K.tw(word(w), 12) for _, w in legend_rows(layers, leaves)]
     if title + 28 + sum(items) + LEGEND_GAP * (len(items) - 1) <= PAGE_W - 36: return LEGEND_PAD + 20
     rows, cur = 1, 0.0
     for w in items:
@@ -290,7 +315,7 @@ def layout(spec, c, drew, html_h):
             b["y"] = y; boxes[i] = b; row_h = max(row_h, b["h"])
         y += row_h
         if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids):
-            y += SEC_GAP; lh = legend_height(list(layer_of.values())); legend = (0, y, PAGE_W, lh); y += lh
+            y += SEC_GAP; lh = legend_height(list(layer_of.values()), spec["hero"].get("leaves")); legend = (0, y, PAGE_W, lh); y += lh
     return dict(boxes=boxes, legend=legend, H=y, pieces=pcs, drew={k: tuple(v) for k, v in drew.items()})
 
 
@@ -449,7 +474,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
     layer_of = {s[0]: s[2] for s in secs}
     for how, ids in rows:
         for i in ids: body.append(sec(i, "pair" if how == "pair" else how))
-        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"]))
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], spec["hero"].get("leaves")))
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)
@@ -505,4 +530,5 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
        ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
        ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}"
-       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}")
+       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}"
+       ".story .sw.area{width:14px;height:14px;border-radius:50%;background:var(--bar)}")

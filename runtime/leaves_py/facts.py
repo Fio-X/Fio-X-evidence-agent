@@ -68,7 +68,9 @@ def records(path):
     return list(csv.DictReader(open(os.path.join(D, path), encoding="utf-8")))
 
 def load(spec):
-    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"]}
+    # a spec table the request holds no row of is a reference only (a law's clause the footer names): nothing to load; a fact
+    # that reads it still stops, at T[q["table"]]
+    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"] if name in TABLES}
     T = {}
     for name, t in spec["tables"].items():
         rows = [r for r in csv.DictReader(open(os.path.join(D, t["csv"]))) if r.get("OBS_VALUE") not in ("", None)]
@@ -133,7 +135,8 @@ def compute(spec, T):
             F[key] = from_ledger(key, q); continue
         if op in DERIVED:
             a, b = F[q["a"]]["v"], F[q["b"]]["v"]
-            v = {"share": a / b, "change": a / b - 1, "times": a / b, "minus": a - b, "plus": a + b}[op]
+            # only the fact's own op is worked out: a difference whose second number is 0 divides nothing
+            v = {"share": lambda: a / b, "change": lambda: a / b - 1, "times": lambda: a / b, "minus": lambda: a - b, "plus": lambda: a + b}[op]()
             F[key] = {"v": v, "fmt": q.get("fmt", "pct"), "src": f'{op}({q["a"]},{q["b"]})'}; continue
         rows = _rows(T, q) if "table" in q else []
         if op == "mean":  # average over the periods that start with a prefix, e.g. the 12 months of one year

@@ -78,6 +78,11 @@ pub const TITLE_FINDINGS_ZH: &str = include_str!("../runtime/pi/assets/title-fin
 /// knowledge word list: a level page in one of them says its highest place with no ratio (next_tree_gen finding_declared).
 pub const RATIO_FREE_UNITS: &str = include_str!("../runtime/pi/assets/ratio-free-units.json");
 
+/// The UN M49 standard as data (m49-regions.json: each country's iso2, iso3 and M49 sub-region, the groups' names) and this
+/// group's decisions over it (m49-overrides.json): what M49Groups groups places by.
+const M49_REGIONS: &str = include_str!("../runtime/pi/assets/m49-regions.json");
+const M49_OVERRIDES: &str = include_str!("../runtime/pi/assets/m49-overrides.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.
@@ -230,6 +235,11 @@ pub enum Request<'a> {
     /// such as EU27_2020, an unknown two-letter code) is listed as missing, never guessed. Where a place lies on a map is the
     /// visual group's (its PlacePoints, from the Natural Earth table it owns); this group answers only the code.
     Iso3Of { codes: &'a [String] },
+    /// The places grouped by their M49 sub-region (m49_groups): each code's iso3 as Iso3Of finds it (Eurostat's EL is
+    /// Greece), its sub-region from m49-regions.json, an m49-overrides.json entry applied when the country would otherwise
+    /// stand alone in its own sub-region among the codes asked. A code with no iso3 or no sub-region (an aggregate) is
+    /// listed as missing, never guessed.
+    M49Groups { codes: &'a [String] },
     /// The series keys a Eurostat table holds under `filters` (dimension, codes; a dimension not listed is open): the GET
     /// to start, which writes nothing. Its proxy is the environment's only, never the system's.
     HeldSeries {
@@ -355,6 +365,8 @@ pub enum Reply<'a> {
         iso3: BTreeMap<String, String>,
         missing: Vec<String>,
     },
+    /// M49Groups: {"groups": [{"id", "name_zh", "members"}], "moved": [{"code", "from_zh", "to_zh"}], "missing": [code]}.
+    M49Groups(Value),
     HeldProbe {
         url: String,
         reply: HeldFuture,
@@ -547,6 +559,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
             Reply::Iso3 { iso3, missing }
         }
+        Request::M49Groups { codes } => Reply::M49Groups(m49_groups(codes)?),
         Request::HeldSeries { table, filters } => {
             let url = held_url(table, filters);
             Reply::HeldProbe {
@@ -986,6 +999,61 @@ fn read_code_names(text: &str) -> Result<BTreeMap<String, BTreeMap<String, Strin
 
 /// The name table's iso2 to iso3 (economy-names.json economies and territories, then its iso2 aliases EL and UK to their
 /// targets' iso3); an alias whose target has no iso3 is a broken table.
+/// The codes grouped by M49 sub-region (Request::M49Groups): the groups in sub-region code order, each with its Chinese
+/// name as the UN prints it and its members in the order asked; the countries an override moved (the UN's sub-region and
+/// the one it was placed in, by name); the codes with no iso3 or no sub-region.
+fn m49_groups(codes: &[String]) -> Result<Value, String> {
+    let m49: Value = serde_json::from_str(M49_REGIONS).map_err(|e| format!("m49-regions.json: {e}"))?;
+    let over: Value = serde_json::from_str(M49_OVERRIDES).map_err(|e| format!("m49-overrides.json: {e}"))?;
+    let iso3_of = iso3_table()?;
+    let sub_of: BTreeMap<&str, &str> = m49["countries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| Some((c["iso3"].as_str()?, c["sub_region"].as_str()?)))
+        .collect();
+    let name_of = |id: &str| -> Result<String, String> {
+        m49["regions"][id]["name_zh"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| format!("m49-regions.json names no sub-region {id}"))
+    };
+    let (mut at, mut missing): (Vec<(String, String, String)>, Vec<String>) = (Vec::new(), Vec::new());
+    for code in codes.iter().map(|c| c.trim()) {
+        let three = code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase());
+        let iso3 = if three { Some(code) } else { iso3_of.get(code).map(String::as_str) };
+        match iso3.and_then(|i| Some((i, *sub_of.get(i)?))) {
+            Some((i, sub)) if !at.iter().any(|(c, _, _)| c == code) => {
+                at.push((code.to_string(), i.to_string(), sub.to_string()))
+            }
+            Some(_) => {}
+            None if !missing.iter().any(|m| m == code) => missing.push(code.to_string()),
+            None => {}
+        }
+    }
+    let mut moved = Vec::new();
+    for o in over["overrides"].as_array().into_iter().flatten() {
+        let (Some(iso3), Some(to)) = (o["iso3"].as_str(), o["sub_region"].as_str()) else {
+            return Err("m49-overrides.json: an override names no iso3 or sub_region".into());
+        };
+        let Some(k) = at.iter().position(|(_, i, _)| i == iso3) else { continue };
+        let from = at[k].2.clone();
+        let alone = at.iter().filter(|(_, _, s)| *s == from).count() == 1;
+        if from == to || (o["when_alone"].as_bool() == Some(true) && !alone) {
+            continue;
+        }
+        moved.push(json!({"code": at[k].0, "from_zh": name_of(&from)?, "to_zh": name_of(to)?}));
+        at[k].2 = to.to_string();
+    }
+    let subs: BTreeSet<&str> = at.iter().map(|(_, _, s)| s.as_str()).collect();
+    let mut groups = Vec::new();
+    for sub in subs {
+        let members: Vec<&str> = at.iter().filter(|(_, _, s)| s == sub).map(|(c, _, _)| c.as_str()).collect();
+        groups.push(json!({"id": sub, "name_zh": name_of(sub)?, "members": members}));
+    }
+    Ok(json!({"groups": groups, "moved": moved, "missing": missing}))
+}
+
 fn iso3_table() -> Result<&'static BTreeMap<String, String>, String> {
     static TABLE: OnceLock<Result<BTreeMap<String, String>, String>> = OnceLock::new();
     TABLE
@@ -1565,6 +1633,64 @@ mod tests {
         assert_eq!(iso3["UK"], "GBR");
         assert_eq!(iso3.len(), 4);
         assert_eq!(missing, ["EU27_2020", "XX"]);
+    }
+
+    /// The EU members grouped by M49 sub-region: EL is Greece (Southern Europe), Cyprus (Western Asia in M49) stands alone
+    /// in its sub-region and is placed in Southern Europe by the override, the move named; the aggregate is missing.
+    #[test]
+    fn eu_members_group_by_m49_sub_region_with_greece_and_cyprus_in_southern_europe() {
+        let eu = [
+            "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU",
+            "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK", "EU27_2020",
+        ];
+        let codes: Vec<String> = eu.iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::M49Groups(got)) = call(Request::M49Groups { codes: &codes }) else {
+            panic!("no groups")
+        };
+        let groups: BTreeMap<&str, (&str, Vec<&str>)> = got["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                let members = g["members"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+                (g["id"].as_str().unwrap(), (g["name_zh"].as_str().unwrap(), members))
+            })
+            .collect();
+        assert_eq!(groups.keys().copied().collect::<Vec<_>>(), ["039", "151", "154", "155"]);
+        assert_eq!(groups["039"].1, ["CY", "EL", "ES", "HR", "IT", "MT", "PT", "SI"]);
+        assert_eq!(groups["154"].1, ["DK", "EE", "FI", "IE", "LT", "LV", "SE"]);
+        assert_eq!(groups["155"].1, ["AT", "BE", "DE", "FR", "LU", "NL"]);
+        assert_eq!(groups["151"].1, ["BG", "CZ", "HU", "PL", "RO", "SK"]);
+        assert_eq!(groups["039"].0, "\u{5357}\u{6b27}");
+        assert_eq!(
+            got["moved"],
+            json!([{"code": "CY", "from_zh": "\u{897f}\u{4e9a}", "to_zh": "\u{5357}\u{6b27}"}])
+        );
+        assert_eq!(got["missing"], json!(["EU27_2020"]));
+    }
+
+    /// A World Bank table's iso3 codes keep the UN's grouping: Cyprus beside Turkey stays in Western Asia (the override
+    /// applies only to a country alone in its sub-region), each continent's sub-regions apart, an aggregate missing.
+    #[test]
+    fn world_bank_codes_group_by_the_continents_sub_regions_and_cyprus_stays_with_others_of_its_own() {
+        let codes: Vec<String> = ["USA", "CAN", "BRA", "MEX", "CHN", "JPN", "IND", "TUR", "CYP", "DEU", "NGA", "WLD"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let Ok(Reply::M49Groups(got)) = call(Request::M49Groups { codes: &codes }) else {
+            panic!("no groups")
+        };
+        let of = |id: &str| {
+            got["groups"].as_array().unwrap().iter().find(|g| g["id"] == id).map(|g| g["members"].clone())
+        };
+        assert_eq!(of("021"), Some(json!(["USA", "CAN"])));
+        assert_eq!(of("419"), Some(json!(["BRA", "MEX"])));
+        assert_eq!(of("030"), Some(json!(["CHN", "JPN"])));
+        assert_eq!(of("145"), Some(json!(["TUR", "CYP"])));
+        assert_eq!(of("034"), Some(json!(["IND"])));
+        assert_eq!(of("039"), None);
+        assert_eq!(got["moved"], json!([]));
+        assert_eq!(got["missing"], json!(["WLD"]));
     }
 
     #[test]

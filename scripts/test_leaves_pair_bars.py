@@ -142,6 +142,24 @@ class Picture(unittest.TestCase):
         self.assertAlmostEqual(max(b[3] for b in bars), track, places=1)  # no full: the largest value fills its track
         self.assertNotIn("var(--accent)", re.sub(r'<rect[^>]*fill="var\(--accent\)"[^>]*/>', "", svg))
 
+    def test_long_row_names_on_a_narrow_board_stand_over_their_tracks(self):
+        """q4 11-23: a row named by a measure's whole name (a World Bank indicator's reviewed name) on a half-width board left the
+        tracks under 120 px beside it; the names then stand each on its own line over its tracks, on both data shapes, the
+        tracks starting at the board's left and every text inside the picture, off the others."""
+        long = "不含土地利用、土地利用变化和林业的人均二氧化碳排放量（吨二氧化碳当量／人）"
+        for data, rows, names in ((EU_DATA, EU_REQ, EU_NAMES), (WB_DATA, WB_REQ, WB_NAMES)):
+            d = json.loads(json.dumps(data))
+            d["rows"] = [dict(r, label=W(long)) for r in d["rows"]]
+            svg, w, h = draw(hero(d, width=550, size=12), rows, names)
+            self.assertEqual(check_svg(svg), [])
+            tracks = [r for r in rects(svg) if r[1] == "var(--empty)"]
+            self.assertEqual(tracks[0][2], 8.0)
+            self.assertGreaterEqual(tracks[0][3], 120)
+            self.assertEqual(svg.count(long[:6]), len(d["rows"]))
+            # the same board with short names keeps them in a column left of the tracks
+            short, _, _ = draw(hero(data, width=550, size=12), rows, names)
+            self.assertGreater([r for r in rects(short) if r[1] == "var(--empty)"][0][2], 8.0)
+
     def test_its_rules(self):
         d = json.loads(json.dumps(EU_DATA))
 
@@ -164,7 +182,8 @@ class Picture(unittest.TestCase):
         self.assertIn("not a series", refused({**d, "rows": [dict(d["rows"][0], a="series:none")]}))
         self.assertIn("digit", refused({**d, "rows": [dict(d["rows"][0], label=W("第2块"))]}))
         self.assertIn("highlight", refused(d, highlight="XX") + "highlight")
-        self.assertIn("too narrow", refused(d, width=480, gap=80, size=16))
+        # names over the tracks leave room on this board; a ratio's words that leave none still refuse
+        self.assertIn("too narrow", refused({**d, "ratio_unit": W("倍，第一个地方是第二个地方的这么多倍")}, width=480, gap=80, size=16))
         neg, nd = eu_build({**EU_ROWS, "REN_TRA": (-1.0, 9.6, "交通")})
         self.assertIn("below 0", refused(nd, rows=neg))
         self.assertIn("overlap", refused(d, names={"SE": "很长很长很长很长很长很长很长的国名", "MT": "马耳他"}, width=480))

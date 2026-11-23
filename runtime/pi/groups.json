@@ -1136,6 +1136,10 @@
    "group": "knowledge",
    "note": "New route: the UN M49 standard as data (each country or area with an ISO code, its M49 region, sub-region and intermediate region, and the English and Chinese names of those groups as the UN prints them), for the knowledge group's grouping of countries (EU members by European sub-region, World Bank economies by their continent's sub-region). Read from the two UN CSVs it names (kept outside the repository; only their names and sha256 are recorded), checked row by row in scripts/test_m49_regions.py when the originals are given and for self-consistency always. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/m49-overrides.json": {
+   "group": "knowledge",
+   "note": "New route: the knowledge group's decisions over m49-regions.json (a country placed in another M49 sub-region than the UN's when it would otherwise stand alone in its own, with the reason), read with it by next_knowledge.rs M49Groups. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/classify.rs": {
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -2267,6 +2271,21 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/leaves_py/tile_map.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/unit_grid.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/glyph_row.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/dot_strip.py",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {

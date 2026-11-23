@@ -516,7 +516,11 @@ def footer(spec):
     if FX.LEDGER is None:
         evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
         return f'<footer>{word("footer.source", v=prod.esc(source))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{note}</footer>'
-    src, refs = prod.esc(source), sorted(spec.get("refs") or [], key=len, reverse=True)
+    refs = spec.get("refs") or []
+    # a table id is a word: an empty one would match between any two separators and print empty marks, one with white space at
+    # its edge could never equal the mark's text, so the page check would refuse the page after the drawing
+    if not isinstance(refs, list) or not all(isinstance(r, str) and r and r == r.strip() for r in refs): raise FX.Refused(f"footer: spec.refs holds an id that is no table id: {refs!r}")
+    src, refs = prod.esc(source), sorted(refs, key=len, reverse=True)
     if refs: src = re.sub(r"(?<![\w.])(" + "|".join(map(re.escape, refs)) + r")(?![\w.])", r'<span data-ref="">\1</span>', src)
     if FX.digit(re.sub(r'<span data-ref="">[^<]*</span>', "", src)): raise FX.Refused("footer: the source holds a digit outside the table ids spec.refs names")
     if FX.digit(note): raise FX.Refused("footer: the note holds a digit")

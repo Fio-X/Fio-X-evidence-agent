@@ -125,7 +125,7 @@
       let k = null, why = outline ? 'outline only' : off || (known ? '' : 'fill by url()');
       if (known) {
         let x = r.left + r.width / 2, y = r.top + r.height / 2;
-        if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) { scrollTo(scrollX + x - innerWidth / 2, scrollY + y - innerHeight / 2); r = box(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+        if (x < 2 || y < 2 || x >= innerWidth - 2 || y >= innerHeight - 2) { scrollTo(scrollX + x - innerWidth / 2, scrollY + y - innerHeight / 2); r = box(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
         let back = under(p, x, y);
         // an svg text drawn over its own stroke (paint-order: stroke, a halo) reads against the stroke
         if (Array.isArray(back) && svg && s.stroke !== 'none' && !s.stroke.startsWith('url') && parseFloat(s.strokeWidth) > 0 && /^stroke/.test(s.paintOrder)) {
