@@ -103,10 +103,10 @@ class PeopleHero(unittest.TestCase):
                 self.assertRegex(p["d"], r"^[MLCZ0-9 .\-]*$", name); self.assertRegex(p["fill"], r"^#[0-9a-f]{6}$", name)
         self.assertNotIn("fill-rule", json.dumps(reg)); self.assertNotIn("<", json.dumps(reg["figures"]))
 
-    def test_groups_layout_is_unavailable_and_no_topic_defaults_to_people(self):
+    def test_groups_layout_is_unavailable_and_only_the_people_topic_defaults_to_people(self):
         r = req("st4"); sp = dict(SPECS["st5"]); r = {"family": sp["family"], "lead": sp["lead"], "width": 1140, "ground": "warm", "subject": sp["subject"]}
         with self.assertRaises(R.Unavailable): R.build_people(r)
-        for t, s in R.TOPICS["scenes"].items(): self.assertNotEqual(s["renderer"], "people", t)
+        self.assertEqual([t for t, s in R.TOPICS["scenes"].items() if s["renderer"] == "people"], ["people"])
 
     def test_the_reply_has_the_line_paths_shape(self):
         svg, w, h, secs, name, comp = R.build_people(req("st1"))

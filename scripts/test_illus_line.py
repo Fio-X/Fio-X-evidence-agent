@@ -143,9 +143,9 @@ class DefaultPath(unittest.TestCase):
 
     def test_the_registry_names_the_renderer_of_every_topic(self):
         sc = R.TOPICS["scenes"]
-        self.assertEqual({k: v["renderer"] for k, v in sc.items()}, {"energy": "line", "emissions": "3d", "people": "3d", "trade": "3d", "migration": "3d", "neutral": "3d"})
+        self.assertEqual({k: v["renderer"] for k, v in sc.items()}, {"energy": "line", "emissions": "3d", "people": "people", "trade": "3d", "migration": "3d", "neutral": "3d"})
         for n in NAMES: self.assertEqual(R.renderer_of(req(n)), "line", n)
-        self.assertEqual(R.renderer_of({"family": "pop65", "subject": {}}), "3d"); self.assertEqual(R.renderer_of({"tags": ["wind"]}), "3d")
+        self.assertEqual(R.renderer_of({"family": "pop65", "subject": {}}), "people"); self.assertEqual(R.renderer_of({"tags": ["wind"]}), "3d")
 
     def test_the_reply_has_the_shape_the_3d_path_has(self):
         for n, rep in self.rep.items():
