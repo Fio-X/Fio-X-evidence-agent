@@ -345,3 +345,104 @@ def plinth(height=10.0, width=24.0, depth=16.0, yaw=0.0, name="plinth"):
     m.merge(box((0, 0, (height - cap - sink) / 2), (width, depth, height - cap + sink)))
     m.merge(box((0, 0, height - cap / 2), (width + 1.6, depth + 1.6, cap)))
     o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]
+
+
+# ---------------------------------------------------------------- topic units (the topic scenes of run_hero.py: one unit per member)
+# Each takes size (1.0 = about 26 scene units tall) and lit; a lit unit is group "lit" (painted in the accent), an unlit one group "thing"
+# (a pale body under its ink, like the background turbines). They sit on the ground at their local origin.
+
+def _grp(lit): return "lit" if lit else "thing"
+
+
+def _ball(m, c, r, n=8, rings=4, flat=1.0):
+    """A low-poly ball of radius r about c (flat < 1 squashes it into a puff), merged into m."""
+    rs = []
+    for k in range(rings + 1):
+        a = math.pi * k / rings; rr = max(r * math.sin(a), r * 0.12); z = c[2] - r * flat * math.cos(a)
+        rs.append([(c[0] + rr * math.cos(2 * math.pi * i / n), c[1] + rr * math.sin(2 * math.pi * i / n), z) for i in range(n)])
+    m.merge(loft(rs))
+
+
+def turbine_unit(size=1.0, lit=False, name="unit"):
+    """A turbine (energy): tower and nacelle in the plain group, its three blades in the accent when lit."""
+    H = 30.0 * size; split = wind_turbine(height=H, blade_len=0.55 * H, rotor_deg=20.0, yaw=0.0, name=name, split="unit")
+    body, blades = split; body.group = "thing"; blades.group = _grp(lit); return [body, blades]
+
+
+def stack_unit(size=1.0, lit=False, name="stack"):
+    """A smokestack (emissions): a tall tapered chimney with a band; lit, it is painted in the accent and drifts a puff of smoke."""
+    H = 34.0 * size; m = Mesh(name, _grp(lit)); r = 0.075 * H
+    m.merge(frustum((0, 0, 0), r, 0.62 * r, H, n=10)); m.merge(frustum((0, 0, 0.84 * H), 0.7 * r, 0.7 * r, 0.06 * H, n=10))
+    m.merge(box((0, 0, 0.03 * H), (3.0 * r, 2.2 * r, 0.06 * H)))
+    out = [m]
+    if lit:
+        c = Mesh(name + "_puff", "thing")
+        for dx, dz, k in ((0.0, 0.10, 0.10), (0.13, 0.17, 0.12), (0.26, 0.23, 0.09)): _ball(c, (dx * H, 0, H + dz * H), k * H, flat=0.7)
+        out.append(c)
+    return out
+
+
+def figure_unit(size=1.0, lit=False, name="figure", stoop=0.0):
+    """A standing figure (people): a tapering body and a round head; stoop leans it a little (a taller figure is an adult, a shorter a child)."""
+    H = 28.0 * size; m = Mesh(name, _grp(lit)); tilt = rot_x(stoop) if stoop else None
+    m.merge(frustum((0, 0, 0), 0.17 * H, 0.10 * H, 0.62 * H, n=8, rot=tilt))
+    _ball(m, (0, 0.0, 0.74 * H), 0.105 * H); m.merge(box((0, 0, 0.05 * H), (0.3 * H, 0.2 * H, 0.1 * H)))
+    return [m]
+
+
+def container_unit(size=1.0, lit=False, name="container", rows=1):
+    """A shipping container (trade), `rows` high (a stack): a ribbed box."""
+    S = 10.0 * size; m = Mesh(name, _grp(lit))
+    for r in range(max(1, rows)):
+        z = (0.45 + 0.9 * r) * S
+        m.merge(box((0, 0, z), (1.7 * S, 1.0 * S, 0.85 * S)))
+        for k in (-0.65, -0.2, 0.25, 0.7): m.merge(box((k * S, 0, z), (0.07 * S, 1.08 * S, 0.9 * S)))
+    return [m]
+
+
+def waypoint_unit(size=1.0, lit=False, name="waypoint"):
+    """A route post with an arrow head pointing along +x (migration)."""
+    H = 26.0 * size; m = Mesh(name, _grp(lit)); r = 0.05 * H
+    m.merge(frustum((0, 0, 0), 1.6 * r, r, 0.78 * H, n=6)); m.merge(box((0, 0, 0.03 * H), (0.34 * H, 0.26 * H, 0.06 * H)))
+    m.merge(frustum((0.0, 0, 0.84 * H), 0.2 * H, 0.0, 0.34 * H, n=6, rot=rot_y(90)), loc=(-0.12 * H, 0, 0))
+    m.merge(box((0.02 * H, 0, 0.84 * H), (0.3 * H, 0.07 * H, 0.07 * H)))
+    return [m]
+
+
+def cairn_unit(size=1.0, lit=False, name="cairn"):
+    """A three-stone cairn (a neutral unit for a topic the registry has no scene for)."""
+    H = 26.0 * size; m = Mesh(name, _grp(lit))
+    for i, (w, h) in enumerate(((0.62, 0.34), (0.46, 0.30), (0.30, 0.26))):
+        z0 = sum(k for _, k in ((0.62, 0.34), (0.46, 0.30), (0.30, 0.26))[:i]) * H
+        m.merge(box((0, 0, z0 + h * H / 2), (w * H, w * H * 0.8, h * H), rot=rot_z(18 * i)))
+    return [m]
+
+
+def tree_unit(size=1.0, name="tree"):
+    """A small conifer (a ground filler of the emissions scenes)."""
+    H = 20.0 * size; m = Mesh(name, "thing")
+    m.merge(frustum((0, 0, 0), 0.05 * H, 0.04 * H, 0.3 * H, n=6)); m.merge(frustum((0, 0, 0.22 * H), 0.3 * H, 0.0, 0.8 * H, n=8)); return [m]
+
+
+def crane_unit(size=1.0, name="crane"):
+    """A quay gantry crane (a filler of the trade scenes): two legs, a beam and a boom."""
+    H = 34.0 * size; m = Mesh(name, "thing")
+    for sx in (-1, 1):
+        for sy in (-1, 1): m.merge(tube((sx * 0.3 * H, sy * 0.14 * H, 0), (sx * 0.28 * H, sy * 0.14 * H, 0.72 * H), r=0.015 * H))
+    m.merge(box((0, 0, 0.75 * H), (0.7 * H, 0.4 * H, 0.06 * H))); m.merge(box((0.7 * H, 0, 0.8 * H), (1.1 * H, 0.06 * H, 0.05 * H)))
+    return [m]
+
+
+def chevron_unit(size=1.0, yaw=0.0, name="chevron"):
+    """A flat route arrow (a chevron) lying on the ground, pointing along +x turned by yaw (migration)."""
+    L = 12.0 * size; m = Mesh(name, "track")
+    for s in (-1, 1): m.merge(box((-0.28 * L, s * 0.2 * L, 0.5), (0.8 * L, 0.18 * L, 1.0), rot=rot_z(-s * 35)))
+    o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]
+
+
+def fence_unit(length=60.0, yaw=0.0, name="fence"):
+    """A border fence along +x: posts and two rails (migration)."""
+    m = Mesh(name, "thing"); n = max(2, int(length / 7))
+    for i in range(n + 1): m.merge(box((i * length / n - length / 2, 0, 5), (1.2, 1.2, 10)))
+    for z in (4.0, 8.0): m.merge(box((0, 0, z), (length, 0.6, 0.7)))
+    o = Mesh(name, "thing"); o.merge(m, rot=rot_z(yaw)); return [o]

@@ -52,21 +52,39 @@ function strokes(d, colour, width, extra = '') {
   return gen.toPaths(d).map((p) => `<path${extra} d="${p.d}" stroke="${colour}" stroke-width="${width.toFixed(3)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
 }
 
+// The pieces that stand: the set's own, or, when the request names a measure family or a member count (set.strip_topics), the
+// topic's list: how many by the count (about one a `per` members, at least `min`, at most the list), which one leads by the count
+// (the list turned by count mod its length) and a seed that follows the count, so two pages of different data do not share a strip.
+function pieceList(set, req, off) {
+  if (req.family === undefined && req.count === undefined) return { pieces: set.pieces, seed: 0 };
+  const T = set.strip_topics;
+  if (!T) { off.push(`set: ${set.set} has no strip_topics for family ${JSON.stringify(req.family)}`); return { pieces: set.pieces, seed: 0 }; }
+  if (req.family !== undefined && typeof req.family !== 'string') off.push(`family: ${JSON.stringify(req.family)} is no measure family id; e.g. renewable_share`);
+  if (req.count !== undefined && (!Number.isInteger(req.count) || req.count < 1 || req.count > 200)) off.push(`count: ${JSON.stringify(req.count)} is not a whole number on 1..200; e.g. 27`);
+  if (off.length) return { pieces: set.pieces, seed: 0 };
+  const topic = T.families[req.family] || T.neutral, list = T.pieces[topic], n = req.count === undefined ? list.length : req.count;
+  const k = Math.min(list.length, Math.max(Math.min(T.min, list.length), Math.round(n / T.per)));
+  const turn = n % list.length, rot = list.slice(turn).concat(list.slice(0, turn));
+  return { pieces: rot.slice(0, k), seed: n, topic };
+}
+
 function strip(req) {
   const off = [], set = req.set || {};
   if (typeof set.module !== 'string' || !MODULE.test(set.module)) return { refused: [`set: ${JSON.stringify(set.module)} is no piece module; e.g. pieces-energy.cjs`] };
   if (!Array.isArray(set.pieces) || !set.pieces.length || !Array.isArray(set.knobs)) return { refused: ['set: no pieces or no knobs'] };
+  const chosen = pieceList(set, req, off);
+  const PIECES = chosen.pieces;
   const W = req.width;
   if (!Number.isInteger(W) || W < WIDTH[0] || W > WIDTH[1]) off.push(`width: ${JSON.stringify(W)} is not a whole number on ${WIDTH[0]}..${WIDTH[1]}; e.g. 1140`);
   for (const c of ['ink', 'accent']) if (typeof req[c] !== 'string' || !COLOUR.test(req[c])) off.push(`${c}: ${JSON.stringify(req[c])} is no page colour name; e.g. var(--accent)`);
   const K = knobs(set, req.knobs, off);
   let lib;
   try { lib = require(path.join(__dirname, set.module)); } catch (e) { off.push(`set: ${set.module} does not load: ${e.message}`); }
-  if (lib) for (const p of set.pieces) if (typeof lib[p.name] !== 'function') off.push(`piece ${p.name}: ${set.module} draws no such piece; e.g. ${Object.keys(lib)[0]}`);
-  if (K.marker && set.pieces.length > Object.keys(GLYPH).length) off.push(`marker: ${set.pieces.length} cells, numbers are drawn up to ${Object.keys(GLYPH).length}`);
+  if (lib) for (const p of PIECES) if (typeof lib[p.name] !== 'function') off.push(`piece ${p.name}: ${set.module} draws no such piece; e.g. ${Object.keys(lib)[0]}`);
+  if (K.marker && PIECES.length > Object.keys(GLYPH).length) off.push(`marker: ${PIECES.length} cells, numbers are drawn up to ${Object.keys(GLYPH).length}`);
   if (off.length) return { refused: off };
   const H = K.height, YG = K.baseline, R = K.roughness, PAD = K.margin;
-  const free = W - (set.pieces.length - 1) * K.gap, weight = set.pieces.reduce((a, p) => a + p.cell, 0);
+  const free = W - (PIECES.length - 1) * K.gap, weight = PIECES.reduce((a, p) => a + p.cell, 0);
   const pen = (e, seed, s) => {
     const c = CLASS[e.cls], acc = e.col === 'acc', px = acc ? Math.max(K[c.knob], ACCENT_MIN_PX) : K[c.knob];
     const o = { seed, stroke: acc ? req.accent : req.ink, strokeWidth: px / s, roughness: c.fixed ?? R * c.k, bowing: 0.8, disableMultiStroke: !c.multi };
@@ -82,7 +100,7 @@ function strip(req) {
   };
   let x = 0, body = '';
   const dropped = [], kept = {};
-  set.pieces.forEach((q, i) => {
+  PIECES.forEach((q, i) => {
     const w = q.cell / weight * free, p = lib[q.name](), [bx, by0, bw] = p.box, padL = q.pad_l || 0;
     const s = Math.min((w - padL - PAD) / bw, (YG - TOP) / (p.base - by0));
     const ox = x + padL + (w - padL - PAD - bw * s) / 2 + (padL ? 0 : PAD / 2), oy = YG - (p.base - by0) * s;
@@ -92,11 +110,11 @@ function strip(req) {
       return ok;
     });
     kept[q.name] = `${keep.length}/${p.els.length}`;
-    body += `<g transform="translate(${(ox - bx * s).toFixed(2)},${(oy - by0 * s).toFixed(2)}) scale(${s.toFixed(4)})">${keep.map((e, j) => pen(e, K.seed + j, s)).join('')}</g>`;
+    body += `<g transform="translate(${(ox - bx * s).toFixed(2)},${(oy - by0 * s).toFixed(2)}) scale(${s.toFixed(4)})">${keep.map((e, j) => pen(e, K.seed + chosen.seed + i * 131 + j, s)).join('')}</g>`;
     if (K.marker) body += marker(i + 1, x + 16, 16, K.seed + 79 + i + 1);
     x += w + K.gap;
   });
-  return { svg: body, w: W, h: H, dropped, kept };
+  return { svg: body, w: W, h: H, dropped, kept, ...(chosen.topic ? { topic: chosen.topic, pieces: PIECES.map((q) => q.name) } : {}) };
 }
 
 if (require.main === module) readline.createInterface({ input: process.stdin }).on('line', (line) => {

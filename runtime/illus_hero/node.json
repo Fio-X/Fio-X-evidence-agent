@@ -2431,5 +2431,405 @@
    -0.6
   ],
   "note": "every standing part (turbine, pylon, marker) casts a thin wedge on the terrain from its foot, length len x its height, towards dir (x, y), so nothing in a picture floats; not mirrored with the reading order, as the light is not"
+ },
+ "topics": {
+  "doc": "The opening picture follows the page's topic as well as its finding. The caller names the measure family of the page's table (`family`, an id of runtime/pi/assets/measure-families.json), which maps here to a topic and the topic to its unit (one thing per member) and its ground filler; a family this table does not list, or none, is the neutral topic. `subject` (the finding's own rows: members with a value each, a rule or a path) then composes the picture: scenes.kind picks the layout from the lead angle (tally: the members that pass a line are lit; pair: the highest and the lowest at their sizes; rank: the members by value, sized by it; path: the milestones passed on the way to a target). The count of lit units is recomputed from the rows and refused when it is not the one the page declares. Nothing here is read from words.",
+  "families": {
+   "renewable_share": "energy",
+   "energy_balance": "energy",
+   "electricity_mix": "energy",
+   "installed_capacity": "energy",
+   "electricity_price": "energy",
+   "co2": "emissions",
+   "pop65": "people",
+   "population": "people",
+   "urban_share": "people",
+   "unemployment": "people",
+   "gdp": "trade",
+   "gdp_pc": "trade",
+   "energy_imports": "trade",
+   "asylum": "migration"
+  },
+  "neutral": "neutral",
+  "angle_kinds": {
+   "members": "tally",
+   "tiles": "tally",
+   "map": "tally",
+   "groups": "tally",
+   "movers": "tally",
+   "overtake": "tally",
+   "need": "path",
+   "path": "path",
+   "pace": "series",
+   "chain": "series",
+   "ends": "pair",
+   "spread": "pair",
+   "rank": "rank"
+  },
+  "kind_arcs": {
+   "tally": "lagging",
+   "pair": "lagging",
+   "rank": "lagging",
+   "path": "in_time",
+   "series": "happened"
+  },
+  "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this).",
+  "layout": {
+   "x": [
+    -108,
+    108
+   ],
+   "y0": 40,
+   "row_dy": 34,
+   "rows_at": [
+    10,
+    20
+   ],
+   "max_size": 1.5,
+   "min_size": 0.5,
+   "unlit_k": 0.8,
+   "pair": {
+    "hi_x": -62,
+    "lo_x": 40,
+    "y": 40,
+    "hi_size": 1.35,
+    "floor": 0.35,
+    "back_y": 104,
+    "back_max": 27,
+    "back_size": 0.9,
+    "back_floor": 0.2
+   },
+   "rank": {
+    "max": 14,
+    "size": 1.7,
+    "floor": 0.3,
+    "y": 46
+   },
+   "path": {
+    "milestones": 10,
+    "y": 44,
+    "size": [
+     0.7,
+     1.2
+    ],
+    "flag_at": [
+     118,
+     56
+    ],
+    "track_y": 38,
+    "x": [
+     -100,
+     88
+    ]
+   },
+   "mark_rise": 38,
+   "series": {
+    "min": 4,
+    "max": 30,
+    "y": 44,
+    "size": 1.6,
+    "floor": 0.3
+   }
+  },
+  "scenes": {
+   "energy": {
+    "unit": "turbine_unit",
+    "accent": "#1a9a6c",
+    "relief": 0.4,
+    "filler": [],
+    "mark_z": 46,
+    "tally_k": 0.72
+   },
+   "emissions": {
+    "unit": "stack_unit",
+    "accent": "#c4572a",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "tree_unit",
+      "at": [
+       -140,
+       118
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -96,
+       134
+      ],
+      "args": {
+       "size": 0.9
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -40,
+       124
+      ],
+      "args": {
+       "size": 1.1
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       52,
+       136
+      ],
+      "args": {
+       "size": 1.0
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       112,
+       120
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       150,
+       132
+      ],
+      "args": {
+       "size": 0.9
+      }
+     }
+    ],
+    "mark_z": 40,
+    "tally_k": 1.0
+   },
+   "people": {
+    "unit": "figure_unit",
+    "accent": "#d08a1e",
+    "relief": 0.3,
+    "filler": [],
+    "mark_z": 30,
+    "tally_k": 1.0
+   },
+   "trade": {
+    "unit": "container_unit",
+    "accent": "#2b7fa6",
+    "relief": 0.3,
+    "filler": [
+     {
+      "fn": "crane_unit",
+      "at": [
+       -120,
+       150
+      ],
+      "args": {
+       "size": 1.6
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       20,
+       160
+      ],
+      "args": {
+       "size": 1.9
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       130,
+       150
+      ],
+      "args": {
+       "size": 1.5
+      }
+     }
+    ],
+    "mark_z": 22,
+    "tally_k": 1.0
+   },
+   "migration": {
+    "unit": "waypoint_unit",
+    "accent": "#8e3f7a",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "fence_unit",
+      "at": [
+       -100,
+       150
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       10,
+       156
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       118,
+       150
+      ],
+      "args": {
+       "length": 80
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -150,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -114,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -78,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -42,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -6,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       30,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       66,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       102,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       138,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     }
+    ],
+    "mark_z": 32,
+    "tally_k": 1.0
+   },
+   "neutral": {
+    "unit": "cairn_unit",
+    "accent": "#3c6e91",
+    "relief": 0.4,
+    "filler": [],
+    "mark_z": 27,
+    "tally_k": 1.0
+   }
+  },
+  "cameras": {
+   "tally": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
+   },
+   "default": {
+    "loc": [
+     0,
+     -176,
+     30
+    ],
+    "target": [
+     0,
+     140,
+     40
+    ],
+    "lens": 30
+   }
+  }
  }
 }

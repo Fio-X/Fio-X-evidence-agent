@@ -1,0 +1,997 @@
+{
+ "st1": {
+  "question": "EU renewable share over the years and the distance to the 2030 target",
+  "family": "renewable_share",
+  "lead": "need",
+  "subject": {
+   "path": {
+    "from": 17.978,
+    "now": 26.2,
+    "goal": 42.5
+   }
+  }
+ },
+ "st2": {
+  "question": "EU countries' renewable share change since 2005",
+  "family": "renewable_share",
+  "lead": "rank",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ]
+  }
+ },
+ "st3": {
+  "question": "Has renewable development sped up since the energy crisis",
+  "family": "renewable_share",
+  "lead": "pace",
+  "subject": {
+   "series": [
+    {
+     "t": 2016,
+     "value": 17.98
+    },
+    {
+     "t": 2017,
+     "value": 18.41
+    },
+    {
+     "t": 2018,
+     "value": 19.1
+    },
+    {
+     "t": 2019,
+     "value": 19.89
+    },
+    {
+     "t": 2020,
+     "value": 22.04
+    },
+    {
+     "t": 2021,
+     "value": 21.9
+    },
+    {
+     "t": 2022,
+     "value": 23.0
+    },
+    {
+     "t": 2023,
+     "value": 24.58
+    },
+    {
+     "t": 2024,
+     "value": 25.24
+    },
+    {
+     "t": 2025,
+     "value": 26.2
+    }
+   ],
+   "split": 2022,
+   "declared": {
+    "count": 4,
+    "total": 10
+   }
+  }
+ },
+ "st4": {
+  "question": "Which EU countries hold renewables back",
+  "family": "renewable_share",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ],
+   "rule": {
+    "op": "lt",
+    "ref": 42.5
+   },
+   "declared": {
+    "count": 22,
+    "total": 27
+   }
+  }
+ },
+ "st5": {
+  "question": "How wide is the north-south renewable gap",
+  "family": "renewable_share",
+  "lead": "ends",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 44.2
+    },
+    {
+     "code": "BE",
+     "value": 14.9
+    },
+    {
+     "code": "BG",
+     "value": 22.7
+    },
+    {
+     "code": "CY",
+     "value": 21.5
+    },
+    {
+     "code": "CZ",
+     "value": 19.1
+    },
+    {
+     "code": "DE",
+     "value": 23.9
+    },
+    {
+     "code": "DK",
+     "value": 48.2
+    },
+    {
+     "code": "EE",
+     "value": 42.3
+    },
+    {
+     "code": "EL",
+     "value": 26.9
+    },
+    {
+     "code": "ES",
+     "value": 26.0
+    },
+    {
+     "code": "FI",
+     "value": 53.0
+    },
+    {
+     "code": "FR",
+     "value": 23.9
+    },
+    {
+     "code": "HR",
+     "value": 28.5
+    },
+    {
+     "code": "HU",
+     "value": 19.6
+    },
+    {
+     "code": "IE",
+     "value": 17.2
+    },
+    {
+     "code": "IT",
+     "value": 20.5
+    },
+    {
+     "code": "LT",
+     "value": 38.5
+    },
+    {
+     "code": "LU",
+     "value": 20.2
+    },
+    {
+     "code": "LV",
+     "value": 46.3
+    },
+    {
+     "code": "MT",
+     "value": 18.8
+    },
+    {
+     "code": "NL",
+     "value": 22.7
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 36.7
+    },
+    {
+     "code": "RO",
+     "value": 25.6
+    },
+    {
+     "code": "SE",
+     "value": 65.4
+    },
+    {
+     "code": "SI",
+     "value": 25.4
+    },
+    {
+     "code": "SK",
+     "value": 16.3
+    }
+   ]
+  }
+ },
+ "em_tally": {
+  "question": "synthetic: CO2 emissions per capita, countries above 7 t",
+  "family": "co2",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 6.8
+    },
+    {
+     "code": "BE",
+     "value": 7.3
+    },
+    {
+     "code": "BG",
+     "value": 6.3
+    },
+    {
+     "code": "CZ",
+     "value": 9.2
+    },
+    {
+     "code": "DE",
+     "value": 8.1
+    },
+    {
+     "code": "DK",
+     "value": 4.9
+    },
+    {
+     "code": "EE",
+     "value": 9.9
+    },
+    {
+     "code": "ES",
+     "value": 5.0
+    },
+    {
+     "code": "FI",
+     "value": 6.9
+    },
+    {
+     "code": "FR",
+     "value": 4.6
+    },
+    {
+     "code": "GR",
+     "value": 6.6
+    },
+    {
+     "code": "HU",
+     "value": 4.6
+    },
+    {
+     "code": "IE",
+     "value": 7.7
+    },
+    {
+     "code": "IT",
+     "value": 5.6
+    },
+    {
+     "code": "LU",
+     "value": 13.1
+    },
+    {
+     "code": "NL",
+     "value": 8.2
+    },
+    {
+     "code": "PL",
+     "value": 9.1
+    },
+    {
+     "code": "PT",
+     "value": 4.0
+    },
+    {
+     "code": "RO",
+     "value": 3.7
+    },
+    {
+     "code": "SE",
+     "value": 3.6
+    }
+   ],
+   "rule": {
+    "op": "ge",
+    "ref": 7.0
+   },
+   "declared": {
+    "count": 8,
+    "total": 20
+   }
+  }
+ },
+ "em_pair": {
+  "question": "synthetic: CO2 per capita, highest against lowest",
+  "family": "co2",
+  "lead": "ends",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 6.8
+    },
+    {
+     "code": "BE",
+     "value": 7.3
+    },
+    {
+     "code": "BG",
+     "value": 6.3
+    },
+    {
+     "code": "CZ",
+     "value": 9.2
+    },
+    {
+     "code": "DE",
+     "value": 8.1
+    },
+    {
+     "code": "DK",
+     "value": 4.9
+    },
+    {
+     "code": "EE",
+     "value": 9.9
+    },
+    {
+     "code": "ES",
+     "value": 5.0
+    },
+    {
+     "code": "FI",
+     "value": 6.9
+    },
+    {
+     "code": "FR",
+     "value": 4.6
+    },
+    {
+     "code": "GR",
+     "value": 6.6
+    },
+    {
+     "code": "HU",
+     "value": 4.6
+    },
+    {
+     "code": "IE",
+     "value": 7.7
+    },
+    {
+     "code": "IT",
+     "value": 5.6
+    },
+    {
+     "code": "LU",
+     "value": 13.1
+    },
+    {
+     "code": "NL",
+     "value": 8.2
+    },
+    {
+     "code": "PL",
+     "value": 9.1
+    },
+    {
+     "code": "PT",
+     "value": 4.0
+    },
+    {
+     "code": "RO",
+     "value": 3.7
+    },
+    {
+     "code": "SE",
+     "value": 3.6
+    }
+   ]
+  }
+ },
+ "pop_rank": {
+  "question": "synthetic: share of the population aged 65 and over",
+  "family": "pop65",
+  "lead": "rank",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 19.7
+    },
+    {
+     "code": "BE",
+     "value": 19.3
+    },
+    {
+     "code": "BG",
+     "value": 23.6
+    },
+    {
+     "code": "CY",
+     "value": 16.9
+    },
+    {
+     "code": "CZ",
+     "value": 19.3
+    },
+    {
+     "code": "DE",
+     "value": 22.7
+    },
+    {
+     "code": "DK",
+     "value": 20.1
+    },
+    {
+     "code": "EE",
+     "value": 20.5
+    },
+    {
+     "code": "EL",
+     "value": 23.9
+    },
+    {
+     "code": "ES",
+     "value": 20.2
+    },
+    {
+     "code": "FI",
+     "value": 23.7
+    },
+    {
+     "code": "FR",
+     "value": 21.8
+    },
+    {
+     "code": "HR",
+     "value": 22.5
+    },
+    {
+     "code": "HU",
+     "value": 19.4
+    },
+    {
+     "code": "IE",
+     "value": 15.2
+    },
+    {
+     "code": "IT",
+     "value": 24.1
+    },
+    {
+     "code": "LT",
+     "value": 20.8
+    },
+    {
+     "code": "LU",
+     "value": 15.2
+    },
+    {
+     "code": "LV",
+     "value": 21.9
+    },
+    {
+     "code": "MT",
+     "value": 19.5
+    },
+    {
+     "code": "NL",
+     "value": 19.9
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 24.0
+    },
+    {
+     "code": "RO",
+     "value": 19.5
+    },
+    {
+     "code": "SE",
+     "value": 20.4
+    },
+    {
+     "code": "SI",
+     "value": 20.6
+    },
+    {
+     "code": "SK",
+     "value": 17.6
+    }
+   ]
+  }
+ },
+ "pop_tally": {
+  "question": "synthetic: countries where over a fifth are 65 or older",
+  "family": "pop65",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 19.7
+    },
+    {
+     "code": "BE",
+     "value": 19.3
+    },
+    {
+     "code": "BG",
+     "value": 23.6
+    },
+    {
+     "code": "CY",
+     "value": 16.9
+    },
+    {
+     "code": "CZ",
+     "value": 19.3
+    },
+    {
+     "code": "DE",
+     "value": 22.7
+    },
+    {
+     "code": "DK",
+     "value": 20.1
+    },
+    {
+     "code": "EE",
+     "value": 20.5
+    },
+    {
+     "code": "EL",
+     "value": 23.9
+    },
+    {
+     "code": "ES",
+     "value": 20.2
+    },
+    {
+     "code": "FI",
+     "value": 23.7
+    },
+    {
+     "code": "FR",
+     "value": 21.8
+    },
+    {
+     "code": "HR",
+     "value": 22.5
+    },
+    {
+     "code": "HU",
+     "value": 19.4
+    },
+    {
+     "code": "IE",
+     "value": 15.2
+    },
+    {
+     "code": "IT",
+     "value": 24.1
+    },
+    {
+     "code": "LT",
+     "value": 20.8
+    },
+    {
+     "code": "LU",
+     "value": 15.2
+    },
+    {
+     "code": "LV",
+     "value": 21.9
+    },
+    {
+     "code": "MT",
+     "value": 19.5
+    },
+    {
+     "code": "NL",
+     "value": 19.9
+    },
+    {
+     "code": "PL",
+     "value": 18.7
+    },
+    {
+     "code": "PT",
+     "value": 24.0
+    },
+    {
+     "code": "RO",
+     "value": 19.5
+    },
+    {
+     "code": "SE",
+     "value": 20.4
+    },
+    {
+     "code": "SI",
+     "value": 20.6
+    },
+    {
+     "code": "SK",
+     "value": 17.6
+    }
+   ],
+   "rule": {
+    "op": "ge",
+    "ref": 21.0
+   },
+   "declared": {
+    "count": 9,
+    "total": 27
+   }
+  }
+ },
+ "trade_tally": {
+  "question": "synthetic: countries whose energy imports exceed 60 percent of supply",
+  "family": "energy_imports",
+  "lead": "members",
+  "subject": {
+   "members": [
+    {
+     "code": "AT",
+     "value": 58
+    },
+    {
+     "code": "BE",
+     "value": 63
+    },
+    {
+     "code": "CY",
+     "value": 91
+    },
+    {
+     "code": "CZ",
+     "value": 36
+    },
+    {
+     "code": "DE",
+     "value": 64
+    },
+    {
+     "code": "DK",
+     "value": 30
+    },
+    {
+     "code": "EE",
+     "value": 12
+    },
+    {
+     "code": "EL",
+     "value": 66
+    },
+    {
+     "code": "ES",
+     "value": 68
+    },
+    {
+     "code": "FR",
+     "value": 44
+    },
+    {
+     "code": "IE",
+     "value": 78
+    },
+    {
+     "code": "IT",
+     "value": 74
+    },
+    {
+     "code": "LU",
+     "value": 92
+    },
+    {
+     "code": "MT",
+     "value": 97
+    },
+    {
+     "code": "NL",
+     "value": 56
+    },
+    {
+     "code": "PL",
+     "value": 39
+    },
+    {
+     "code": "PT",
+     "value": 65
+    },
+    {
+     "code": "SE",
+     "value": 29
+    }
+   ],
+   "rule": {
+    "op": "gt",
+    "ref": 60.0
+   },
+   "declared": {
+    "count": 10,
+    "total": 18
+   }
+  }
+ },
+ "mig_path": {
+  "question": "synthetic: asylum decisions processed toward the yearly goal",
+  "family": "asylum",
+  "lead": "need",
+  "subject": {
+   "path": {
+    "from": 120.0,
+    "now": 410.0,
+    "goal": 600.0
+   }
+  }
+ },
+ "neutral_rank": {
+  "question": "synthetic: a measure the registry has no family for",
+  "family": null,
+  "lead": "rank",
+  "subject": {
+   "members": [
+    {
+     "code": "A",
+     "value": 9
+    },
+    {
+     "code": "B",
+     "value": 7
+    },
+    {
+     "code": "C",
+     "value": 6
+    },
+    {
+     "code": "D",
+     "value": 5
+    },
+    {
+     "code": "E",
+     "value": 5.5
+    },
+    {
+     "code": "F",
+     "value": 3
+    },
+    {
+     "code": "G",
+     "value": 2
+    },
+    {
+     "code": "H",
+     "value": 1
+    }
+   ]
+  }
+ }
+}

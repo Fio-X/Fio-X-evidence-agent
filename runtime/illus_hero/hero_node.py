@@ -218,7 +218,7 @@ def build():
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
     body = []   # the background turbines and plants get a pale body under their ink, so they read as things, not as wires
-    for g in ("wind", "coal"):
+    for g in ("wind", "coal", "thing"):
         if idx(g) is None: continue
         body += [f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.0, 30))]
     wash = []
@@ -240,9 +240,10 @@ def build():
         layers.append(f'<g fill="none" stroke="{line}" stroke-width="1.4" stroke-linejoin="round" opacity="0.8">{ol}</g>')
     HUB = json.load(open(os.path.join(IN, "hub.json"))); hero = []
     if idx("hero_body") is not None: hero += paint3(lab == idx("hero_body"), shade, BODY)
-    if idx("hero_blade") is not None: hero += paint_blades(lab == idx("hero_blade"), shade, (HUB["x"] * W / HUB["w"], HUB["y"] * H / HUB["h"]), pal)
+    if idx("hero_blade") is not None and (lab == idx("hero_blade")).any(): hero += paint_blades(lab == idx("hero_blade"), shade, (HUB["x"] * W / HUB["w"], HUB["y"] * H / HUB["h"]), pal)
+    if idx("lit") is not None: hero += paint3(lab == idx("lit"), shade, BLADE)    # the units the data marks: the accent ramp
     layers += hero
-    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade"))
+    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade")) | (lab == idx("lit"))
     layers.append(f'<image href="data:image/png;base64,{grain_layer(ndi.binary_dilation(hm, iterations=2), tooth, crumple, pal)}" width="{W}" height="{H}" preserveAspectRatio="none"/>')
     G = {"hero_out": [], "hero_in": [], "bg_far": [], "bg_near": [], "coal": []}; DIRS = {"h": [], "v": [], "d": []}
     widths = {"hero_out": [], "hero_in": [], "bg": [], "coal": []}
@@ -285,7 +286,7 @@ def build():
     layers += leader_marks(line, BLADE["base"])
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">' + "".join(layers) + "</svg>"
     open(os.path.join(IN, "hero.svg"), "w").write(svg)
-    ys, xs = np.nonzero(hm); allw = np.array(widths["hero_out"] + widths["hero_in"] + widths["bg"])
+    ys, xs = np.nonzero(hm) if hm.any() else (np.array([0, H - 1]), np.array([0, W - 1])); allw = np.array(widths["hero_out"] + widths["hero_in"] + widths["bg"])
     st = dict(svg_kb=len(svg) // 1024, hero_mask_area_pct=round(float(hm.mean() * 100), 1), hero_bbox_area_pct=round(float((xs.max() - xs.min()) * (ys.max() - ys.min()) / (W * H) * 100), 1),
               pen_pct_of_w=dict(hero_out=round(H2.WID["hero_out"] / W * 100, 2), hero_in=round(H2.WID["hero_in"] / W * 100, 2), median_all_vertices=round(float(np.median(allw) / W * 100), 3)))
     json.dump(st, open(os.path.join(IN, "hero-stats.json"), "w"), indent=1); print(json.dumps(st))

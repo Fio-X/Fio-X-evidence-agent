@@ -12,7 +12,8 @@ from mesh import Mesh
 CFG = json.load(open(sys.argv[sys.argv.index("--") + 1]))
 RW, RH = CFG["w"], CFG["h"]; OUT = CFG["out"]; os.makedirs(OUT, exist_ok=True)
 GROUP_ID = {"coal": (0.7, 0.35, 0.0), "hero_body": (1.0, 1.0, 0.0), "hero_blade": (0.0, 1.0, 0.2), "shadow": (0.35, 0.35, 0.35), "terrain": (0.62, 0.62, 0.62), "water": (0.0, 0.0, 1.0),
-            "spill": (0.0, 0.8, 1.0), "pylon": (1.0, 0.0, 0.0), "wind": (0.0, 1.0, 0.0), "solar": (0.0, 1.0, 0.5), "hydro": (0.5, 1.0, 0.0), "track": (0.45, 0.0, 0.85)}
+            "spill": (0.0, 0.8, 1.0), "pylon": (1.0, 0.0, 0.0), "wind": (0.0, 1.0, 0.0), "solar": (0.0, 1.0, 0.5), "hydro": (0.5, 1.0, 0.0), "track": (0.45, 0.0, 0.85),
+            "thing": (0.0, 0.6, 0.6), "lit": (1.0, 0.5, 0.0)}   # thing: a topic unit (a pale body under its ink); lit: a unit the data marks (accent)
 MX = -1.0 if CFG.get("mirror") else 1.0          # reading order: mirror the whole world left-right
 RELIEF = CFG.get("relief", 1.0)                   # terrain height multiplier
 HT = lambda x, y: RELIEF * Wd.height(MX * x, y)   # ground height in (mirrored) scene coordinates
@@ -38,7 +39,7 @@ def contact_shadow(x, y, h):
     m = Mesh("cast", "shadow"); m.add(V, F, outward=False); return [m]
 
 
-SHADOW_H = {"wind_turbine": "height", "hero_turbine": "height", "target_flag": "height", "pylon": "height"}
+SHADOW_H = {"wind_turbine": "height", "hero_turbine": "height", "target_flag": "height", "pylon": "height", "turbine_unit": "size", "stack_unit": "size", "figure_unit": "size", "container_unit": "size", "waypoint_unit": "size", "cairn_unit": "size"}
 
 
 def build_world():
@@ -53,7 +54,7 @@ def build_world():
         elif k == "track": meshes += P.track(ground=HT, **a)
         elif k == "at_ground":
             x, y = it["at"]; meshes += move(fn(**a), x, y, G(x, y) + it.get("dz", -0.3))
-            if it["fn"] in SHADOW_H: meshes += contact_shadow(x, y, a.get(SHADOW_H[it["fn"]], 0) * (0.5 if it["fn"] == "target_flag" else 1.0))
+            if it["fn"] in SHADOW_H: meshes += contact_shadow(x, y, a.get(SHADOW_H[it["fn"]], 0) * (28.0 if SHADOW_H[it["fn"]] == "size" else 1.0) * (0.5 if it["fn"] == "target_flag" else 1.0) * (0.45 if it["fn"].endswith("_unit") else 1.0))
         elif k == "pylon":
             x, y = it["at"]; ms, an = fn(**a); meshes += move(ms, x, y, G(x, y) - 0.5); meshes += contact_shadow(x, y, 0.6 * a.get("height", 34)); chain.append([(p[0] + x, p[1] + y, p[2] + G(x, y) - 0.5) for p in an])
     for a0, a1 in zip(chain, chain[1:]):
