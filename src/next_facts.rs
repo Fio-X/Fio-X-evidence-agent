@@ -599,9 +599,13 @@ fn one(
     if op == "count" {
         let members = members(key, spec)?;
         let time = word(key, &q["time"], "time")?;
-        let above = q["above"]
-            .as_f64()
-            .ok_or_else(|| format!("{key}: count has no number as above"))?;
+        // a member counts when its value of a over its value of b is above `above`; or, with `below` and no b, when its own
+        // value of a is under `below` (the members under a line: every member needs its row of a, none is skipped)
+        let (line, under) = match (q["above"].as_f64(), q["below"].as_f64()) {
+            (Some(x), None) => (x, false),
+            (None, Some(x)) if q["b"].is_null() => (x, true),
+            _ => return Err(format!("{key}: count has no number as above (or below, with no b)")),
+        };
         let by = match &q["by"] {
             Value::Null => PLACE_DIM.to_string(),
             v => word(key, v, "by")?,
@@ -622,9 +626,15 @@ fn one(
             }
             Ok(at)
         };
-        let (num, den) = (side("a")?, side("b")?);
+        let num = side("a")?;
+        // under a line there is no b: each member's value of a is read over 1
+        let (den, side_b) = if under {
+            (num.keys().map(|c| (c.clone(), 1.0)).collect::<BTreeMap<String, f64>>(), "a")
+        } else {
+            (side("b")?, "b")
+        };
         if den.is_empty() {
-            return Err(format!("{key}: count has no row of b at {time}"));
+            return Err(format!("{key}: count has no row of {side_b} at {time}"));
         }
         // a member with no row of b is not known to be under the line, so the count is not known: fail, never skip
         let gone: Vec<&str> = members
@@ -634,15 +644,17 @@ fn one(
             .collect();
         if !gone.is_empty() {
             return Err(format!(
-                "{key}: count has no row of b at {time} for {}",
+                "{key}: count has no row of {side_b} at {time} for {}",
                 gone.join(", ")
             ));
         }
         let mut hit: Vec<String> = members
             .iter()
             .filter(|g| {
-                den.get(*g)
-                    .is_some_and(|d| *d != 0.0 && num.get(*g).copied().unwrap_or(0.0) / d > above)
+                den.get(*g).is_some_and(|d| {
+                    let r = num.get(*g).copied().unwrap_or(0.0) / d;
+                    *d != 0.0 && (if under { r < line } else { r > line })
+                })
             })
             .cloned()
             .collect();
@@ -2836,6 +2848,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!((f[0].v, f[0].who.clone()), (1.0, vec!["AA".to_string()]));
+        // under a line: no b, each member's own value of a under `below`; a member with no row of a fails, never skipped
+        let under = |q: Value| compute(&spec(json!({"c": q}), Some(&["BB", "AA"])), &rows);
+        let fu = under(json!({"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0})).unwrap();
+        assert_eq!((fu[0].v, fu[0].who.clone()), (1.0, vec!["BB".to_string()]));
+        let eu = compute(
+            &spec(json!({"c": {"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0}}), Some(&["BB", "AA", "CC"])),
+            &rows,
+        )
+        .unwrap_err();
+        assert!(eu.contains("c: count has no row of a at 2020 for CC"), "{eu}");
+        assert!(under(json!({"op": "count", "a": {"table": "ru"}, "b": {"table": "all"}, "time": "2020", "below": 5.0}))
+            .unwrap_err()
+            .contains("count has no number as above"));
         // drop BB's row of b: the count fails and names BB, it does not come out 1 of 1
         let e = compute(
             &spec(

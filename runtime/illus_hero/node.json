@@ -862,7 +862,8 @@
    "tiles": "atlas",
    "chain": "sequence",
    "pace": "sequence",
-   "groups": "atlas"
+   "groups": "atlas",
+   "below": "lineup"
   },
   "angle_arcs": {
    "movers": "lagging"
