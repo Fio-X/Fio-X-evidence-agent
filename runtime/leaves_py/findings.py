@@ -929,8 +929,10 @@ ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_me
 BIG = "bignums"
 
 
-def header(q):
+def header(q, arc=None):
     """The three big numbers above the thesis, as ({fact key: query}, [bignums item]) or None when the rows give fewer than two.
+    By the page's arc (ARCS): "happened" leads with the whole's last value and the step of the year the chain moved most (the
+    chain finding's facts), "lagging" with the highest member, the lowest and the first over the second, any other arc as below.
     Each is a fact this declares (keys b_*, and goal where the page runs to a target), each label a word-table key whose fills
     are a place's code or a ledger entry, so no number and no word is written here:
       with a whole and a target the whole can reach: the whole's last value, what is left to the target, and the value the
@@ -940,12 +942,16 @@ def header(q):
       with no whole: the highest member's value, the lowest member's, and the first over the second."""
     items, f = [], {}
     when = lambda key: {"src": f"fact:{key}.t.y"}
+    if arc == "lagging": return ends_header(q, when)
     if q.wseries and len(run_years(q.wseries)) >= 2:
         ys = run_years(q.wseries)
         first, last = ys[0], ys[-1]
         before, now = q.wseries[first][0], q.wseries[last][0]
         f["b_now"] = q.value(q.whole, last)
         items.append({"fact": "b_now", "label": {"word": "story.big.now", "name": q.whole, "year": when("b_now")}})
+        if arc == "happened":   # the step of the year the chain moved most: the chain finding's facts (m_step, m_hi, m_lo, band_y) are the page's
+            items.append({"fact": "m_step", "label": {"word": "story.big.step", "year": when("band_y")}})
+            return {"b_now": f["b_now"]}, items
         g, best = q.goal(), 0
         if g and len(ys) >= MIN_YEARS and int(g[1]) > int(last) and g[0] > now:
             best = paces(q.wseries)[3]
@@ -983,6 +989,24 @@ def header(q):
     return {k: v for k, v in f.items() if k in keep}, items
 
 
+def ends_header(q, when):
+    """The "lagging" arc's three numbers: the highest member's value, the lowest's, and the first over the second, at the last
+    year the members share; None when fewer than two members share a year."""
+    ends = common_ends(q)
+    if not ends: return None
+    y1 = ends[1]
+    at = {c: s_[y1][0] for c, s_ in q.panel.items() if y1 in s_}
+    if len(at) < 2: return None
+    hi = max(at, key=lambda c: (at[c], c)); lo = min(at, key=lambda c: (at[c], c))
+    f = {"b_hi": q.value(hi, y1), "b_lo": q.value(lo, y1)}
+    items = [{"fact": "b_hi", "label": {"word": "story.big.hi", "name": hi, "year": when("b_hi")}},
+             {"fact": "b_lo", "label": {"word": "story.big.lo", "name": lo, "year": when("b_lo")}}]
+    if at[lo] > 0 and at[hi] > at[lo]:
+        f["b_ratio"] = {"op": "times", "a": "b_hi", "b": "b_lo", "fmt": q.fmts["times"]}
+        items.append({"fact": "b_ratio", "label": {"word": "story.big.ratio", "name": hi}})
+    return f, items
+
+
 def candidates(r):
     q = Req(r)
     out, dropped = [], []
@@ -1001,6 +1025,56 @@ def candidates(r):
     return q, out[:TOP_K], dropped
 
 
+# ---------------------------------------------------------------- the story's arc
+
+# A page tells its findings in one of three arcs (works/story-1122/i34-arcs.md, counted over published long-form data stories). The arc is
+# the lead finding's (the one the model picked first, "the one that answers the question"), not the data's score: the same rows asked
+# three ways give three arcs. Each arc fixes the order of the other findings, the finding it needs besides the lead and, for the
+# header's numbers and the closing line, what the page ends on.
+#   happened  what happened: the chain finding leads; what moved and who with it; the outlook (path or need) last
+#   in_time   will it be in time: the need or path finding leads, the other of the two next; who lags; then the rest
+#   lagging   who is dragging: a spread, rank, ends, members or map finding leads; the other comparisons; the whole last
+ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
+          "members": "lagging", "map": "lagging"}
+ARC_ORDER = {"happened": ["chain", "spread", "rank", "members", "ends", "map", "path", "need"],
+             "in_time": ["need", "path", "rank", "spread", "members", "ends", "map", "chain"],
+             "lagging": ["spread", "rank", "ends", "members", "map", "chain", "need", "path"]}
+# the findings an arc needs besides its lead (any one of them): the outlook, who lags, the comparison among the members
+ARC_NEEDS = {"happened": ("path", "need"), "in_time": ("rank", "spread", "members", "ends", "map"), "lagging": ("spread", "rank")}
+MAX_PICKS = 4
+
+
+def plan_arc(picks, cands):
+    """(arc, picks in the arc's order, why): the arc of the first pick, the others in that arc's order; a page with none of the
+    findings the arc needs is given the best candidate of them (the last of its picks goes when four stand), and a request that
+    holds none of them keeps its picks, the why saying so."""
+    arc = ARC_OF[picks[0]]
+    order = ARC_ORDER[arc]
+    out, why = list(picks), None
+    if not any(p in ARC_NEEDS[arc] for p in out):
+        pool = [c for c in cands if c["id"] in ARC_NEEDS[arc] and c["id"] not in out]
+        if pool:
+            add = max(pool, key=lambda c: c["score"])["id"]
+            if len(out) >= MAX_PICKS: out = sorted(out[1:], key=order.index)[:MAX_PICKS - 2]; out.insert(0, picks[0])
+            out.append(add)
+            why = f"the {arc} arc needs one of {'|'.join(ARC_NEEDS[arc])}: {add} added"
+        else:
+            why = f"the {arc} arc needs one of {'|'.join(ARC_NEEDS[arc])} and the request holds none"
+    return arc, [out[0]] + sorted(out[1:], key=order.index), why
+
+
+def closing(arc, facts):
+    """The page's closing line (spec.end) as a wording: each arc ends differently, a number only from a fact the page declares."""
+    have = lambda *ks: all(k in facts for k in ks)
+    if arc == "happened":
+        return wording(T("story.end.happened")) if have("p_past", "goal", "first", "now") else wording(T("story.end.happened_plain"))
+    if arc == "in_time":
+        if have("need", "past"): return wording(T("story.end.in_time"))
+        if have("p_best", "best", "goal"): return wording(T("story.end.in_time_path"))
+        return wording(T("story.end.in_time_plain"))
+    return wording(T("story.end.lagging"))
+
+
 # ---------------------------------------------------------------- compose the picked ones into the page
 
 def compose(r):
@@ -1012,6 +1086,7 @@ def compose(r):
     if len(set(picks)) != len(picks): raise Refused("findings: a finding is picked twice")
     for p in picks:
         if p not in by_id: raise Refused(f"findings: {p!r} is not a candidate of this request")
+    arc, picks, arc_why = plan_arc(picks, cands)
     chosen = [by_id[p] for p in picks]
     facts, leaves, sections = {}, {}, []
     for c in chosen:
@@ -1025,7 +1100,7 @@ def compose(r):
     # the claims alone, and the lead's own section is headed by its claim (the words, then its number) with no text of its own
     leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
                                  for c in chosen]}
-    big = header(q)
+    big = header(q, arc)
     if big:  # the header's three numbers, a row over the thesis
         for k, v in big[0].items():
             if k in facts and facts[k] != v: raise Refused(f"findings: the fact {k} is declared two ways by two findings")
@@ -1047,14 +1122,15 @@ def compose(r):
     items.append(ST("story.notes.last", last=last))
     leaves[NOTES] = {"title": ST("story.notes.title"), "items": items}
     sections.append({"id": "notes", "layer": NOTES})
-    return {"facts": facts, "sections": sections, "leaves": leaves, "title": wording(first["title"]), "dek": wording(first["text"])}
+    return {"facts": facts, "sections": sections, "leaves": leaves, "title": wording(first["title"]), "dek": wording(first["text"]),
+            "end": closing(arc, facts), "arc": {"id": arc, "picks": picks, "why": arc_why}}
 
 
 def as_fill(page):
     """The composed page as the part of a fill it adds: the spec's facts, sections and leaf data, and nothing else (the flow
     refuses any other key: the rows, the formats and the names are layer 1's, next_run story_page)."""
     return {"knobs": {"spec": {"facts": page["facts"], "sections": page["sections"], "hero": {"leaves": page["leaves"]},
-                               "title": page["title"], "dek": page["dek"]}}}
+                               "title": page["title"], "dek": page["dek"], "end": page["end"]}}}
 
 
 def answer(r):

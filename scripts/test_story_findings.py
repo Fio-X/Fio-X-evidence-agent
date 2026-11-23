@@ -265,8 +265,8 @@ class Findings(unittest.TestCase):
         chain = next(c for c in cands if c["id"] == "chain")
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
-        composed, facts, drawn = draw_all(self, req, names, ["path", "chain"])
-        self.assertEqual([s["layer"] for s in composed["sections"]], ["bignums", "thesis_claims", "target_path", "event_chain", "risk_notes"])
+        composed, facts, drawn = draw_all(self, req, names, ["chain", "path"])
+        self.assertEqual([s["layer"] for s in composed["sections"]], ["bignums", "thesis_claims", "event_chain", "target_path", "risk_notes"])
         data = composed["leaves"]["event_chain"]
         self.assertEqual([(p["code"], p["kind"], p["zero"], "link" in p) for p in data["panels"]],
                          [("c1", "bar", True, True), ("c2", "line", False, True), ("c3", "bar", True, False)])
@@ -280,7 +280,7 @@ class Findings(unittest.TestCase):
         # the formats are taken by size: 1000 or more none, 10 or more one decimal place, under 10 two
         self.assertEqual([facts[f"c{i}_first"]["fmt"] for i in (1, 2, 3)], ["nrg_ti_gas_d1", "nrg_pc_204_d2", "nrg_inf_epcrw_d1"])
         self.assertEqual((facts["c1_first"]["t"], facts["c1_last"]["t"]), ("2019", "2024"))
-        title = composed["sections"][3]["title"]
+        title = composed["title"]  # the chain leads: its title is the page's headline
         self.assertIn("{m_step}", title); self.assertIn("{band_y.t}", title)
         self.assertEqual(title.count("{"), 2)
         # one chart per leaf: the panels' words come from the request, the file writes no word of its own
@@ -324,7 +324,7 @@ class Findings(unittest.TestCase):
             ops = {q.get("op") for q in composed["facts"].values()}
             self.assertTrue({"per_year", "line_at", "step_max", "group_change", "times"} <= ops, ops)
             rows, facts = ledger(req, composed, names)
-            spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+            spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                     "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "time": {}},
                     "hero": {"data": {}, "leaves": composed["leaves"]}}
             line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -422,7 +422,7 @@ class Findings(unittest.TestCase):
         composed = FN.compose({**req, "picks": picks})
         if edit: edit(composed)
         rows, facts = ledger(req, composed, names)
-        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
                 "hero": {"data": {}, "leaves": composed["leaves"], "style": style or {}}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -482,6 +482,72 @@ class Findings(unittest.TestCase):
             for other in composed["sections"][3:]:
                 if other.get("title"): self.assertNotIn(other["title"], composed["title"])
 
+    # ---------------------------------------------------------------- the arcs (i34): the first pick says how the page is told
+
+    def _arc_request(self):
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        return req, names
+
+    def test_the_first_pick_is_the_arc_and_the_arc_fixes_order_header_and_ending(self):
+        """The same rows told three ways: the chain finding first is "happened", need or path first "in_time", a members' comparison
+        first "lagging"; each gives its own headline, section order, header numbers and closing line."""
+        req, names = self._arc_request()
+        told = {}
+        for arc, picks in (("happened", ["chain", "path"]), ("in_time", ["need", "path", "spread"]), ("lagging", ["rank", "spread", "path"])):
+            composed, facts, bodies, page_html = self._page(req, names, picks)
+            self.assertEqual(composed["arc"]["id"], arc, picks)
+            h1 = self._once(page_html)
+            end = re.search(r"<p class=end>(.*?)</p>", page_html, re.S)[1]
+            self.assertRegex(end, r'data-src="fact:' if arc != "lagging" else r"名次只说明")
+            told[arc] = (h1, [s["layer"] for s in composed["sections"]], [i["fact"] for i in composed["leaves"]["bignums"]["bignums"]],
+                         re.sub(r"<[^>]+>", "", end))
+        self.assertEqual(len({v[0] for v in told.values()}), 3)   # three headlines
+        self.assertEqual(len({v[3] for v in told.values()}), 3)   # three closing lines
+        self.assertEqual(len({tuple(v[2]) for v in told.values()}), 3)   # three headers
+        self.assertEqual(told["happened"][2], ["b_now", "m_step"])
+        self.assertEqual(told["in_time"][2], ["b_now", "b_gap", "b_end"])
+        self.assertEqual(told["lagging"][2], ["b_hi", "b_lo", "b_ratio"])
+        self.assertEqual(told["happened"][1][2:4], ["event_chain", "target_path"])     # the event, then the outlook last
+        self.assertEqual(told["in_time"][1][2:5], ["gap_axis", "target_path", "winners_losers"])   # the need, the path, then who lags
+        self.assertEqual(told["lagging"][1][2:4], ["rankbar", "winners_losers"])   # the comparisons first, the outlook last
+        self.assertEqual(told["lagging"][1][-2], "target_path")
+
+    def test_the_arc_takes_the_finding_it_needs_or_says_none_stands(self):
+        req, names = self._arc_request()
+        req["points"] = self._points(EU_MEMBERS)
+        # a lead the arc cannot stand on alone: the best candidate of what it needs is added
+        arc = lambda r, picks: FN.compose({**r, "picks": picks})["arc"]
+        got = arc(req, ["chain", "spread"])
+        self.assertEqual((got["id"], got["picks"][0], len(got["picks"])), ("happened", "chain", 3))
+        self.assertTrue(set(got["picks"]) & {"path", "need"} and "added" in got["why"])
+        got = arc(req, ["map", "ends"])
+        self.assertEqual(got["id"], "lagging"); self.assertTrue(set(got["picks"]) & {"spread", "rank"})
+        got = arc(req, ["path", "chain"])
+        self.assertEqual(got["id"], "in_time"); self.assertEqual(got["picks"][0], "path"); self.assertEqual(len(got["picks"]), 3)
+        # four picks: the last of the others makes room for it, the lead stays first
+        got = arc(req, ["chain", "spread", "rank", "members"])
+        self.assertEqual((got["picks"][0], len(got["picks"])), ("chain", 4))
+        self.assertTrue(set(got["picks"]) & {"path", "need"})
+        # a page that stands on its own keeps its picks, in the arc's order
+        self.assertEqual(arc(req, ["path", "need", "spread"])["picks"], ["path", "need", "spread"])
+        self.assertEqual(arc(req, ["rank", "spread"])["picks"], ["rank", "spread"])
+        # a request with no target holds no path or need: the happened arc cannot be completed and says so, its picks kept
+        notarget = {k: v for k, v in req.items() if k != "target"}
+        got = arc(notarget, ["chain", "spread"])
+        self.assertEqual((got["id"], got["picks"]), ("happened", ["chain", "spread"]))
+        self.assertIn("holds none", got["why"])
+
+    def test_the_arc_on_a_world_bank_shape_has_no_whole_and_leads_by_members(self):
+        """The second shape: six economies, no whole and no target: only the lagging arc can stand; its header is the highest, the
+        lowest and the ratio, its closing line words only."""
+        req, names = wb_request()
+        composed, facts, bodies, page_html = self._page(req, names, ["rank", "spread"])
+        self.assertEqual(composed["arc"], {"id": "lagging", "picks": ["rank", "spread"], "why": None})
+        self.assertEqual([i["fact"] for i in composed["leaves"]["bignums"]["bignums"]], ["b_hi", "b_lo", "b_ratio"])
+        self._once(page_html)
+        self.assertRegex(page_html, r"<p class=end>名次只说明这一年的位置")
+
     def _header_page(self, req, names, picks):
         """The composed page's header drawn by the real child: (composed, facts, the bignums html, the whole page's html)."""
         composed, facts, bodies, page_html = self._page(req, names, picks)
@@ -511,13 +577,17 @@ class Findings(unittest.TestCase):
     def test_header_of_a_whole_with_no_target_is_now_change_and_member_ratio(self):
         req, names = eu_request()
         req = {k: v for k, v in req.items() if k != "target"}
-        composed, facts, big, _ = self._header_page(req, names, ["spread", "ends"])
-        items = composed["leaves"]["bignums"]["bignums"]
+        # no arc given (the header asked alone): the whole's value, its change and the members' ratio
+        facts_, items = FN.header(FN.Req(req))
         self.assertEqual([i["fact"] for i in items], ["b_now", "b_change", "b_ratio"])
         self.assertEqual(items[1]["label"]["word"], "story.big.rose")
-        self.assertAlmostEqual(facts["b_change"]["v"], 24.6 - 10.2, places=6)  # the larger value less the smaller
-        self.assertAlmostEqual(facts["b_ratio"]["v"], facts["b_hi"]["v"] / facts["b_lo"]["v"], places=6)
         self.assertEqual(items[2]["label"]["name"], "SE")  # the highest member
+        # the lagging arc's header (the page led by a spread finding): the highest member, the lowest and their ratio, whole or none
+        composed, facts, big, _ = self._header_page(req, names, ["spread", "ends"])
+        items = composed["leaves"]["bignums"]["bignums"]
+        self.assertEqual([i["fact"] for i in items], ["b_hi", "b_lo", "b_ratio"])
+        self.assertAlmostEqual(facts["b_ratio"]["v"], facts["b_hi"]["v"] / facts["b_lo"]["v"], places=6)
+        self.assertEqual((items[0]["label"]["name"], items[1]["label"]["name"]), ("SE", "LU"))
 
     def test_header_of_six_economies_with_no_whole_is_highest_lowest_and_their_ratio(self):
         req, names = wb_request()
@@ -531,8 +601,7 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         req = {k: v for k, v in req.items() if k != "target"}
         down = [dict(r, value=round(60 - r["value"], 3)) if r["dims"].get("geo") == "EU27_2020" else r for r in req["rows"]]
-        composed = FN.compose({**req, "rows": down, "picks": ["spread", "ends"]})
-        self.assertEqual(composed["leaves"]["bignums"]["bignums"][1]["label"]["word"], "story.big.fell")
+        self.assertEqual(FN.header(FN.Req({**req, "rows": down}))[1][1]["label"]["word"], "story.big.fell")
         one = {**req, "rows": [r for r in req["rows"] if r["dims"].get("geo") == "SE"], "main": {**req["main"], "whole": None, "members": ["SE"]}}
         self.assertIsNone(FN.header(FN.Req({**one, "picks": []})))
 
@@ -687,16 +756,17 @@ class Findings(unittest.TestCase):
         self.assertIn('style="--tw:388px;--gut:36px;height:', page_html)
         # two paired pictures share a row, half the page less half the gutter each
         wreq, wnames = wb_request()
-        _, _, _, page_html = self._page(wreq, wnames, ["ends", "rank", "members", "spread"])
+        picks = ["spread", "rank", "ends", "members"]  # the lagging arc's order: the rank and the ends come one after the other
+        _, _, _, page_html = self._page(wreq, wnames, picks)
         pair = {m[0]: (float(m[1]), float(m[2]), float(m[3])) for m in _re.findall(r'data-id="(ends|rank)" data-layout="pair" style="left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px', page_html)}
-        self.assertEqual(sorted(pair), ["ends", "rank"]); self.assertEqual(pair["ends"][0], 0); self.assertEqual(pair["rank"][0], 552 + 36)  # one row: the same top, the second a half and a gutter along
+        self.assertEqual(sorted(pair), ["ends", "rank"]); self.assertEqual(pair["rank"][0], 0); self.assertEqual(pair["ends"][0], 552 + 36)  # one row: the same top, the second a half and a gutter along
         self.assertEqual(pair["ends"][1], pair["rank"][1])
         self.assertEqual({k: v for k, v in widths(page_html).items() if k in ("ends", "rank")}, {"ends": 552, "rank": 552})
         # the knobs: stack puts every picture across the page, pair off keeps the two apart, a share moves the words' column
-        _, _, _, stacked = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"layout": "stack"}})
+        _, _, _, stacked = self._page(wreq, wnames, picks, style={"story_layout": {"layout": "stack"}})
         self.assertEqual(set(_re.findall(r'data-id="[a-z_]+" data-layout="([a-z]+)"', stacked)), {"bare", "stack"})
         self.assertEqual(set(widths(stacked).values()), {1140})
-        _, _, _, apart = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"pair": "off", "text_share": 0.4}})
+        _, _, _, apart = self._page(wreq, wnames, picks, style={"story_layout": {"pair": "off", "text_share": 0.4}})
         self.assertEqual(lay_of(apart)["ends"], "side")
         self.assertEqual(widths(apart)["ends"], 1140 - round(1140 * 0.4) - 36)  # pair off: the ends go beside their words
         self.assertIn("--tw:456px", apart)
@@ -819,7 +889,7 @@ class Findings(unittest.TestCase):
         req["points"] = self._points(EU_MEMBERS)
         _, _, _, page_html = self._page(req, names, ["path", "chain", "map", "members"])
         leg = _re.search(r'<div class="legend"[^>]*>.*?</div></section>', page_html, _re.S).group(0)
-        self.assertEqual(_re.findall(r'<span class="sw ([a-z]+)">', leg), ["accent", "dash", "band", "ramp", "pale"])  # in the pictures' order
+        self.assertEqual(_re.findall(r'<span class="sw ([a-z]+)">', leg), ["accent", "dash", "pale", "ramp", "band"])  # in the pictures' order (the in-time arc's: path, members, map, chain)
         self.assertLess(page_html.index('data-id="thesis"'), page_html.index('data-id="legend"')); self.assertLess(page_html.index('data-id="legend"'), page_html.index('data-id="path"'))
         self.assertFalse(_re.search(r"[0-9]", _re.sub(r"<[^>]+>", "", leg)))
         _, _, _, off = self._page(req, names, ["path", "chain", "map", "members"], style={"story_layout": {"legend": "off"}})
@@ -939,7 +1009,7 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         composed = FN.compose({**req, "picks": ["rank", "path"]})
         rows, facts = ledger(req, composed, names)
-        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
                 "hero": {"data": {}, "leaves": composed["leaves"]}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -976,12 +1046,13 @@ class Findings(unittest.TestCase):
         self.assertEqual(len(out), 3)
         self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
-        self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "risk_notes"])
-        self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims"])
+        # the in-time arc needs a finding on who lags: the best of the members' comparisons is added (the spread, here)
+        self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"])
+        self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims", "winners_losers"])
         # the child gives the spec's facts, sections, leaf data and headline words only: rows, formats and names are layer 1's
         self.assertEqual(list(out[2]), ["knobs"])
         self.assertEqual(list(out[2]["knobs"]), ["spec"])
-        self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["dek", "facts", "hero", "sections", "title"])
+        self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["dek", "end", "facts", "hero", "sections", "title"])
 
     def test_differences_and_paces_take_the_delta_format(self):
         """A pace, a step or a gap of a share prints in its own format (points), a level or a projection in the value's."""
