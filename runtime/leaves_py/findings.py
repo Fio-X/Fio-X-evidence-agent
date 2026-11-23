@@ -59,7 +59,8 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               event whose years both windows leave PACE_WIN years at least on each side (named by the event's
                               words), else the split with the largest difference of the two paces (named by its year alone, no
                               cause word); the rows are the mean and the members whose pace changed most each way (before →
-                              after), and how many members were faster after (an n fact over them). Needs PACE_MIN years.
+                              after), and the later pace over the earlier when both are above 0. No count of the members that
+                              sped up is printed: no op checks a member's two paces against each other. Needs PACE_MIN years.
   * groups (winners_losers): the members grouped by the request's "groups" (the knowledge group's M49 sub-regions), each group's
                               simple mean at the last year they share against the mean of every grouped member, the gap of the
                               highest group over the lowest, and the group with the widest spread inside it named by its highest
@@ -338,10 +339,6 @@ class Req:
         place = (q.target or {}).get("filter", {}).get(q.by) if g else None
         if not place: return None
         return {"goal": g[2]}, {"kind": "target", "text": "fact:goal", "label": ST("story.ref.target", w=place)}
-
-    def count(q, codes, year):
-        """How many of the codes the rows hold at a year (next_facts n)."""
-        return {"op": "n", "table": q.table, "filter": {**q.fixed, q.by: sorted(codes)}, "by": q.by, "time": year, "fmt": "n"}
 
     def filt(q, code):
         return {**q.fixed, q.by: code}
@@ -1021,7 +1018,8 @@ def angle_pace(q):
          "pc_d": {"op": "minus", "a": "pc_b", "b": "pc_a", "fmt": q.change},
          # the windows' years as facts of their own (the split's two years: the era band a later layer shades reads them)
          "pc_y0": q.value(pool[0], y0), "pc_from": q.value(pool[0], a_), "pc_to": q.value(pool[0], b_), "pc_y1": q.value(pool[0], y1),
-         "pc_n": q.count(side, y1), "pc_all": q.count(pool, y1)}
+         }
+    if pa > 0 and pb > 0: f["pc_x"] = {"op": "times", "a": "pc_b", "b": "pc_a", "fmt": q.fmts["times"]}
     if a_ == b_: f["pc_mb"] = f["pc_ma"]
     cols = {"up": [], "down": []}
     if printed(q, pa, q.change) != printed(q, pb, q.change):   # the mean's own row, in its column
@@ -1043,7 +1041,7 @@ def angle_pace(q):
     tone = ("fast" if up else "slow") if pa >= 0 and pb >= 0 else "plain"
     bind = {"ev": ev["name_zh"]} if ev else {}
     title = T(f"story.pace.title_ev_{tone}" if ev else f"story.pace.title_{tone}", **bind)
-    text = T(f"story.pace.text_{'fast' if up else 'slow'}" if tone != "plain" else f"story.pace.text_{'up' if up else 'down'}")
+    text = T("story.pace.text")
     # the reference a later leaf draws (refs: dot_strip's shape; winners_losers reads none): the members' mean pace after the split,
     # labelled by the words' table; a target is a level, no pace, so none here
     data = {"up": {"title": ST("story.pace.up"), "rows": cols["up"]}, "down": {"title": ST("story.pace.down"), "rows": cols["down"]},
@@ -1057,11 +1055,11 @@ def angle_pace(q):
     return {"angle": "pace", "layer": "winners_losers", "kicker": T("story.pace.kicker"), "title": title, "text": text, "facts": f,
             "data": data, "claim": {"num": "fact:pc_b", "head": T("story.pace.claim_ev" if ev else "story.pace.claim", **bind)},
             "notes": [], "risks": risks, "members": True, "last": "pc_y1",
-            "anns": [note("pc_d", "story.note.pace.diff"), note("pc_n", "story.note.pace.n_fast" if up else "story.note.pace.n_slow")],
+            "anns": [note("pc_d", "story.note.pace.diff")] + ([note("pc_x", "story.note.pace.ratio")] if "pc_x" in f else []),
             "score": round(score, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "from": a_, "to": b_,
                     "event": ev.get("id") if ev else None, "faster": len(fast), "slower": len(slow), "asked": asked},
-            "summary": "the members' average pace a year before and after a split year: did it speed up or slow down, and how many members did"}, None
+            "summary": "the members' average pace a year before and after a split year: did it speed up or slow down, and which members changed most"}, None
 
 
 def angle_groups(q):

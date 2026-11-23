@@ -1387,9 +1387,11 @@ class PaceAndGroups(unittest.TestCase):
             self.assertEqual((composed["facts"]["pc_from"]["time"], composed["facts"]["pc_to"]["time"]), (best, best))
             self.assertAlmostEqual(facts["pc_a"]["v"], (m[best] - m[ys[0]]) / (int(best) - int(ys[0])), places=6)
             self.assertAlmostEqual(facts["pc_b"]["v"], (m[ys[-1]] - m[best]) / (int(ys[-1]) - int(best)), places=6)
-            n_side = sum(1 for x in q.panel if (q.panel[x][ys[-1]][0] - q.panel[x][best][0]) / (int(ys[-1]) - int(best)) * (1 if facts["pc_b"]["v"] > facts["pc_a"]["v"] else -1)
-                         > (q.panel[x][best][0] - q.panel[x][ys[0]][0]) / (int(best) - int(ys[0])) * (1 if facts["pc_b"]["v"] > facts["pc_a"]["v"] else -1))
-            self.assertEqual((facts["pc_n"]["v"], facts["pc_all"]["v"]), (n_side, len(q.panel)))
+            # no count of members is printed or declared (no op checks a member's two paces); the ratio only when both paces are above 0
+            self.assertFalse([k for k, v in composed["facts"].items() if v.get("op") in ("n", "count")], mk.__name__)
+            self.assertNotIn("个成员国里", words_of(composed))
+            if facts["pc_a"]["v"] > 0 and facts["pc_b"]["v"] > 0: self.assertAlmostEqual(facts["pc_x"]["v"], facts["pc_b"]["v"] / facts["pc_a"]["v"], places=6)
+            else: self.assertNotIn("pc_x", facts)
             self.assertIn("winners_losers", drawn)
 
     def test_pace_with_an_event_splits_at_its_years_and_says_its_name(self):
