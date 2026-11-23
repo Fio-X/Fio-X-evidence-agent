@@ -3323,7 +3323,10 @@
     "condition": "has_target",
     "members": 8,
     "findings": 3,
-    "why": "with no target: three findings of different kinds make an arc, eight members at least say who lags"
+    "relations": [
+     "Ranking"
+    ],
+    "why": "with no target: three findings of different kinds make an arc, eight members at least say who lags; a table step that kept a ranking (who lags, how far apart) holds the same years, so the arcs read it too"
    },
    "charts": [],
    "picks": [],

@@ -160,6 +160,9 @@ pub struct Without {
     pub condition: String,
     pub members: usize,
     pub findings: usize,
+    /// The relations, besides the recipe's own, the table step may have kept when the recipe went without its condition
+    /// (a ranking of the last year has the years' rows too): with its condition met, only the recipe's own relation counts.
+    pub relations: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -328,6 +331,12 @@ pub fn leaves() -> &'static Leaves {
                             condition: word(&w["condition"]).to_string(),
                             members: n("members"),
                             findings: n("findings"),
+                            relations: w["relations"]
+                                .as_array()
+                                .expect("knobs.json: a recipe's without relations is a list")
+                                .iter()
+                                .map(|r| r.as_str().expect("knobs.json: a relation is a name").to_string())
+                                .collect(),
                         })
                     }
                 },

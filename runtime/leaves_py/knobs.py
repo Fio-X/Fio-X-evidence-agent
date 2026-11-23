@@ -85,8 +85,8 @@ RECIPES = [
     # finding its arc needs, one more), and the comparisons that say who lags (rank, members, map, findings.py MAP_MIN) need a
     # field of eight members at least; a smaller field or fewer findings goes on to the ordinary page
     dict(name="page_story", layers=list(story.STORY_LAYERS), eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends", "has_target"],
-         without=dict(condition="has_target", members=8, findings=3,
-                      why="with no target: three findings of different kinds make an arc, eight members at least say who lags"),
+         without=dict(condition="has_target", members=8, findings=3, relations=["Ranking"],
+                      why="with no target: three findings of different kinds make an arc, eight members at least say who lags; a table step that kept a ranking (who lags, how far apart) holds the same years, so the arcs read it too"),
          charts=[], picks=[], exposes=[], strip=True, opening=True, relation="Change"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
@@ -287,7 +287,8 @@ def recipes(nodes, groups):
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
         w = r.get("without")
-        if w is not None and (set(w) != {"condition", "members", "findings", "why"} or w["condition"] not in r["eats"]
+        if w is not None and (set(w) != {"condition", "members", "findings", "relations", "why"} or w["condition"] not in r["eats"]
+                              or not isinstance(w["relations"], list) or not set(w["relations"]) <= set(RELATIONS) - {r.get("relation")}
                               or not all(isinstance(w[k], int) and not isinstance(w[k], bool) and w[k] >= 1 for k in ("members", "findings"))
                               or not isinstance(w["why"], str) or not w["why"].strip()):
             raise SystemExit(f"{r['name']}: without {w!r}; one of its eats as condition, members and findings whole numbers of 1 or more, and why")

@@ -3574,7 +3574,22 @@ fn recipe_request(
         tables.extend(companion.map(|(id, _)| (id.as_str(), &comp_rows[..])));
         tables.extend(block_rows.iter().map(|(id, rows)| (*id, &rows[..])));
         tables.extend(target_rows.iter().map(|(id, rows)| (id.as_str(), &rows[..])));
-        shape_for(recipe, &tables, catalogue).map_err(shape_err)
+        let shape = shape_for(recipe, &tables, catalogue).map_err(shape_err)?;
+        // a relation the recipe takes only without its condition (knobs.json recipes[].without.relations): with the condition met
+        // the recipe answers its own relation alone. Only such a relation is refused here: a relation no recipe answers is
+        // tried as kept none (leaf_request), and a recipe's own relation is its own
+        let only_without = |kept: &String| recipe.without.as_ref().is_some_and(|w| w.relations.contains(kept));
+        match (main.relation.map(|r| format!("{r:?}")), &recipe.relation) {
+            (Some(kept), Some(answers))
+                if &kept != answers && only_without(&kept) && shape.passed_over.is_none() =>
+            {
+                Err(shape_err(format!(
+                    "not this relation: the table step kept {kept}, the recipe answers {answers} when it runs to its {}",
+                    recipe.without.as_ref().map_or("condition", |w| w.condition.as_str())
+                )))
+            }
+            _ => Ok(shape),
+        }
     };
     let mut shape = shape_over(&main_rows)?;
     // a group the question names counts its members of one year: the rows of a place that is neither one of them nor named
@@ -5474,7 +5489,8 @@ fn leaf_request(
     };
     for recipe in recipes_tried(catalogue, (of_blocks, many)) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
-            if kept != answers {
+            let also = recipe.without.as_ref().is_some_and(|w| w.relations.contains(kept));
+            if kept != answers && !also {
                 missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
                 continue;
             }
@@ -28260,6 +28276,132 @@ for line in sys.stdin:
                 why.contains(&format!("{r}: not this relation: the table step kept Change, the recipe answers Ranking")),
                 "{r}: {why}"
             );
+        }
+    }
+
+    /// pj004-23: with no target row the story page takes a table the table step kept as a ranking too (knobs.json page_story
+    /// without.relations), behind the same minimums; with a target it answers Change alone, as before. Over a run folder with no
+    /// candidate sheet each recipe the pick takes stops at its claims ("<recipe>: shadow/candidate_sheet…"), so reaching that
+    /// stop is the recipe's relation and shape both taken. A ten-year EU table of eight members and the whole, kept Ranking or
+    /// Change, reaches the story page; of seven members the story page is not this shape and the column page is reached; with the
+    /// law's target row and kept Ranking the story page is not this relation (said with its condition) and the column page is
+    /// reached, kept Change it reaches the story page. A World Bank table of eight economies (no whole row) reaches the story
+    /// page kept Ranking or Change.
+    #[test]
+    fn a_ranking_with_no_target_reaches_the_story_page_and_with_a_target_the_column_page() {
+        assert_eq!(recipe("page_story").without.as_ref().map(|w| w.relations.clone()), Some(vec!["Ranking".to_string()]));
+        let run = tempfile::tempdir().unwrap();
+        std::fs::write(run.path().join("sdg.csv"), "").unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        let years: Vec<String> = (2015..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let eu = |n: usize| {
+            let geo: Vec<&str> = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "LU"][..n].iter().copied().chain(["EU27_2020"]).collect();
+            let mut rows = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &geo), &years);
+            for r in rows.iter_mut() {
+                let k = geo.iter().position(|g| r["dims"]["geo"] == *g).unwrap() as f64;
+                let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+                r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + (0.2 + k % 3.0 / 2.0) * (y - 2015.0)));
+            }
+            rows
+        };
+        let target = json!({"src": "target:sdg-EU27_2020-2030", "main": "sdg", "table": "target_sdg", "dims": {"geo": "EU27_2020"},
+            "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": "42.5"});
+        let reached = |id: &str, relation: Relation, cat: &dyn Catalogue| -> String {
+            let prepared = Prepared {
+                id: id.into(),
+                title: String::new(),
+                file: "sdg.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                chain: Vec::new(),
+                asked: json!([]),
+                relation: Some(relation),
+            };
+            match leaf_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                cat,
+                ("", ("标题", "导语", "栏目")),
+                (&Default::default(), None),
+                (false, false),
+            ) {
+                Ok((recipe, _, passed)) => format!("picked {}; {}", recipe.name, passed.join("; ")),
+                Err((recipe, stage, why)) => format!("{recipe}-{stage}: {why}"),
+            }
+        };
+        let story_reached = "page_story: shadow/candidate_sheet";
+        let column_reached = "column: shadow/candidate_sheet";
+        let no_target = |n: usize| Fetched(BTreeMap::from([("sdg".to_string(), eu(n))]), "");
+        for kept in [Relation::Ranking, Relation::Change] {
+            let why = reached("sdg", kept, &no_target(8));
+            assert!(why.contains(story_reached), "{kept:?}: {why}");
+            assert!(!why.contains("page_story: not this relation"), "{kept:?}: {why}");
+        }
+        let why = reached("sdg", Relation::Ranking, &no_target(7));
+        assert!(!why.contains(story_reached) && why.contains("holds 7 countries, fewer than 8"), "{why}");
+        assert!(why.contains(column_reached), "{why}");
+        let targeted = WithTargets(no_target(8), vec![target]);
+        let why = reached("sdg", Relation::Ranking, &targeted);
+        assert!(
+            why.contains("page_story: not this relation: the table step kept Ranking, the recipe answers Change when it runs to its has_target"),
+            "{why}"
+        );
+        assert!(!why.contains(story_reached) && why.contains(column_reached), "{why}");
+        let why = reached("sdg", Relation::Change, &targeted);
+        assert!(why.contains(story_reached), "{why}");
+        // a World Bank table of eight economies, no whole row
+        let id = "EG.FEC.RNEW.ZS@2";
+        let wb: Vec<Value> = WB_RANKED
+            .iter()
+            .enumerate()
+            .flat_map(|(k, (c, _, _))| {
+                years.iter().map(move |t| {
+                    let y: f64 = t.parse().unwrap();
+                    json!({"src": format!("series:{id}/{c}:{t}:value"), "table": id, "dims": {"country": c}, "time": t,
+                        "value": format!("{:.1}", 5.0 + 4.0 * k as f64 + (0.2 + (k % 3) as f64 / 2.0) * (y - 2015.0))})
+                })
+            })
+            .collect();
+        for kept in [Relation::Ranking, Relation::Change] {
+            let why = reached(id, kept, &WbRanked(wb.clone()));
+            assert!(why.contains(story_reached), "World Bank {kept:?}: {why}");
+        }
+    }
+
+    /// Fetched with the knowledge group's target rows for the main (Catalogue::targets), as GroupCatalogue hands them in.
+    struct WithTargets(Fetched, Vec<Value>);
+    impl Catalogue for WithTargets {
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+            self.0.top5(q, t, m, y, y0)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            self.0.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            self.0.source()
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            self.0.countries(codes)
+        }
+        fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            self.0.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            self.0.members(aggregate)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            self.0.table(id)
+        }
+        fn series_rows(&self, table: &crate::l5geo::TableMeta, at: &str) -> Result<Vec<Value>, String> {
+            self.0.series_rows(table, at)
+        }
+        fn targets(&self, main: &str) -> Vec<Value> {
+            self.1.iter().filter(|r| r["main"] == main).cloned().collect()
         }
     }
 

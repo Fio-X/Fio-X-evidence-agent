@@ -239,7 +239,7 @@ class Story(unittest.TestCase):
         # two ends) lacks a target: the recipe's last condition is the one it fails; it may go without it (pj004-23) only over
         # eight members and three findings, the minimums the registry holds with their reason, so one economy is not chosen
         self.assertEqual(rec["eats"][-1], "has_target")
-        self.assertEqual({k: v for k, v in rec["without"].items() if k != "why"}, {"condition": "has_target", "members": 8, "findings": 3})
+        self.assertEqual({k: v for k, v in rec["without"].items() if k != "why"}, {"condition": "has_target", "members": 8, "findings": 3, "relations": ["Ranking"]})
         self.assertTrue(rec["without"]["why"].strip())
         self.assertEqual(rec["relation"], "Change")
         with open(os.path.join(LEAVES, "knobs.json"), encoding="utf-8") as f: order = [r["name"] for r in json.load(f)["recipes"]]
