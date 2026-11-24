@@ -113,6 +113,9 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     table = os.path.join(tmp, "unit-short-zh.tsv")
     with open(table, "w", encoding="utf-8") as f:
         f.write("\t".join(gen.HEADER) + "\n")
+        # a reviewed rate of change whose label no rule reads keeps the line form it was reviewed with
+        f.write("PD_PCH_PRE_EUR\t%\tpct_change\tno\t%\treviewed\tPrice index (implicit deflator), percentage change on "
+                "previous period, euro\t%（较上期）\n")
     out = os.path.join(tmp, "out")
     gen.TABLE, gen.WB = table, wb
     argv = sys.argv
@@ -131,6 +134,7 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     check(rows.get("CLV_PCH_SM", {}).get("line_zh") == "%（同比）", "CLV_PCH_SM prints its basis")
     pps = rows.get("CP_PPS_EU27_2020_HAB", {})
     check((pps.get("short_zh"), pps.get("additive"), pps.get("line_zh")) == ("购买力标准/人", "no", ""), f"PPS per capita row: {pps}")
+    check(rows.get("PD_PCH_PRE_EUR", {}).get("line_zh") == "%（较上期）", "a reviewed line form is kept")
     check("CLV_PCH_ANN" not in rows and "CLV_AVG" not in rows, "an annualized or averaged chain-linked change gets no row")
     with open(os.path.join(out, "unread.tsv"), encoding="utf-8") as f:
         unread = {line.split("\t")[0] for line in f}

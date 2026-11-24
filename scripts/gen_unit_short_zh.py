@@ -172,8 +172,10 @@ def main():
             order.append(code)
             rows[code] = {"code": code, "short_zh": p.get("short_zh", ""), "rule": p.get("rule", ""), "additive": p.get("additive", ""),
                           "suffix_zh": p.get("suffix_zh") or suffix_of(p.get("short_zh", ""), p.get("rule", "")),
-                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, ""), "line_zh": ""}
-            # a reviewed rate of change prints its basis too, read from its label the same way
+                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, ""),
+                          "line_zh": p.get("line_zh", "")}
+            # a reviewed rate of change prints its basis too, read from its label the same way; a reviewed line form whose
+            # label no rule reads (a deflator's or a contribution's change on the previous period) is kept as it is
             if is_change(rows[code]["label_en"]) and basis_of(rows[code]["label_en"]):
                 rows[code]["line_zh"] = f"{rows[code]['short_zh']}（{basis_of(rows[code]['label_en'])}）"
     generated, unread = [], []
