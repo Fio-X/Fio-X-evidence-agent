@@ -3,7 +3,7 @@
 // path data of M/l/Z only. Every shape becomes a flattened, simplified polyline path; inherited style is
 // resolved onto runs of paths; the skins' SVG filters are baked into the coordinates (seeded, deterministic):
 //   wobble -> a small smooth displacement of the pen lines; wash -> a larger, lower-frequency displacement of
-//   the colour edge plus a darker rim (the filter's eroded rim) and the scene's dry-brush mask.
+//   the colour edge plus a darker rim (the filter's eroded rim) and dry-brush streaks cut as holes.
 // fill-opacity becomes opacity (a path that also strokes is split in two); fill-rule evenodd becomes nonzero
 // by turning every subpath so its winding follows its nesting depth. Nothing here reads a file.
 
@@ -168,6 +168,26 @@ function evenOddToNonzero(subs) {
   return subs;
 }
 
+// the wash filter's dry-brush streaks, baked as holes: a few thin horizontal slivers wound against the wash's
+// largest ring, each kept only when its corners all lie inside that ring (so a hole never fills outside it).
+// Holes instead of a mask: hundreds of mask uses made Chrome drop raster tiles on a 27-person page.
+function dryStreaks(fs, seed) {
+  let ring = null, ra = 0; for (const u of fs) { const a = Math.abs(area(u.pts)); if (a > ra) { ra = a; ring = u; } }
+  if (!ring || ra < 60) return fs;
+  const xs = ring.pts.map((p) => p[0]), ys = ring.pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), w = x1 - x0, sign = Math.sign(area(ring.pts));
+  let a = seed || 1; const r = () => { a = (Math.imul(a, 1664525) + 1013904223) >>> 0; return a / 4294967296; };
+  const out = fs.slice(), want = Math.min(4, Math.max(1, Math.round(ra / 900)));
+  for (let t = 0, got = 0; t < want * 4 && got < want; t++) {
+    const len = w * (0.25 + r() * 0.35), h = 0.7 + r() * 0.9, x = x0 + r() * (w - len), y = y0 + (y1 - y0) * (0.1 + r() * 0.8);
+    const q = [[x, y], [x + len, y + (r() - 0.5)], [x + len - 1.5, y + h], [x + 1, y + h * 0.9]];
+    if (!q.every((p) => inside(p, ring.pts)) || !inside([x + len / 2, y + h / 2], ring.pts)) continue;
+    if (Math.sign(area(q)) === sign) q.reverse();
+    out.push({ closed: true, pts: q }); got++;
+  }
+  return out;
+}
+
 // ---------- path data writer: absolute start, then relative l in tenths of a pixel ----------
 function fmt10(t) { // t: integer tenths
   const neg = t < 0, a = Math.abs(t), i = Math.floor(a / 10), f = a % 10;
@@ -253,6 +273,7 @@ export function normalizeFragment(src, ctx) {
     if (hasFill) {
       let fs = subs.filter((u) => u.closed || u.pts.length >= 3).map((u) => ({ ...u, closed: true }));
       if (s.rule === 'evenodd' && fs.length > 1) fs = evenOddToNonzero(fs);
+      if (s.filter === 'wash') fs = dryStreaks(fs, (ctx.seed ^ Math.imul(k + 1, 0x9e3779b1)) >>> 0);
       const op = s.op * s.fop;
       if (fs.length && op > 0.004) {
         const item = { d: writeD(fs), fill, stroke: 'none', sw: 0, op, wash: s.filter === 'wash' };

@@ -9,12 +9,16 @@
 // One identity detail from data stays: a carried prop (in the arm tone), else the hair kind.
 // Style lives in data: palette.ink (body), palette.accent (highlighted), palette.detail (light, falls back to
 // palette.paper), palette.tone2 (optional). px = pixels per head height.
+import * as LIB from '../lib.mjs'; // only for HEAD_MAX (A's head-angle limits); falls back when absent
 import { V, posedJoints, frame, farSide, torsoOutline, halfThick, propList, screenRect, roundRect, shade, hexRgb, hairKind, outfitInfo } from './common.mjs';
 
 export const info = { name: 'geo', headRatio: 7.6 }; // Favre / Ucini read 7–9 heads: callers resampleHeight up to this
 
 const NECK_EXTRA = 0.18;                                // head units added to the visible neck
 const PITCH_GAIN = 0.25, PITCH_BASE = 3, PITCH_MAX = 12; // small head tilt: base + gain × head pitch (deg)
+// the head's total tilt against the torso never exceeds A's HEAD_MAX (pitch 15°, looking at a phone 25°)
+const headMax = phone => { const H = LIB.HEAD_MAX; const v = H == null ? null : typeof H === 'number' ? H : phone ? (H.phone ?? H.phonePitch ?? H.pitchPhone) : (H.pitch ?? H.default);
+  return Number.isFinite(v) ? v : phone ? 25 : 15; };
 const HAND_LEN = 0.62, HAND_HALF = 0.17;                // hand length and half width, head units
 
 export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 } = {}) {
@@ -22,7 +26,10 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
   const S = p => [x + p[0] * px, y - p[1] * px];
   const fill = fig.highlight && palette.accent ? palette.accent : (palette.ink || '#1A2124');
   const light = palette.detail || palette.paper || '#FBF6EA';
-  const tone2 = palette.tone2 || shade(fill, lumOf(fill) < 0.35 ? 0.1 : -0.12);
+  // person colours are four, all from the palette: ink, dark grey, light, accent. Grey = near arm and props of
+  // ordinary people; highlighted people keep the arm in the accent (no seam) and carry props in ink.
+  const ink = palette.ink || '#1A2124', grey = palette.grey || '#3D484E';
+  const armC = fig.highlight && palette.accent ? fill : grey, propC = fig.highlight && palette.accent ? ink : grey;
   const far = farSide(J), near = far === 'L' ? 'R' : 'L';
   const parts = { behind: [], body: [], torso: [], head: [], armNear: [], front: [], light: [] };
   const put = (k, d, c, rule = '') => { if (d) parts[k].push(`<path d="${d}" fill="${c}"${rule ? ` fill-rule="${rule}"` : ''}/>`); };
@@ -32,13 +39,16 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
   const f0 = fig.dirs?.face || V.norm(V.sub(fig.joints.chin || fig.joints.head, fig.joints.head));
   const ta = turn * Math.PI / 180, faceX = f0[0] * Math.cos(ta) + f0[2] * Math.sin(ta), faceZ = -f0[0] * Math.sin(ta) + f0[2] * Math.cos(ta);
   const sg = Math.sign(faceX || fr.fwd[0] || 1);
-  const profile = Math.abs(faceX) > 0.42, away = faceZ < -0.35 && !profile;
+  const vw = turn ? null : fig.view; // A's view ('front'|'side'|'back'); a scene turn recomputes it
+  const profile = vw ? vw === 'side' : Math.abs(faceX) > 0.42, away = vw ? vw === 'back' : faceZ < -0.35 && !profile;
 
   // ---- which single light detail: the hand that holds a prop, else the face (or a hand when turned away) ----
   const plist = propList(fig, turn);
   const prop = plist.find(p => /backpack|bag|folder|phone/.test(p.type));
   const holdSide = prop && /hand/i.test(prop.at) ? (/L/.test(prop.at.replace(/hand/i, '')) ? 'L' : 'R') : null;
-  const lightKind = holdSide ? 'hand' : away ? 'hand' : 'face';
+  const outerId = String(fig.outfitSpec?.outer?.id || '').toLowerCase(), apron = outerId === 'apron';
+  const hardhat = (fig.outfitSpec?.accessory || []).some(a => /hardhat/.test(String(a.id || a)));
+  const lightKind = apron ? 'apron' : holdSide ? 'hand' : away ? 'nape' : 'face';
   const lightHand = holdSide || near;
 
   // ---- legs: long taper from thigh to a slim ankle, a small shoe with heel and toe ----
@@ -88,7 +98,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
   const farD = arm(far) + (handLit && lightHand === far ? '' : ' ' + hand(far));
   const nearD = arm(near) + (handLit && lightHand === near ? '' : ' ' + hand(near));
   put('body', [farD, leg(far), leg(near)].join(' '), fill);
-  put('armNear', nearD, tone2);
+  put('armNear', nearD, armC);
 
   // ---- torso: 4 cubics. shoulder→hem in one stroke per side (pulled in at the waist), hem, shoulder line ----
   let skirtTo = null;
@@ -99,10 +109,21 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
   const to = torsoOutline(J, T, fr, S, px, { skirtTo });
   const SL = [to.L[2][0], (to.L[1][1] + to.L[2][1]) / 2], SR = [to.R[2][0], (to.R[1][1] + to.R[2][1]) / 2], WL = to.L[4], WR = to.R[4], N = S(J.neck);
   // hem: below the outer hip edge (so the thighs never step out of the torso), or the skirt / coat hem
-  const hem = (A, sgn) => skirtTo ? A[A.length - 1] : [A[5][0] + sgn * px * 0.02, A[5][1] + px * 0.18];
+  const hx = [S(J.hipL)[0], S(J.hipR)[0]], legOut = [Math.min(...hx) - T.thigh * px * 0.75, Math.max(...hx) + T.thigh * px * 0.75];
+  // hem: at the hip, never wider than the legs' outer edges (no ledge where torso meets thigh), or the skirt / coat hem
+  const hem = (A, sgn) => skirtTo ? A[A.length - 1] : [sgn < 0 ? Math.max(A[5][0], legOut[0]) : Math.min(A[5][0], legOut[1]), A[5][1] + px * 0.06];
   const HL = hem(to.L, -1), HR = hem(to.R, 1);
-  const side = (P0, Wt, P1) => [[P0[0] + (Wt[0] - P0[0]) * 1.35, P0[1] + (Wt[1] - P0[1]) * 0.75], [P1[0] + (Wt[0] - P1[0]) * 1.35, P1[1] + (Wt[1] - P1[1]) * 0.75]];
-  const [l1, l2] = side(SL, WL, HL), [r2, r1] = side(SR, WR, HR);
+  // waist from data: thick.waistY (world y, head units) when A gives it, else the waist joint; its half width from
+  // the shoulder/waist/hip ratio, capped so the waist is always visibly narrower than both shoulder and hip
+  const hipY = S(V.lerp(J.hipL, J.hipR, 0.5))[1], shY = (SL[1] + SR[1]) / 2;
+  const wy = fig.thick?.waistY != null ? hipY + (shY - hipY) * fig.thick.waistY : S(J.waist)[1], wcx = S(J.waist)[0];
+  const shHalf = (SR[0] - SL[0]) / 2, hipHalf = (HR[0] - HL[0]) / 2;
+  const ratio = fig.thick?.waistRel != null ? fig.thick.waistRel : (fig.thick?.torsoWaist || 1) / Math.max(fig.thick?.torsoSh || 1, fig.thick?.torsoHip || 1);
+  const wHalf = Math.min(Math.max(ratio, 0.55) * shHalf, shHalf * 0.7, hipHalf * 0.8);
+  const side = (P0, P1, wx) => { // cubic P0→P1 whose t=0.5 point is (wx, ~wy): both controls at x = (8wx − P0 − P1)/6
+    const cx = (8 * wx - P0[0] - P1[0]) / 6, k = (P1[1] - P0[1]) * 0.22, my = Math.min(Math.max(wy, P0[1] + (P1[1] - P0[1]) * 0.3), P0[1] + (P1[1] - P0[1]) * 0.7);
+    return [[cx, my - k], [cx, my + k]]; };
+  const [l1, l2] = side(SL, HL, skirtTo ? Math.min(wcx - wHalf, (SL[0] + HL[0]) / 2) : wcx - wHalf), [r2, r1] = side(SR, HR, wcx + wHalf);
   const sag = px * 0.04, rise = px * 0.32;
   const tc1 = [SR[0] + (N[0] - SR[0]) * 0.6, SR[1] - rise], tc2 = [SL[0] + (N[0] - SL[0]) * 0.6, SL[1] - rise];
   const fp = p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
@@ -113,22 +134,24 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
   const d = fig.dirs || {};
   const pitch = d.headUp && d.chestFwd ? Math.asin(Math.max(-1, Math.min(1, V.dot(d.headUp, d.chestFwd)))) * 180 / Math.PI : 0;
   // a strongly lowered head (pitch > 20°) is lifted back toward 20° so it does not read as a hunch
-  const extra = Math.max(-20, Math.min(PITCH_MAX, PITCH_BASE + PITCH_GAIN * pitch, pitch > 20 ? -(pitch - 20) * 0.8 : 99)) * (away ? 0.3 : 1);
+  const hmax = headMax(prop && /phone/.test(prop.type) && holdSide);
+  // skin lean on top of the data pitch, clamped so pitch + lean stays within ±HEAD_MAX (a larger data pitch is lifted back)
+  const extra = Math.max(-hmax - pitch, Math.min(PITCH_MAX, PITCH_BASE + PITCH_GAIN * pitch, hmax - pitch)) * (away ? 0.3 : 1);
   const rotA = sg * extra * Math.PI / 180;
   const off = sub2(hc0, nb), dist = len2(off) || px * 0.66;
   const hc = add2(nb, mul2(rot2(unit(off), rotA), dist + NECK_EXTRA * px));
   const ang = Math.atan2(ht0[0] - hc0[0], hc0[1] - ht0[1]) + rotA;
   const r = T.headR * px;
   const Lh = (p, m = sg) => { const q = [p[0] * m * r, p[1] * r], c = Math.cos(ang), s = Math.sin(ang); return [hc[0] + q[0] * c - q[1] * s, hc[1] + q[0] * s + q[1] * c]; };
-  const nw = T.neck * px * 0.95;
-  const neckD = tPath([[nb[0] - nw * 0.95, nb[1] + px * 0.3], Lh([-0.28, 0.72]), Lh([0.26, 0.82]), [nb[0] + nw * 0.95, nb[1] + px * 0.3]], true, new Set([0, 1, 2, 3]));
+  const nw = Math.max(T.neck, 0.15) * px * 0.95; // slender but never a stick
+  const neckD = tPath([[nb[0] - nw * 0.95, nb[1] + px * 0.3], Lh([-0.36, 0.7]), Lh([0.34, 0.8]), [nb[0] + nw * 0.95, nb[1] + px * 0.3]], true, new Set([0, 1, 2, 3]));
   // profile: back of skull → crown → brow → nose → lips → chin → jaw. Same front edge is reused by the light sliver.
   const PROF = [[0.62, -0.7], [0.86, -0.18], [1.1, 0.14], [0.87, 0.3], [0.93, 0.47], [0.85, 0.58], [0.86, 0.8], [0.45, 0.95]];
   const headD = profile
     ? tPath([Lh([-0.4, 0.9]), Lh([-0.98, 0.05]), Lh([-0.3, -1.0]), ...PROF.map(p => Lh(p))], true, new Set([4, 5, 8, 9]))
     : tPath([Lh([0, 1.0], 1), Lh([-0.7, 0.62], 1), Lh([-0.9, -0.1], 1), Lh([0, -1.0], 1), Lh([0.9, -0.1], 1), Lh([0.7, 0.62], 1)], true, new Set([0]));
-  const hk = hairKind(fig), kind = prop ? 'short' : hk;
-  let detail = prop ? prop.type : (['short', 'buzz', 'bald'].includes(hk) ? 'none' : hk);
+  const hk = hairKind(fig), kind = hardhat ? 'bald' : prop ? 'short' : hk;
+  let detail = apron ? 'apron' : hardhat ? 'hardhat' : prop ? prop.type : (['short', 'buzz', 'bald'].includes(hk) ? 'none' : hk);
   put('head', [neckD, headD, hairD(kind)].filter(Boolean).join(' '), fill);
   function hairD(k) { // hair shapes that only read at the outline: one curve each
     const b = profile ? -1 : 0, B = p => Lh([p[0], p[1]], profile ? sg : 1);
@@ -159,17 +182,31 @@ export function drawFigure(fig, { x = 0, y = 0, px = 20, palette = {}, turn = 0 
       pd += ' ' + tPath([[sh[0] - w, sh[1]], [mid[0] - w, mid[1]], [top[0] - w, top[1] + w], [top[0] + w, top[1] + w], [mid[0] + w, mid[1]], [sh[0] + w, sh[1]]], true, new Set([0, 2, 3, 5]));
     }
     const behind = raw.layer ? raw.layer === 'behind' : (prop.centre ? prop.centre[2] < J.chest[2] - 0.05 : false);
-    put(behind ? 'behind' : 'front', pd, tone2);
+    put(behind ? 'behind' : 'front', pd, propC);
   }
 
+  // hardhat: a grey dome with a brim over the crown (the identity detail; the face stays the light detail)
+  if (hardhat) put('front', tPath([Lh([-1.12, -0.32], 1), Lh([-0.9, -0.95], 1), Lh([0, -1.24], 1), Lh([0.9, -0.95], 1), Lh([1.12, -0.32], 1), Lh([sg * 1.32, -0.26], 1), Lh([sg * 1.3, -0.16], 1), Lh([-sg * 1.25, -0.18], 1)], true, new Set([0, 4, 5, 6, 7])), propC);
   // ---- the one light detail ----
-  if (lightKind === 'hand') put('light', hand(lightHand, true), light, 'evenodd');
-  else if (profile) put('light', tPath([Lh([0.5, -0.66]), ...PROF.slice(0, 7).map(p => Lh(p)), Lh([0.56, 0.93]), Lh([0.42, 0.45]), Lh([0.46, -0.2])], true, new Set([0, 2, 3, 6, 8])), light);
-  else { const ps = String(fig.hairSpec?.part || '') === 'left' ? -1 : 1; // lit side opposite the parting
-    put('light', tPath([Lh([0.25, -0.72], ps), Lh([0.86, -0.2], ps), Lh([0.72, 0.58], ps), Lh([0.08, 0.98], ps), Lh([0.32, 0.35], ps), Lh([0.4, -0.25], ps)], true, new Set([0, 3])), light); }
+  if (lightKind === 'apron') { // a light block from the waist to the knee on the front of the body
+    const kneeY = S(V.lerp(J.knL, J.knR, 0.5))[1], fw = profile ? sg * px * 0.08 : 0, w1 = wHalf * 0.92, w2 = Math.max(w1 * 1.2, (legOut[1] - legOut[0]) / 2 * 0.95);
+    const P = profile // side view: the apron hangs off the front of the body and flares forward
+      ? [[wcx - sg * w1 * 0.3, wy], [wcx + sg * (w1 + px * 0.1), wy], [wcx + sg * (w2 + px * 0.3), kneeY], [wcx + sg * w2 * 0.4, kneeY + px * 0.04], [wcx - sg * w2 * 0.3, kneeY]]
+      : [[wcx - w1, wy], [wcx + w1, wy], [wcx + w2, kneeY], [wcx, kneeY + px * 0.04], [wcx - w2, kneeY]];
+    put('light', tPath(P, true, new Set([0, 1, 2, 4])), light);
+  } else if (lightKind === 'hand') put('light', hand(lightHand, true), light, 'evenodd');
+  else if (profile) put('light', tPath([Lh([0.2, -0.66]), ...PROF.slice(0, 7).map(p => Lh(p)), Lh([0.5, 0.95]), Lh([0.44, 1.22]), Lh([0.02, 1.16]), Lh([-0.08, 0.6]), Lh([-0.02, 0.05]), Lh([0.1, -0.42])], true, new Set([0, 1, 3, 4, 7, 9, 10])), light);
+  else if (lightKind === 'nape') { // back view: hair ends in a point over a light strip of neck
+    put('light', tPath([Lh([-0.34, 0.66], 1), Lh([0, 0.98], 1), Lh([0.34, 0.66], 1), [nb[0] + nw * 0.85, nb[1] + px * 0.18], [nb[0] - nw * 0.85, nb[1] + px * 0.18]], true, new Set([0, 1, 2, 3, 4])), light);
+  } else { // front view as a 3/4 face: the lit half of the face, the jaw and the neck are one light shape;
+    // the dark hair bites into it from the crown and the far cheek (no features, no whole dark egg)
+    const ps = String(fig.hairSpec?.part || '') === 'left' ? -1 : 1, F = p => Lh(p, ps); // lit side opposite the parting
+    const nm = lerp2(F([0.2, 1.0]), nb, 0.5); // neck white ends halfway down the neck
+    put('light', tPath([F([0.18, -0.36]), F([0.62, -0.6]), F([0.86, -0.3]), F([0.98, 0.12]), F([0.84, 0.3]), F([0.78, 0.62]), F([0.36, 0.94]), [nm[0] + ps * nw * 0.9, nm[1]], [nm[0] - ps * nw * 0.5, nm[1]], F([-0.12, 0.9]), F([0.06, 0.45]), F([0.06, 0.02])], true, new Set([0, 3, 4, 6, 7, 8])), light);
+  }
 
   const order = ['behind', 'body', 'torso', 'head', 'armNear', 'front', 'light'];
-  return `<g class="fig geo" data-pose="${fig.pose}" data-detail="${detail}" data-light="${lightKind}">${order.map(k => parts[k].join('')).join('')}</g>`;
+  return `<g class="fig geo" data-pose="${fig.pose}" data-detail="${detail}" data-light="${lightKind}" data-view="${profile ? 'side' : away ? 'back' : 'front'}">${order.map(k => parts[k].join('')).join('')}</g>`;
 }
 
 // Cubic path through key points: Catmull-Rom handles, cut to 30% at corner points so turns are crisp and

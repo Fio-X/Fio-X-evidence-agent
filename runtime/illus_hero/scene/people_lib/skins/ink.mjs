@@ -30,6 +30,15 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
   const os = Math.max(2, Math.min(8, px * 0.14)); // overshoot
   const off = Math.max(2, Math.min(6, px * 0.1)); // wash offset
   const of = outfitInfo(fig), props = propList(fig, turn);
+  // identity details from the outfit data: an apron or a vest is worn over the top (the top keeps its
+  // colour, the overlay gets one wash of the outer slot); a hard hat sits on the head
+  const overId = String(fig.outfitSpec?.outer?.id || '').toLowerCase();
+  const overlay = /apron/.test(overId) ? 'apron' : /vest|gilet|tabard/.test(overId) ? 'vest' : null;
+  const accIds = (fig.outfitSpec?.accessory || []).map(a => String(a?.id ?? a).toLowerCase());
+  const hardhat = accIds.some(a => /hard_?hat|helmet/.test(a));
+  // grips (v1.5 data): props[i].grip = {hand, style:"wrap"|"pinch", thumb:"on_top"|"side"}
+  const gripOf = side => { const i = (fig.props || []).findIndex(q => q?.grip && String(q.grip.hand || '').replace(/^hand/i, '').toUpperCase().startsWith(side)); return i < 0 ? null : { i, g: fig.props[i].grip }; };
+  const gripped = new Set();
   const colour = slot => slotColour(fig, palette, slot);
   const isMass = c => lum(c) < 0.3;
   // highlight wash: the accent laid as a pale vermilion (accent mixed 33% toward the paper; measured on the page ≈ 0.25–0.3 HSV saturation) so on the page
@@ -229,7 +238,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     const ap = armProfile(J, s, T, S, px);
     const o = limbOutline(ap.pts, ap.ws, 11), ji = jointIdx(ap.pts, 11), i0 = after ? 2 : 0;
     occl(k, i0 ? openOcc(o, i0) : o.closed);
-    const sleeveC = of.outer ? colour('outer') : colour('top');
+    const sleeveC = of.outer && !overlay ? colour('outer') : colour('top');
     const short = of.sleeve === 'short' && !of.outer, nS = short ? 4 : o.L.length - 1;
     const flex = 180 - ang3(sh, el, wr);
     if (isMass(sleeveC)) { if (after) halo(k, o, i0); mass(k, [...o.L.slice(0, nS + 1), ...o.R.slice(0, nS + 1).reverse()]);
@@ -250,7 +259,9 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     // cuff line
     const cu0 = o.L[o.L.length - 1], cu1 = o.R[o.R.length - 1];
     if (!short) pen(k, [cu0, cu1], dw * 1.2, { over: 1, breaks: false });
-    hand(s, k, (o.widths[o.widths.length - 1] || px * 0.1));
+    const gp = gripOf(s), gq = gp && propFace(props[gp.i] || {}, gp.i);
+    if (gq) { gripped.add(gp.i); drawProp(k, props[gp.i], gq); gripHand(s, k + 'Grip', gq, gp.g); }
+    else hand(s, k, (o.widths[o.widths.length - 1] || px * 0.1));
   }
   // hand, about 0.7 head long, overlapping the cuff so the arm runs on into it. Contour weight on the
   // outer side, detail inside, the thumb split off; close up (head > 60 px) the finger ends are drawn
@@ -279,6 +290,18 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     wash(k, outline, palette.skin, 0.7, 0.8);
   }
 
+  // head placement capped like the head's turn: the neck→head direction on screen stays within the cap
+  // of the chest→neck direction (rotating head centre and top about the neck), so no broken necks
+  const headCap = (() => {
+    const ck = S(J.chest), nk = S(J.neck), base = Math.atan2(nk[0] - ck[0], ck[1] - nk[1]);
+    // same numbers as lib's HEAD_MAX {pitch:15, roll:15, yaw:15, phone:25}; a figure may carry its own in fig.limits
+    const HM = fig.limits?.HEAD_MAX, hmBase = typeof HM === 'number' ? HM : Math.max(HM?.pitch ?? 15, HM?.roll ?? 15), hmPhone = (typeof HM === 'object' && HM?.phone) || 25;
+    const capDeg = (fig.props || []).some(p => /phone/.test(String(p.type))) ? hmPhone : hmBase, capR = capDeg * Math.PI / 180;
+    const rotAbout = (q, a) => { const dx = q[0] - nk[0], dy = q[1] - nk[1]; return [nk[0] + dx * Math.cos(a) - dy * Math.sin(a), nk[1] + dx * Math.sin(a) + dy * Math.cos(a)]; };
+    const h0 = S(J.head); let rel = Math.atan2(h0[0] - nk[0], nk[1] - h0[1]) - base; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    const fix = rel > capR ? capR - rel : rel < -capR ? -capR - rel : 0;
+    return { hc: rotAbout(h0, fix), ht: rotAbout(S(J.headTop), fix), base, capR };
+  })();
   // ---- torso ----
   let skirtTo = null;
   if (of.longOuter || (of.skirt && !of.outer)) {
@@ -302,7 +325,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
       if (Math.abs(bendR) > 2) { const Cc = bx > 0 ? to.R : to.L, Cv = bx > 0 ? to.L : to.R, oc = bx > 0 ? 1 : -1; mv(Cc, 4, -oc * kb); mv(Cv, 4, -oc * kb * 0.5); }
       void n; }
     occl(k, to.closed);
-    const topC = of.outer ? colour('outer') : colour('top');
+    const topC = of.outer && !overlay ? colour('outer') : colour('top');
     const Lc = to.L.slice(1), Rc = to.R.slice(1);
     // body spine for the wash sweep: centre and half width at each level of the outline
     const tC = [], tH = []; for (let i = 1; i < to.L.length; i++) { tC.push([(to.L[i][0] + to.R[i][0]) / 2, (to.L[i][1] + to.R[i][1]) / 2]); tH.push(Math.abs(to.R[i][0] - to.L[i][0]) / 2); }
@@ -349,24 +372,90 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
         const W = part(k).wash, got = W.splice(W.length - nS, nS), ds = got.map(g => g.match(/d="([^"]+)"/)[1]);
         W.push(`<path d="${ds.join(' ')}" fill="${topC}" fill-opacity="0.72"/>`); }
       for (const [a, b] of folds) fold(k, a, b);
-      if (of.outer) { // the open front of the jacket or coat
+      if (overlay === 'vest') { // a vest: one wash of its own colour over the body, the open front and the armholes
+        if (isMass(colour('outer'))) mass(k, [to.L[1], to.L[3], to.L[4], to.L[5], to.R[5], to.R[4], to.R[3], to.R[1], [(to.L[1][0] + to.R[1][0]) / 2, to.L[3][1]]]);   // a dark vest is an ink mass with a V neck
+        else sweep(k, tC, tH, washOf(colour('outer')), 0.72, { t0: 0.04, t1: 0.86, wk: 0.88, bow: 0.05 });
+        const n = S(J.neck), w = S(J.waist), h = Lc[Lc.length - 1], fx = fr.fwd[0] * T.torsoDepth * px * 0.6;
+        if (V.dot(fr.fwd, [0, 0, 1]) > -0.3) pen(k, [[n[0] + fx, n[1] + px * 0.2], [w[0] + fx, w[1]], [(h[0] + Rc[Rc.length - 1][0]) / 2 + fx, h[1] - px * 0.05]], dw * 1.3);
+        for (const A of [to.L, to.R]) pen(k, [A[1], [(A[1][0] + A[3][0]) / 2 + (A === to.L ? px * 0.08 : -px * 0.08), (A[1][1] + A[3][1]) / 2], A[3]], dw * 1.2, { breaks: false });
+      }
+      if (of.outer && !overlay) { // the open front of the jacket or coat
         const n = S(J.neck), w = S(J.waist), h = Lc[Lc.length - 1];
         const fx = (fr.fwd[0]) * T.torsoDepth * px * 0.6;
         pen(k, [[n[0] + fx, n[1] + px * 0.25], [w[0] + fx, w[1]], [(h[0] + Rc[Rc.length - 1][0]) / 2 + fx, h[1]]], dw * 1.3);
       }
     }
     // neck
-    const nk = S(J.neck), hd = S(V.lerp(J.neck, J.head, 0.55));
+    const nk = S(J.neck), hd = [nk[0] + (headCap.hc[0] - nk[0]) * 0.55, nk[1] + (headCap.hc[1] - nk[1]) * 0.55];
     pen(k, [[nk[0] - T.neck * px * 0.8, nk[1]], [hd[0] - T.neck * px * 0.7, hd[1]]], dw * 1.4, { over: 1, breaks: false });
     pen(k, [[nk[0] + T.neck * px * 0.8, nk[1]], [hd[0] + T.neck * px * 0.7, hd[1]]], dw * 1.4, { over: 1, breaks: false });
     // backpack straps / shoulder-bag strap
     for (const p of props) if (/backpack/.test(p.type)) { const a = to.L[1], b = to.R[1], w2 = S(J.waist); pen(k, [a, [a[0] + px * 0.15, w2[1] - px * 0.2]], dw * 2.2, { over: 1, breaks: false }); pen(k, [b, [b[0] - px * 0.15, w2[1] - px * 0.2]], dw * 2.2, { over: 1, breaks: false }); }
   }
 
+  // apron: a single panel from the chest to the knees on a neck strap, tied at the waist; one wash
+  function apron(k) {
+    if (overlay !== 'apron' || V.dot(fr.fwd, [0, 0, 1]) < -0.3) return;   // seen from behind only the ties would show
+    const to = torsoOutline(J, T, fr, S, px, { skirtTo, waistK: 0.95 });
+    const lp = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
+    const knY = S(V.lerp(J.knL, J.knR, 0.5))[1] - px * 0.15, hipW = Math.abs(to.R[5][0] - to.L[5][0]), hc = (to.R[5][0] + to.L[5][0]) / 2;
+    const aL = lp(to.L[3], to.R[3], 0.24), aR = lp(to.L[3], to.R[3], 0.76), wL = lp(to.L[4], to.R[4], 0.06), wR = lp(to.L[4], to.R[4], 0.94);
+    const bL = [hc - hipW * 0.5, knY], bR = [hc + hipW * 0.5, knY];
+    const P = [aL, aR, wR, bR, bL, wL];
+    occl(k, P);
+    pen(k, [aL, wL, bL], cw * 0.7, { breaks: false }); pen(k, [aR, wR, bR], cw * 0.7, { breaks: false });
+    pen(k, [bL, [(bL[0] + bR[0]) / 2, knY + px * 0.04], bR], dw * 1.4, { breaks: false });
+    pen(k, [aL, aR], dw * 1.3, { breaks: false, over: 1 });
+    const nk = S(J.neck), nw = T.neck * px;
+    pen(k, [aL, [nk[0] - nw * 0.9, nk[1] + px * 0.05]], dw * 1.2, { breaks: false, over: 0 }); pen(k, [aR, [nk[0] + nw * 0.9, nk[1] + px * 0.05]], dw * 1.2, { breaks: false, over: 0 });
+    pen(k, [wL, [wL[0] - px * 0.12, wL[1] + px * 0.18]], dw, { breaks: false, over: 0 });
+    if (isMass(colour('outer'))) mass(k, P); else sweep(k, [[(aL[0] + aR[0]) / 2, aL[1]], [(wL[0] + wR[0]) / 2, wL[1]], [(bL[0] + bR[0]) / 2, knY]], [Math.abs(aR[0] - aL[0]) / 2, Math.abs(wR[0] - wL[0]) / 2, hipW / 2], washOf(colour('outer')), 0.74, { t0: 0.02, t1: 0.94, wk: 0.9, bow: 0.05 });
+  }
+  // a hand closed round a held thing (quad Q on screen, already drawn in the arm's part): the palm comes
+  // from the cuff over the near edge, the fingertips curl over the far edge (or, on something wider than
+  // the hand, over the near edge onto its face), the thumb lies on the face or along the side
+  function gripHand(s, k, Q, g) {
+    const wr = S(J['wr' + s]);
+    const c = Q.reduce((m, q) => [m[0] + q[0] / Q.length, m[1] + q[1] / Q.length], [0, 0]);
+    const e1 = [Q[1][0] - Q[0][0], Q[1][1] - Q[0][1]], e3 = [Q[3][0] - Q[0][0], Q[3][1] - Q[0][1]];
+    const [lg, sh] = Math.hypot(...e1) >= Math.hypot(...e3) ? [e1, e3] : [e3, e1];
+    const la = Math.hypot(...lg) / 2 || 1, lb = Math.hypot(...sh) / 2 || 1, A = [lg[0] / la / 2, lg[1] / la / 2], B0 = [sh[0] / lb / 2, sh[1] / lb / 2];
+    const sg = Math.sign((wr[0] - c[0]) * B0[0] + (wr[1] - c[1]) * B0[1]) || 1, B = [B0[0] * sg, B0[1] * sg];   // B points from the far edge to the near (hand) edge
+    const at = (a, b) => [c[0] + A[0] * a + B[0] * b, c[1] + A[1] * a + B[1] * b];
+    const handL = px * 0.62, fw = Math.max(px * 0.055, Math.min(px * 0.085, la * 0.22)), big = lb * 2 > handL * 1.05;
+    const ta = Math.max(-la * 0.6, Math.min(la * 0.6, (wr[0] - c[0]) * A[0] + (wr[1] - c[1]) * A[1])) * 0.5;   // where along the edge the hand sits
+    // palm: cuff to the near edge, a little over it
+    const cw2 = Math.max(px * 0.11, fw * 1.6), d = [c[0] - wr[0], c[1] - wr[1]], dl = Math.hypot(...d) || 1, nn = [-d[1] / dl, d[0] / dl];
+    const palm = [[wr[0] + nn[0] * cw2 * 0.8, wr[1] + nn[1] * cw2 * 0.8], at(ta + fw * 2.6, lb + fw * 0.4), at(ta + fw * 2.2, lb - fw * 1.1), at(ta - fw * 2.2, lb - fw * 1.1), at(ta - fw * 2.6, lb + fw * 0.4), [wr[0] - nn[0] * cw2 * 0.8, wr[1] - nn[1] * cw2 * 0.8]];
+    occl(k, palm); wash(k, palm, palette.skin, 0.7, 0.85);
+    pen(k, [palm[5], palm[4], palm[3]], cw * 0.55, { breaks: false, over: 0, noStart: true }); pen(k, [palm[0], palm[1], palm[2]], cw * 0.55, { breaks: false, over: 0, noStart: true });
+    // fingers: four short capsules closing over the thing — on something narrower than the hand they run
+    // from the near edge right across it and their tips curl past the far edge; on something wider they
+    // come over the near edge onto its face. Paper-filled, so the thing is partly hidden by the hand.
+    if (g.style !== 'pinch') for (let f = 0; f < 4; f++) {
+      const a = ta + (f - 1.5) * fw * 1.8, b0 = lb + fw * 0.2, b1 = big ? lb - fw * 2.6 : -lb - fw * 0.9;
+      const q0 = at(a, b0), q1 = at(a, b1), v = [q1[0] - q0[0], q1[1] - q0[1]], vl = Math.hypot(...v) || 1, u = [v[0] / vl, v[1] / vl], nrm = [-u[1] * fw * 0.8, u[0] * fw * 0.8];
+      const fing = [[q0[0] + nrm[0], q0[1] + nrm[1]], [q1[0] + nrm[0], q1[1] + nrm[1]], [q1[0] + u[0] * fw * 0.7, q1[1] + u[1] * fw * 0.7], [q1[0] - nrm[0], q1[1] - nrm[1]], [q0[0] - nrm[0], q0[1] - nrm[1]]];
+      occl(k, fing); wash(k, fing, palette.skin, 0.65, 0.9);
+      pen(k, fing.slice(1, 4), dw * 1.3, { breaks: false, over: 0, bow: 0 });                       // the rounded tip
+      pen(k, [fing[0], fing[1]], dw * 1.0, { breaks: false, over: 0, bow: 0 });                     // one side line per finger (the split)
+    }
+    // thumb: on the face toward the middle, or along the side
+    const th0 = at(ta - fw * 2.4, lb - fw * 0.6), th1 = g.thumb === 'side' ? at(ta + fw * 3.2, lb + fw * 1.1) : at(ta + fw * 0.6, big ? lb - fw * 4.2 : -lb * 0.15);
+    const tv = [th1[0] - th0[0], th1[1] - th0[1]], tl = Math.hypot(...tv) || 1, tn = [-tv[1] / tl * fw, tv[0] / tl * fw];
+    const thumb = [[th0[0] + tn[0], th0[1] + tn[1]], [th1[0] + tn[0] * 0.8, th1[1] + tn[1] * 0.8], [th1[0] + tv[0] / tl * fw, th1[1] + tv[1] / tl * fw], [th1[0] - tn[0] * 0.8, th1[1] - tn[1] * 0.8], [th0[0] - tn[0], th0[1] - tn[1]]];
+    occl(k, thumb); wash(k, thumb, palette.skin, 0.65, 0.9);
+    pen(k, thumb, cw * 0.45, { breaks: false, over: 0, bow: 0 });
+  }
+
   // ---- head: oval with a gap, hair as an ink mass, two face marks turned with the head ----
   function head(k) {
-    const hc = S(J.head), ht = S(J.headTop);
-    const ang = Math.atan2(ht[0] - hc[0], hc[1] - ht[1]);
+    const hc = headCap.hc, ht = headCap.ht;
+    // the drawn head never tips further from the neck line than the library's cap (HEAD_MAX 15°, a phone
+    // look 25°), measured on screen against the chest→neck direction: a skin adds no tilt of its own
+    const { base, capR } = headCap;
+    let rel = Math.atan2(ht[0] - hc[0], hc[1] - ht[1]) - base; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    const ang = base + Math.max(-capR, Math.min(capR, rel));
     const rx = T.headR * px * 0.8, ry = T.headR * px;
     const R2 = (p) => [hc[0] + p[0] * Math.cos(ang) - p[1] * Math.sin(ang), hc[1] + p[0] * Math.sin(ang) + p[1] * Math.cos(ang)];
     const face = fig.dirs?.face ? [fig.dirs.face[0], fig.dirs.face[2]] : [fr.fwd[0], fr.fwd[2]];
@@ -394,6 +483,15 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     if (hk === 'bun') { const c = R2([b * rx * 0.35, -ry * 1.12]); const bp = []; for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; bp.push([c[0] + Math.cos(a) * rx * 0.42, c[1] + Math.sin(a) * rx * 0.4]); } hairMass ? mass(k, bp, hairC === ink ? ink : ink) : (pen(k, bp.concat([bp[0]]), cw * 0.6, { breaks: false }), wash(k, bp, hairC, 0.85, 1)); }
     if (hk === 'pony') { const tail = [R2([b * rx * 0.85, -ry * 0.55]), R2([b * rx * 1.45, -ry * 0.1]), R2([b * rx * 1.35, ry * 0.9]), R2([b * rx * 1.05, ry * 1.4]), R2([b * rx * 0.95, ry * 0.35])]; mass(k, tail, hairMass ? ink : hairC); }
     if (hk === 'cap' || hk === 'hat') { const capP = [[-rx * 1.04, -ry * 0.2], [-rx * 0.9, -ry * 0.95], [0, -ry * 1.18], [rx * 0.9, -ry * 0.95], [rx * 1.04, -ry * 0.2]].map(R2); const brim = [R2([rx * 0.9 * (fx >= 0 ? -0.3 : 1), -ry * 0.25]), R2([(fx >= 0 ? 1 : -1) * rx * (1.1 + Math.abs(fx) * 0.6), -ry * 0.15])]; mass(k, capP, isMass(colour('outer')) ? ink : ink); pen(k, brim, cw, { breaks: false, over: 1 }); }
+    if (hardhat) { // hard hat: a solid ink dome with a paper glint, a brim reaching further on the face side, one wash stroke slipping off it
+      const dome = []; for (let q = 0; q <= 10; q++) { const t = Math.PI * (1 + q / 10); dome.push(R2([Math.cos(t) * rx * 1.14, -ry * 0.28 + Math.sin(t) * ry * 0.95])); }
+      mass(k, dome);
+      const fs2 = fx >= 0 ? 1 : -1, fwd = Math.abs(fx);
+      const brim = [R2([-fs2 * rx * (1.2 - fwd * 0.15), -ry * 0.26]), R2([0, -ry * 0.22]), R2([fs2 * rx * (1.25 + fwd * 0.5), -ry * 0.24])];
+      pen(k, brim, cw * 0.9, { breaks: false, over: 1, swell: false });
+      pen(k, [R2([-rx * 0.55, -ry * 0.95]), R2([-rx * 0.15, -ry * 1.12])], dw * 1.4, { color: paper, breaks: false, over: 0 });
+      sweep(k, [R2([-rx * 0.9, -ry * 0.7]), R2([0, -ry * 1.1]), R2([rx * 0.9, -ry * 0.7])], [ry * 0.32, ry * 0.36, ry * 0.3], palette.shade || colour('outer'), 0.8, { t0: 0.02, t1: 0.9, wk: 0.85, side: 1 });
+    }
     // face: at most two marks (eye line + nose/mouth tick), shifted toward where the face points
     if (!away && px >= 18) {
       const ex = fx * rx * 0.5, sg = Math.sign(fx || 1);
@@ -414,12 +512,23 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
   // v1.2 props carry a real-size oriented box (obb) and a layer; older data falls back to the AABB.
   // The drawn face is the obb's two largest axes, projected, so a phone tilts with the hand.
   const ta = turn * Math.PI / 180, tc = Math.cos(ta), tsn = Math.sin(ta), tp = q => [q[0] * tc + q[2] * tsn, q[1], -q[0] * tsn + q[2] * tc];
+  const tpInv = q => [q[0] * tc - q[2] * tsn, q[1], q[0] * tsn + q[2] * tc];   // screen-space direction back into figure space
   const rawProps = fig.props || [];
   const propFace = (p, i) => {
     const ob = rawProps[i]?.obb;
     if (ob && ob.c && ob.axes && ob.half) {
       const ord = [0, 1, 2].sort((u, v) => ob.half[v] - ob.half[u]), [i0, i1] = ord;
-      const e0 = V.mul(ob.axes[i0], ob.half[i0]), e1 = V.mul(ob.axes[i1], ob.half[i1]);
+      let ax1 = ob.axes[i1];
+      // a phone is turned a little about its long side toward the viewer (≤35°) so its face reads
+      if (/phone/.test(p.type)) {
+        const a0 = V.norm(ob.axes[i0]); let nv = V.norm(V.cross(a0, ax1)); const view = tpInv([0, 0, 1]);
+        if (V.dot(nv, view) < 0) nv = V.mul(nv, -1);
+        const tg = V.sub(view, V.mul(a0, V.dot(view, a0))), tl = V.len(tg);
+        if (tl > 1e-6) { const t = V.mul(tg, 1 / tl), phi = Math.acos(Math.max(-1, Math.min(1, V.dot(nv, t)))), a = Math.min(phi, 35 * Math.PI / 180);
+          const w = V.sub(t, V.mul(nv, V.dot(t, nv))), wl = V.len(w);
+          if (wl > 1e-6 && a > 0) { const n2 = V.norm(V.add(V.mul(nv, Math.cos(a)), V.mul(w, Math.sin(a) / wl))); ax1 = V.norm(V.cross(n2, a0)); } }
+      }
+      const e0 = V.mul(ob.axes[i0], ob.half[i0]), e1 = V.mul(ax1, ob.half[i1]);
       const face = [V.sub(V.sub(ob.c, e0), e1), V.sub(V.add(ob.c, e0), e1), V.add(V.add(ob.c, e0), e1), V.add(V.sub(ob.c, e0), e1)].map(q => S(tp(q)));
       return face;
     }
@@ -431,22 +540,27 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
   const isBehind = (p, i) => rawProps[i]?.layer ? rawProps[i].layer === 'behind' : (p.corners && /backpack/.test(p.type) && p.centre[2] < J.chest[2]);
   function propsPart(k, back) {
     props.forEach((p, i) => {
-      if (!!isBehind(p, i) !== back) return;
+      if (gripped.has(i) || !!isBehind(p, i) !== back) return;
       const quad = propFace(p, i); if (!quad) return;
+      drawProp(k, p, quad);
+    });
+  }
+  function drawProp(k, p, quad) {
+    {
       const top = quad.reduce((m, q) => q[1] < m[1] ? q : m, quad[0]);
       if (/phone/.test(p.type)) mass(k, quad);
       else if (/folder/.test(p.type)) { occl(k, quad); quad.forEach((q, j) => pen(k, [q, quad[(j + 1) % 4]], dw * 1.6, { over: 2, breaks: false })); wash(k, quad, palette.shade || palette.top, 0.85, 0.85); }
       else if (/^bag/.test(p.type)) { mass(k, quad); if (p.strap && J[p.strap]) pen(k, [S(J[p.strap]), top], dw * 1.6, { breaks: false }); }
       else if (/backpack/.test(p.type)) { occl(k, quad); pen(k, [quad[0], quad[1], quad[2]], cw * 0.8); pen(k, [quad[2], quad[3], quad[0]], dw * 1.5); wash(k, quad, palette.prop || palette.shade || palette.bottom, 0.7, 0.7); }
-    });
+    }
   }
 
   const far = farSide(J), near = far === 'L' ? 'R' : 'L';
   propsPart('propsBack', true);
   if (skirtTo) { leg(far, 'legFar'); leg(near, 'legFar2'); } else leg(far, 'legFar');
-  arm(far, 'armFar'); torso('torso'); head('head'); if (!skirtTo) leg(near, 'legNear', true); arm(near, 'armNear', true);
+  arm(far, 'armFar'); torso('torso'); head('head'); if (!skirtTo) leg(near, 'legNear', true); apron('apron'); arm(near, 'armNear', true);
   propsPart('propsFront', false);
-  const order = ['propsBack', 'armFar', 'legFar', 'legFar2', 'torso', 'head', 'legNear', 'armNear', 'propsFront'];
+  const order = ['propsBack', 'armFar', 'armFarGrip', 'legFar', 'legFar2', 'torso', 'head', 'legNear', 'apron', 'armNear', 'armNearGrip', 'propsFront'];
   let out = `<g class="fig ink" data-pose="${fig.pose}" stroke-linecap="round" stroke-linejoin="round">`;
   for (const k of order) {
     const p = parts[k]; if (!p) continue;

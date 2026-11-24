@@ -180,10 +180,12 @@ console.log('sizes (svg bytes, box 1200x560): ' + sizes.join(' | '));
 
 // ---------- placement: the lit tail in fives, and no head or torso hidden ----------
 // draw() is imported for its test-only geometry (head disc, torso core, the fills of each figure in draw order).
-// Occlusion: for every figure, its head disc (head joint, radius thick.headR) and torso core (convex hull of
-// shL, shR, hipR, hipL, neck) are sampled on a 1 px grid; a sample is hidden when it lies inside (nonzero
-// winding) any fill path of a figure drawn after it. Strokes are left out (pen lines are 1-3 px; the ink skin's
-// paper occluders, which do cover, are fills). hidden / samples must be <= 10% for every figure.
+// Occlusion: for every figure, its drawn head and torso are sampled on a 1 px grid: a sample belongs to them
+// when it lies inside the figure's own fills AND inside its head disc (head joint, radius thick.headR) or its
+// torso hull (shL, shR, hipR, hipL, neck, with the shoulder points pushed out sideways by half of max(upper arm, torso
+// depth) and the hips by half of max(thigh, 0.8 x torso depth): the drawn torso seen front-on or side-on). A sample is hidden when it lies inside (nonzero winding) any fill path of a
+// figure drawn after it. Strokes are left out (pen lines are 1-3 px; the ink skin's
+// paper occluders, which do cover, are fills). hidden / samples must be <= 5% for every figure, and no head centre may lie inside another figure's torso core.
 const { draw } = await import(SCENE);
 const { flatten } = await import(join(SCENE_DIR, 'normalize.mjs'));
 function hull(P) {
@@ -202,7 +204,8 @@ const inHull = (x, y, H) => { for (let i = 0; i < H.length; i++) { const a = H[i
 function occlusion(G) {
   const figs = G.figures.map((g) => {
     const paths = g.fills.map((d) => { const subs = flatten(d).filter((u) => u.pts.length >= 3); const xs = subs.flatMap((u) => u.pts.map((p) => p[0])), ys = subs.flatMap((u) => u.pts.map((p) => p[1])); return { subs, bb: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] }; }).filter((p) => p.subs.length);
-    return { ...g, core: hull(g.torso), paths };
+    const [sL, sR, hR, hL, nk] = g.torso, wide = hull([[sL[0] - g.shW, sL[1]], [sL[0] + g.shW, sL[1]], [sR[0] - g.shW, sR[1]], [sR[0] + g.shW, sR[1]], [hL[0] - g.hipW, hL[1]], [hL[0] + g.hipW, hL[1]], [hR[0] - g.hipW, hR[1]], [hR[0] + g.hipW, hR[1]], nk]);
+    return { ...g, core: wide, paths };
   });
   let worst = { f: 0, q: -1 };
   figs.forEach((g, i) => {
@@ -212,13 +215,14 @@ function occlusion(G) {
     let n = 0, hid = 0;
     for (let y = y0 + 0.5; y < y1; y++) for (let x = x0 + 0.5; x < x1; x++) {
       if (!((x - hx) ** 2 + (y - hy) ** 2 <= hr * hr || inHull(x, y, g.core))) continue;
+      if (!g.paths.some((p) => winding(x, y, p.subs) !== 0)) continue; // not drawn here: not part of the person
       n++;
       if (later.some((p) => x >= p.bb[0] && x <= p.bb[2] && y >= p.bb[1] && y <= p.bb[3] && winding(x, y, p.subs) !== 0)) hid++;
     }
     const f = n ? hid / n : 0;
     if (f > worst.f) worst = { f, q: g.q };
   });
-  return worst;
+  return { ...worst, cores: figs.map((g) => g.core) };
 }
 const occ = [];
 for (const style of ['ink', 'iso', 'geo']) {
@@ -234,13 +238,18 @@ for (const style of ['ink', 'iso', 'geo']) {
     const lits = G.figures.filter((g) => g.lit).sort((a, b) => a.q - b.q), groups = [];
     for (const g of lits) { const last = groups.length ? groups[groups.length - 1] : null, p = last ? last[last.length - 1] : null; if (p && p.row === g.row && g.col - p.col === 1) last.push(g); else groups.push([g]); }
     if (groups.some((g) => g.length > 5)) fail(`placement ${style}/${n}: a lit group of ${Math.max(...groups.map((g) => g.length))}`);
+    // a group never straddles two rows: the runs of one row add up to exactly ceil(K/5) groups
+    if (groups.length !== Math.ceil(K / 5)) fail(`placement ${style}/${n}: ${groups.length} lit runs for ${K} lit (want ${Math.ceil(K / 5)}: a group split across rows?)`);
+    // when the front row can hold the lit and their gaps, every lit figure stands in it
+    if (K + Math.ceil(K / 5) <= G.cols && lits.some((g) => g.row !== 0)) fail(`placement ${style}/${n}: a lit figure stands behind the front row (front row has ${G.cols} slots for ${K} lit)`);
     if (K > 5) {
-      if (groups.length !== Math.ceil(K / 5)) fail(`placement ${style}/${n}: ${groups.length} lit groups for ${K} lit (want ${Math.ceil(K / 5)})`);
       for (let k = 1; k < groups.length; k++) { const a = groups[k - 1][groups[k - 1].length - 1], b = groups[k][0]; if (a.row === b.row && b.col - a.col < 2) fail(`placement ${style}/${n}: no gap between lit groups ${k} and ${k + 1}`); }
     }
     const w = occlusion(G);
     occ.push(`${style}/${n}:${(w.f * 100).toFixed(1)}%`);
-    if (w.f > 0.10) fail(`occlusion ${style}/${n}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 10%)`);
+    if (w.f > 0.05) fail(`occlusion ${style}/${n}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 5%)`);
+    // no head centre inside another figure's torso core
+    G.figures.forEach((a, i) => G.figures.forEach((b, j) => { if (i !== j && inHull(a.head[0], a.head[1], w.cores[j])) fail(`occlusion ${style}/${n}: the head of q=${a.q} sits inside the torso of q=${b.q}`); }));
   }
 }
 console.log('worst head+torso hidden: ' + occ.join(' '));

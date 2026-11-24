@@ -87,11 +87,12 @@ function looks(style, P, i, r) {
 // head falls between two back heads. The row pitch and slot width keep every head and torso at most ~10%
 // hidden (scripts/test_illus_scene.mjs measures it from the drawn geometry).
 // returns {H, s, pitch, rows:[{y, slots:[{q, x, y, col}]}] (rows[0] = front), hUsed}
-const SLOT_K = 0.5, PITCH_K = 0.56, GROUP = 5;
+const SLOT_K = 0.5, PITCH_K = 0.66, GROUP = 5; // slot 0.5 H = about 3.5 head widths (>= 1.6 asked)
 export function queueTokens(n, K) {
-  // units from the tail: [GAP, lit x<=5] per group (last group first), then unlit people one by one
+  // units from the tail: [GAP, lit x<=5] per group, then unlit people one by one. The short group (K mod 5) is
+  // the very tail, so the lit read left to right as 5 | 5 | 1
   const units = [];
-  const groups = []; for (let left = K; left > 0; left -= GROUP) groups.push(Math.min(GROUP, left));
+  const groups = []; if (K % GROUP) groups.push(K % GROUP); for (let k = 0; k < Math.floor(K / GROUP); k++) groups.push(GROUP);
   for (const g of groups) units.push(['gap', ...Array(g).fill('lit')]);
   for (let k = 0; k < n - K; k++) units.push(['unlit']);
   return units;
@@ -110,13 +111,17 @@ function layoutQueue(n, box, r, K) {
   const units = queueTokens(n, K), T = units.reduce((s, u) => s + u.length, 0);
   let best = null;
   for (const R of n <= 12 ? [1] : [2, 3]) {
-    let C = Math.ceil(T / R), rows = null;
+    // the front row holds every lit figure and its gaps (up to 15 lit); the unlit fill the rows behind
+    const litCols = K + Math.ceil(K / GROUP);
+    let C = Math.max(Math.ceil(T / R), litCols <= 18 ? litCols : 0), rows = null;
     while (!(rows = fillRows(units, R, C))) C++;
     const cols = (C - 1) + (rows.length > 1 ? 0.5 : 0);
     const byW = (W * (1 - 2 * side)) / (cols * SLOT_K + 0.55);
     const byH = Hb / (1.22 + (rows.length - 1) * PITCH_K);
     const H = Math.min(byW, byH, Hb * 0.86);
-    if (!best || H > best.H * 1.02) best = { H, rows, C };
+    // a third row must earn its place (people >12% taller) and not be a near-empty strip at the back
+    const backFill = rows[rows.length - 1].filter((t) => t !== 'gap').length / C;
+    if (!best || (H > best.H * 1.12 && backFill >= 0.34)) best = { H, rows, C };
   }
   const { H, rows: toks, C } = best, R = toks.length, s = H * SLOT_K, pitch = H * PITCH_K;
   const span = (C - 1) * s + (R > 1 ? s / 2 : 0), x0 = (W - span) / 2;
@@ -133,7 +138,7 @@ function layoutQueue(n, box, r, K) {
     });
   }
   for (const row of rows) delete row.toks;
-  return { H, s, pitch, rows, hUsed: Math.min(Hb, yFront + H * 0.12) };
+  return { H, s, pitch, cols: C, rows, hUsed: Math.min(Hb, yFront + H * 0.12) };
 }
 const SCENES = { queue: layoutQueue }; // grid (classroom rows) and door come later as more layouts
 
@@ -199,17 +204,6 @@ function shadowGeo(x, y, H, P) {
   return { d: writeD([{ closed: true, pts }]), fill: mix(P.paper, P.ink, 0.3), op: 1 };
 }
 
-// ---------- dry-brush mask for the ink washes: horizontal streaks of partial transparency ----------
-function dryMask(id, W, H, seed) {
-  const r = rng(seed ^ 0x51ed27);
-  const streaks = [];
-  for (let y = 2; y < H; y += 4 + r() * 7) {
-    let x = r() * 60;
-    while (x < W) { const len = 8 + r() * 34; if (r() < 0.45) streaks.push({ closed: true, pts: [[x, y], [x + len, y + (r() - 0.5)], [x + len - 2, y + 0.9 + r() * 0.8], [x + 1, y + 1.1]] }); x += len + 24 + r() * 90; }
-  }
-  return `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${f1(W)}" height="${f1(H)}"><path d="M0 0H${f1(W)}V${f1(H)}H0Z" fill="#ffffff"/><path d="${writeD(streaks)}" fill="#000000" opacity="0.55"/></mask>`;
-}
-
 // ---------- draw ----------
 export function draw(req, opts = {}) {
   const why = check(req);
@@ -254,22 +248,22 @@ export function draw(req, opts = {}) {
     const hh = L.H * (fig.scale || 1);
     const sh = style === 'ink' ? shadowInk(sl.x, sl.y, hh, P) : style === 'iso' ? shadowIso(sl.x, sl.y, hh, P) : (fig.highlight ? null : shadowGeo(sl.x, sl.y, hh, P));
     if (sh) shadows.push(sh);
-    people.push(`<g>${writeItems(items, style === 'ink' ? 'dry' : null)}</g>`);
+    people.push(`<g>${writeItems(items, null)}</g>`);
     total++; if (fig.highlight) lit++;
     if (opts.geometry) {
       // for the test only (never in the reply): the head disc and torso core in picture pixels, and the fills drawn
       const J = posedJoints(fig, turn), S = (p) => [sl.x + p[0] * px, sl.y - p[1] * px];
       geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
-        torso: ['shL', 'shR', 'hipR', 'hipL', 'neck'].map((k) => S(J[k])), fills: items.filter((it) => it.fill !== 'none').map((it) => it.d) });
+        torso: ['shL', 'shR', 'hipR', 'hipL', 'neck'].map((k) => S(J[k])), shW: (Math.max(fig.thick.upperArm || 0.4, fig.thick.torsoDepth || 0.9) / 2) * px, hipW: (Math.max(fig.thick.thigh || 0.6, (fig.thick.torsoDepth || 0.9) * 0.8) / 2) * px, fills: items.filter((it) => it.fill !== 'none').map((it) => it.d) });
     }
   }
   const ground = style === 'ink' ? groundInk(L, P, W, r, seed >>> 0) : style === 'iso' ? groundIso(L, P, W) : groundGeo(L, P, W, Hpic);
-  const shadowSvg = writeItems(shadows.map((x) => ({ d: x.d, fill: x.fill, stroke: 'none', sw: 0, op: x.op, wash: style === 'ink' })), style === 'ink' ? 'dry' : null);
+  const shadowSvg = writeItems(shadows.map((x) => ({ d: x.d, fill: x.fill, stroke: 'none', sw: 0, op: x.op, wash: style === 'ink' })), null);
   let defs = '';
-  if (style === 'ink') defs = `<defs><linearGradient id="gfade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/><stop offset="0.25" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.75"/><stop offset="0.8" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.6"/><stop offset="1" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/></linearGradient>${dryMask('dry', W, Hpic, seed >>> 0)}</defs>`;
+  if (style === 'ink') defs = `<defs><linearGradient id="gfade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/><stop offset="0.25" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.75"/><stop offset="0.8" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.6"/><stop offset="1" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/></linearGradient></defs>`;
   const svg = `${defs}<g>${ground}</g><g>${shadowSvg}</g>${people.join('')}`;
   const reply = { svg, w: W, h: Hpic, lit, total, dropped: [] };
-  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s }, enumerable: false });
+  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols }, enumerable: false });
   return reply;
 }
 
