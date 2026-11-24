@@ -135,7 +135,7 @@
   }
  ],
  "hero": {
-  "what": "the opening picture of a page of these tables: one figure per member (runtime/illus_hero/people, scenes.people.renderer = people in node.json), composed from the finding's rows; it needs no hero parts, so `tables` gives each table an empty tag list; `hero` is not read on that path; `ground` the paper, `accent` the people topic's own accent",
+  "what": "the opening picture of a page of these tables: one figure per member (node.json scenes.people.renderer = scene: the scene renderer runtime/illus_hero/scene for a tally, runtime/illus_hero/people, its renderer_else, for the other layouts), composed from the finding's rows; it needs no hero parts, so `tables` gives each table an empty tag list; `hero` is not read on that path; `ground` the paper, `accent` the people topic's own accent",
   "tables": {
    "une_rt_a": [],
    "une_rt_m": [],

@@ -8,6 +8,8 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
         the tags are not needed; the lit count is recomputed from the rows and refused when it is not the declared one. "lead" is the page's lead finding, one of
         node.json stories.angles; it picks the scene, so a story's opening picture follows its story, not its table (pick_scene).
         Under a scene a named ground (warm, cool) takes the tone of the scene's story arc (stories.arc_grounds: happened, in_time, lagging); given colours stand as given.
+        A subject may instead be a proportion ({"proportion": {"share", "figures"}, "declared": {"count", "total"}}): N figures, K = N x share half to even
+        recomputed here; it is drawn by the scene renderer (topics.scene_renderer, the node child scene/scene.mjs; build_scene), as a people-topic tally is.
   out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
         "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
@@ -15,6 +17,7 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
 Parts, layout slots, heroes, palettes and knob ranges are data in node.json (the registry); this file validates the input against it, resolves it into a scene (scene.json), runs
 scene_node.py under Blender (headless, three passes) and hero_node.py (the painting), and returns the svg. It makes no number and no word: the picture is only shapes."""
 import copy, json, os, re, shutil, subprocess, sys, tempfile, time
+from decimal import Decimal, ROUND_HALF_EVEN
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)      # (python -I puts no script directory on the path)
 import frame as FR  # noqa: E402
@@ -36,6 +39,15 @@ def check_range(label, v, spec):
     if "min" in spec and not (spec["min"] <= v <= spec["max"]): refuse(f"{label}={v} outside [{spec['min']}, {spec['max']}]")
 
 
+def check_knobs(comp, renderer):
+    """Each composition knob a request gives must be registered (composition_knobs) and, when the knob names its renderers, one of the
+    renderer drawing this request (the scene renderer's style and scene knobs are refused on the other renderers)."""
+    ck = REG["composition_knobs"]
+    for k in comp:
+        if k not in ck: refuse(f"unknown composition knob {k}; known: {list(ck)}")
+        if renderer not in ck[k].get("renderers", [renderer]): refuse(f"composition knob {k}: only the {'|'.join(ck[k]['renderers'])} renderer has it, this request is drawn by {renderer}")
+
+
 def validate(inp):
     known = set(t for p in REG["parts"] for t in p["tags"])
     tags = inp.get("tags")
@@ -44,8 +56,7 @@ def validate(inp):
     if bad: refuse(f"unknown tags {bad}; known: {sorted(known)}")
     ck = REG["composition_knobs"]; comp = dict(inp.get("composition", {}))
     if "hero" in inp: comp["hero"] = inp["hero"]
-    for k in comp:
-        if k not in ck: refuse(f"unknown composition knob {k}; known: {list(ck)}")
+    check_knobs(comp, "3d")
     c = {k: spec.get("default") for k, spec in ck.items()}; c.update(comp)
     if c["hero"] not in ck["hero"]["values"]: refuse(f"hero must be one of {ck['hero']['values']}")
     hero = REG["heroes"][c["hero"]]
@@ -375,21 +386,28 @@ def pick_units(topic, family, sub, kind):
     return [ob["measure"][key]]
 
 
+def kind_of(inp):
+    """The layout a subject asks for: its own kind, else the lead angle's (topics.angle_kinds); a finding about groups draws the groups.
+    None for a subject that is no object (compose_subject refuses it)."""
+    sub = inp.get("subject")
+    if not isinstance(sub, dict): return None
+    kind = sub.get("kind") or TOPICS["angle_kinds"].get(inp.get("lead"))
+    return "groups" if "groups" in sub and kind in ("tally", "pair") else kind
+
+
 def compose_subject(inp, renderer="3d"):
     """(scene, ground, accent, composition knobs) of a request with a subject: the topic (family), the layout (the lead angle's kind),
     the units placed from the finding's rows. Same signature of a composition (scene id, objects, lit, layout) for the same input."""
     sub = inp["subject"]
     if not isinstance(sub, dict): refuse("subject: an object required")
     topic = topic_of(inp.get("family")); sc = TOPICS["scenes"][topic]
-    lead = inp.get("lead"); kind = sub.get("kind") or TOPICS["angle_kinds"].get(lead)
-    if "groups" in sub and kind in ("tally", "pair"): kind = "groups"      # a finding about groups draws the groups
+    lead = inp.get("lead"); kind = kind_of(inp)
     if kind not in LAYOUTS: refuse(f"subject: the layout {kind!r} (lead {lead!r}) is none of {'|'.join(LAYOUTS)}")
     units = pick_units(topic, inp.get("family"), sub, kind)
     items, comp = LAYOUTS[kind](units, sub, topic, renderer); comp["units"] = sorted({i["fn"] for i in items if i.get("fn", "") in units})
     items += [{"part": f["fn"], "kind": "at_ground", "fn": f["fn"], "at": list(f["at"]), "dz": -0.3, "args": dict(f.get("args", {}))} for f in sc["filler"]]
     ck = REG["composition_knobs"]; comp_in = dict(inp.get("composition", {}))
-    for k in comp_in:
-        if k not in ck: refuse(f"unknown composition knob {k}; known: {list(ck)}")
+    check_knobs(comp_in, renderer)
     c = {k: s.get("default") for k, s in ck.items()}; c.update(comp_in); c["relief"] = comp_in.get("relief", sc["relief"]); check_range("relief", c["relief"], ck["relief"])
     if c["reading_order"] not in ck["reading_order"]["values"]: refuse("reading_order must be left_to_right or right_to_left")
     g = inp.get("ground", c["ground"])
@@ -461,10 +479,15 @@ def build(inp, work):
 
 
 def renderer_of(inp):
-    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line or 3d); a request without a subject
-    (the tags-and-hero scene) is the 3D path's own."""
-    if inp.get("subject") is None: return "3d"
-    return TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"]
+    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people or scene); a request without a subject
+    (the tags-and-hero scene) is the 3D path's own. A topic whose renderer is scene draws the layouts topics.scene_renderer.kinds lists with it and
+    the others with its renderer_else; a proportion subject is the scene renderer's whatever the topic (no other renderer draws one)."""
+    sub = inp.get("subject")
+    if sub is None: return "3d"
+    if isinstance(sub, dict) and "proportion" in sub: return "scene"
+    sc = TOPICS["scenes"][topic_of(inp.get("family"))]
+    if sc["renderer"] == "scene" and kind_of(inp) not in TOPICS["scene_renderer"]["kinds"]: return sc["renderer_else"]
+    return sc["renderer"]
 
 
 def page_colours(names):
@@ -517,17 +540,115 @@ def build_people(inp):
     return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
+# ---------------------------------------------------------------- the scene renderer (topics.scene_renderer: runtime/illus_hero/scene/scene.mjs)
+SR = TOPICS["scene_renderer"]
+
+
+def proportion_flags(sub):
+    """The lit flags of a proportion subject ({"proportion": {"share", "figures"}, "declared": {"count", "total"}}): N figures, the first K lit,
+    K = N x share rounded half to even (GB/T 8170, as layer 1's fixed_exact) on the share's decimal value as written (Decimal(repr(share)); Python's
+    round() is half-even too, but on the binary product, where 0.1-style drift can move a tie). Refused when K is not declared.count or N not declared.total:
+    the page prints the share, the picture shows K of N, and the two must agree. A share outside 0..1 or N outside topics.scene_renderer.figures is refused."""
+    p = sub.get("proportion")
+    if not isinstance(p, dict): refuse("subject.proportion: an object {share, figures} required")
+    share = number(p.get("share"), "subject.proportion.share")
+    if not 0.0 <= share <= 1.0: refuse(f"subject.proportion.share: {share!r} is not on 0..1")
+    n = p.get("figures"); lo, hi = SR["figures"]
+    if isinstance(n, bool) or not isinstance(n, int) or not lo <= n <= hi: refuse(f"subject.proportion.figures: {n!r} is not a whole number on {lo}..{hi}")
+    k = int((Decimal(repr(share)) * n).to_integral_value(rounding=ROUND_HALF_EVEN))
+    dec = sub.get("declared")
+    if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.declared: a proportion needs its declared count and total")
+    if dec["count"] != k: refuse(f"subject.declared.count {dec['count']!r} is not the {k} of {n} figures the share {share!r} gives (half to even)")
+    if dec["total"] != n: refuse(f"subject.declared.total {dec['total']!r} is not the {n} figures asked")
+    return [i < k for i in range(n)]
+
+
+def node_path():
+    """The node program the scene child runs: `node` on PATH, as next_leaf Runner::node starts its children (the caller passes PATH through)."""
+    p = shutil.which("node")
+    if not p: raise Unavailable("node is not installed (looked on PATH)")
+    return p
+
+
+def ask_child(cmd, request, deadline):
+    """One JSON line to a child and its one reply line back within `deadline` (the environment PATH, HOME and LANG only, as the caller's own
+    children get); (reply, seconds). A child that does not start, fails, is too slow or gives no JSON object is `unavailable`."""
+    t = time.time(); name = os.path.basename(cmd[-1])
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG") if k in os.environ}
+    try: p = subprocess.run(cmd, input=json.dumps(request) + "\n", capture_output=True, text=True, timeout=deadline, env=env)
+    except subprocess.TimeoutExpired: raise Unavailable(f"{name} took longer than {deadline:.0f} s")
+    except OSError as e: raise Unavailable(f"{name} did not start: {e}")
+    if p.returncode: raise Unavailable(f"{name} failed: {(p.stdout + p.stderr)[-300:]}")
+    line = next((l for l in p.stdout.splitlines() if l.strip()), None)
+    try: reply = json.loads(line) if line is not None else None
+    except json.JSONDecodeError: reply = None
+    if not isinstance(reply, dict): raise Unavailable(f"{name} gave no reply line")
+    return reply, round(time.time() - t, 2)
+
+
+def build_scene(inp):
+    """The same reply the other paths give, drawn by the scene node (topics.scene_renderer). The lit flags are this child's: a rule subject's
+    members in order_members order (the lit first), lit by lit_codes (the tally's own recount; compose_subject checks the request as for any
+    renderer), or a proportion subject's first K of N (proportion_flags). The node draws the flags it is given; its reply's lit and total must
+    be the recomputed ones, or the request is refused. Colours: hex only (the page's check): the page's ink and paper tokens, the request's accent."""
+    t0 = time.time(); width = inp.get("width")
+    if isinstance(width, float) and width.is_integer(): width = int(width)
+    if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
+    sub = inp.get("subject"); topic = topic_of(inp.get("family")); ck = REG["composition_knobs"]
+    if not isinstance(sub, dict): refuse("subject: an object required")
+    if "proportion" in sub:
+        flags = proportion_flags(sub); kind = "proportion"
+        comp_in = dict(inp.get("composition", {})); check_knobs(comp_in, "scene")
+        c = {k: s.get("default") for k, s in ck.items()}; c.update(comp_in)
+        if c["reading_order"] not in ck["reading_order"]["values"]: refuse("reading_order must be left_to_right or right_to_left")
+        acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
+        if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    else:
+        kind = kind_of(inp)
+        if kind not in SR["kinds"]: raise Unavailable(f"scene: the {kind!r} layout is not drawn by the scene renderer")      # the page's strip stands in
+        _, _, acc, c = compose_subject(inp, renderer="scene")
+        ms = members_of(sub); lit = lit_codes(sub)
+        flags = [m["code"] in lit for m in order_members(ms, lit)]
+    style = c["style"] if c["style"] is not None else TOPICS["scenes"][topic]["style"]
+    if style not in ck["style"]["values"]: refuse(f"style {style!r} is none of {'|'.join(ck['style']['values'])}")
+    if c["scene"] not in ck["scene"]["values"]: refuse(f"scene {c['scene']!r} is none of {'|'.join(ck['scene']['values'])}")
+    if isinstance(c["seed"], bool) or not isinstance(c["seed"], int): refuse(f"seed: {c['seed']!r} is not a whole number")
+    if c["reading_order"] == "right_to_left": flags = flags[::-1]
+    cols = page_colours(["--t-title", "--bg"])
+    request = {"scene": c["scene"], "style": style, "seed": c["seed"], "figures": [{"lit": f} for f in flags], "box": dict(SR["box"]),
+               "palette": {"ink": cols["--t-title"], "paper": cols["--bg"], "accent": acc.lower()}}
+    reply, secs = ask_child([node_path(), os.path.join(HERE, SR["script"])], request, SR["deadline"])
+    if "refused" in reply: refuse(f"scene: {reply['refused']}")
+    k, n = sum(flags), len(flags)
+    if reply.get("lit") != k or isinstance(reply.get("lit"), bool) or reply.get("total") != n or isinstance(reply.get("total"), bool):
+        refuse(f"scene: the node drew {reply.get('lit')!r} lit of {reply.get('total')!r}, asked {k} of {n}")
+    svg, rw, rh, dropped = reply.get("svg"), reply.get("w"), reply.get("h"), reply.get("dropped", [])
+    if not isinstance(svg, str) or not isinstance(dropped, list): refuse("scene: the reply has no svg or no dropped list")
+    rw, rh = number(rw, "scene reply w"), number(rh, "scene reply h")
+    if rw <= 0 or rh <= 0: refuse(f"scene: drawn {rw}x{rh}")
+    body = svg.strip()
+    if body.startswith("<svg"): body = body[body.index(">") + 1:body.rindex("</svg>")]      # the hero is the inside of the page's own svg
+    sk = width / rw; h = round(rh * sk, 2)
+    name = f"{topic}.{kind}"
+    comp = dict(scene=name, renderer="scene", style=style, scene_layout=c["scene"], layout=f"{c['scene']}-{k}of{n}", objects=n, lit=k, omitted=0,
+                dropped=[str(d) for d in dropped])
+    return f'<g transform="scale({sk:.5f})">{body}</g>', float(width), h, {"scene": secs, "total": round(time.time() - t0, 2)}, name, comp
+
+
 def serve():
     line = sys.stdin.readline()
     try:
         inp = json.loads(line)
         if not isinstance(inp, dict): raise Refused("the request is not an object")
-        if renderer_of(inp) == "line": svg, w, h, secs, name, comp = build_line(inp)
-        elif renderer_of(inp) == "people": svg, w, h, secs, name, comp = build_people(inp)
+        drawer = renderer_of(inp)
+        if drawer == "line": svg, w, h, secs, name, comp = build_line(inp)
+        elif drawer == "people": svg, w, h, secs, name, comp = build_people(inp)
+        elif drawer == "scene": svg, w, h, secs, name, comp = build_scene(inp)
         else:
             with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
                 svg, w, h, secs, name, comp = build(inp, work)
-        reply = {"svg": svg, "w": w, "h": h, "dropped": [], "scene": name, "seconds": secs, **({"composition": comp, "omitted": comp.get("omitted", 0), "omitted_label_key": TOPICS["omitted"]["label_key"]} if comp else {})}
+        dropped = comp.pop("dropped", []) if comp else []
+        reply = {"svg": svg, "w": w, "h": h, "dropped": dropped, "scene": name, "seconds": secs, **({"composition": comp, "omitted": comp.get("omitted", 0), "omitted_label_key": TOPICS["omitted"]["label_key"]} if comp else {})}
     except Refused as e: reply = {"refused": [str(e)]}
     except Unavailable as e: reply = {"unavailable": str(e)}
     except json.JSONDecodeError as e: reply = {"refused": [f"the request is not JSON: {e}"]}

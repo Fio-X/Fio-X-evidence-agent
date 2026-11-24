@@ -2863,6 +2863,29 @@ mod tests {
         );
     }
 
+    /// The scene renderer's real reply (runtime/illus_hero/run_hero.py build_scene over runtime/illus_hero/scene/scene.mjs, node on
+    /// PATH) passes the hero gate as it is: a people-topic tally (2 of 5 members above the line) and a proportion (8 figures at a
+    /// share of 0.284: 2 lit), each in the three styles.
+    #[test]
+    fn a_scene_hero_passes_the_hero_gate() {
+        let child = Runner::python(Path::new("runtime/illus_hero/run_hero.py"));
+        let members: Vec<Value> = (1..=5)
+            .map(|i| json!({"code": format!("M{i}"), "value": f64::from(i)}))
+            .collect();
+        for style in ["ink", "iso", "geo"] {
+            for subject in [
+                json!({"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}),
+                json!({"proportion": {"share": 0.284, "figures": 8}, "declared": {"count": 2, "total": 8}}),
+            ] {
+                let ask = json!({"family": "unemployment", "lead": "members", "width": 1140.0, "accent": "#b8433a",
+                                 "subject": subject, "composition": {"style": style}});
+                let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {subject}: {e:?}"));
+                assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{style}");
+                assert_eq!(got.w, 1140.0);
+            }
+        }
+    }
+
     const LAID: &str =
         "<!doctype html><p>德国 <b data-src=\"fact:a.n\">44</b>%</p><svg><g></g></svg>\
         <div class=\"h\" title=\"t 1\">年<script>layout()</script>月</div><script>READY</script>";

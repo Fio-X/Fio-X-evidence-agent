@@ -3,7 +3,7 @@
 count the rows give; every unit is one figure; `omitted` is the members the request had minus the units drawn; the figures fill at least the registered
 share of the picture height; the reply is only <g> and <path> with hex colours, translate/scale transforms and path data of M L C Z (the grammar
 next_leaf.rs hero_faults accepts, mirrored here); the baked registry holds no arcs, no fill-rule and no text, and carries the figure credit; the
-groups layout is `unavailable`; and no topic takes this renderer by default.
+groups layout is `unavailable`; and only the people topic takes this renderer (for the layouts the scene renderer does not draw).
 Run: python3 -I -B scripts/test_illus_people.py"""
 import json
 import os
@@ -106,7 +106,7 @@ class PeopleHero(unittest.TestCase):
     def test_groups_layout_is_unavailable_and_only_the_people_topic_defaults_to_people(self):
         r = req("st4"); sp = dict(SPECS["st5"]); r = {"family": sp["family"], "lead": sp["lead"], "width": 1140, "ground": "warm", "subject": sp["subject"]}
         with self.assertRaises(R.Unavailable): R.build_people(r)
-        self.assertEqual([t for t, s in R.TOPICS["scenes"].items() if s["renderer"] == "people"], ["people"])
+        self.assertEqual([t for t, s in R.TOPICS["scenes"].items() if "people" in (s["renderer"], s.get("renderer_else"))], ["people"])   # the people topic: scene for a tally, people for the rest
 
     def test_the_reply_has_the_line_paths_shape(self):
         svg, w, h, secs, name, comp = R.build_people(req("st1"))

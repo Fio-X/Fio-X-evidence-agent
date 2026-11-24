@@ -810,6 +810,32 @@
   },
   "seed": {
    "default": 21
+  },
+  "style": {
+   "values": [
+    "ink",
+    "iso",
+    "geo"
+   ],
+   "default": null,
+   "renderers": [
+    "scene"
+   ],
+   "note": "the scene renderer's look (topics.scene_renderer): ink = hand-drawn ink lines, iso = isometric, geo = flat geometric; the default (null) is the topic's topics.scenes.<topic>.style. Only the scene renderer has it: a request giving it to another renderer is refused"
+  },
+  "scene": {
+   "values": [
+    "queue"
+   ],
+   "default": "queue",
+   "later": [
+    "grid",
+    "door"
+   ],
+   "renderers": [
+    "scene"
+   ],
+   "note": "the scene the scene renderer stages the figures in (queue: one line of people, in order); grid and door are planned and refused until listed in values. Only the scene renderer has it"
   }
  },
  "input": {
@@ -2476,7 +2502,23 @@
    "series": "happened",
    "groups": "lagging"
   },
-  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people; the people topic does (11-24), the others stay line or 3d.",
+  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people. scene = the scene renderer (scene_renderer below): the people topic takes it (11-24) for the layouts it draws (scene_renderer.kinds) and keeps people (its renderer_else) for the others; the other topics stay line or 3d. scenes.<topic>.style is the look a topic gets from the scene renderer (people, migration, neutral: ink; energy, emissions: iso; trade: geo), recorded for when a topic switches to it.",
+  "scene_renderer": {
+   "doc": "scene = runtime/illus_hero/scene/scene.mjs (node; one JSON line in: {scene, style, seed, figures: [{lit}], box: {w, h}, palette: {ink, paper, accent} as hex}, one line out: {svg, w, h, lit, total, dropped} | {refused}). run_hero.py starts it (build_scene) with the node on PATH, as next_leaf Runner::node does, and the deadline below; it decides who is lit, never the node: the node draws the flags it is given and reports its own count, which must be the recomputed one. Two subject forms: a rule (members, rule, declared: the tally's own recount, one figure per member, the lit first) and a proportion ({proportion: {share, figures}, declared: {count, total}}: count = figures x share rounded half to even on the decimal value as written, refused when it is not the declared count). The palette is the page's ink (--t-title) and paper (--bg) and the request's accent (the topic's when none is given). `kinds`: the layouts it draws from a rule; a topic whose renderer is scene draws the other layouts with its renderer_else. A proportion subject is drawn by this renderer whatever the topic (no other renderer draws it).",
+   "script": "scene/scene.mjs",
+   "kinds": [
+    "tally"
+   ],
+   "figures": [
+    1,
+    60
+   ],
+   "box": {
+    "w": 1440,
+    "h": 560
+   },
+   "deadline": 20.0
+  },
   "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
   "layout": {
    "x": [
@@ -2566,6 +2608,7 @@
    "energy": {
     "unit": "turbine_unit",
     "renderer": "line",
+    "style": "iso",
     "accent": "#1a9a6c",
     "relief": 0.4,
     "filler": [],
@@ -2615,6 +2658,7 @@
    "emissions": {
     "unit": "stack_unit",
     "renderer": "3d",
+    "style": "iso",
     "accent": "#c4572a",
     "relief": 0.4,
     "filler": [
@@ -2682,7 +2726,9 @@
    },
    "people": {
     "unit": "figure_unit",
-    "renderer": "people",
+    "renderer": "scene",
+    "renderer_else": "people",
+    "style": "ink",
     "accent": "#b8433a",
     "relief": 0.3,
     "filler": [],
@@ -2698,6 +2744,7 @@
    "trade": {
     "unit": "container_unit",
     "renderer": "3d",
+    "style": "geo",
     "accent": "#2b7fa6",
     "relief": 0.3,
     "filler": [
@@ -2736,6 +2783,7 @@
    "migration": {
     "unit": "waypoint_unit",
     "renderer": "3d",
+    "style": "ink",
     "accent": "#8e3f7a",
     "relief": 0.4,
     "filler": [
@@ -2873,6 +2921,7 @@
    "neutral": {
     "unit": "cairn_unit",
     "renderer": "3d",
+    "style": "ink",
     "accent": "#3c6e91",
     "relief": 0.4,
     "filler": []
