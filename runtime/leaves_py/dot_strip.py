@@ -23,6 +23,8 @@ hero.data (the data shape this leaf eats; run.py leaf): {
             "at": series src?,                      # a whole's cell (required for kind whole)
             "label": segs?}]?,                      # the words over the rule (target and whole; a mean takes none: dot.mean)
   "lead": [code, ...]?,                             # the rows named on leaders (knob lead_set given)
+  "accent_only": [code, ...]?,                      # of the lead rows, the ones in the accent; the others keep their leader
+                                                    # and label, the dot grey and the value in ink (wbkit.accent_only)
   "ticks": [ledger src, ...]?, "scale": number?,    # an axis under the strip: each tick's text a number, printed = raw * scale
   "omit": segs?, "footnote": segs?}                 # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
@@ -174,6 +176,7 @@ class Frame:
             lead = list(dict.fromkeys(lead))
         if len(lead) > LEAD_MAX: raise Refused(f"dot_strip: {len(lead)} leads; at most {LEAD_MAX}")
         f.lead = set(lead)
+        f.hot = K.accent_only("dot_strip", d, lead)
         # the value scale: from 0 when the lowest is at most half the highest, else over the values' own range
         vals = [r["a"] for r in f.rows] + [r["b"] for r in f.rows if f.two] + [rf["v"] for rf in f.refs] + [t[0] for t in f.ticks]
         lo, hi = min(vals), max(vals)
@@ -245,7 +248,7 @@ def _plan(f):
         nm_svg, nm = row["name"]
         ps = [(nm_svg, nm, 700, "var(--t-title)"), (" ", " ", 400, "var(--t-body)")]
         if f.two: ps += [(row["bt"][0], row["bt"][1], 400, "var(--t-sec)"), (" → ", " → ", 400, "var(--t-sec)")]
-        return ps + [(row["at"][0], row["at"][1], 700, "var(--accent)")]
+        return ps + [(row["at"][0], row["at"][1], 700, "var(--accent)" if row["code"] in f.hot else "var(--t-title)")]
 
     leads = sorted((rw for rw in f.rows if rw["code"] in f.lead), key=lambda rw: (-rw["a"], rw["code"]))
     if f.groups:
@@ -325,7 +328,7 @@ def cl_dot_strip(f, occ):
     rows = sorted(f.rows, key=lambda rw: (rw["code"] in f.lead, rw["code"]))
     if f.two:
         for rw in rows:
-            hot = rw["code"] in f.lead
+            hot = rw["code"] in f.hot
             xb, xa = f.x(rw["b"]), f.x(rw["a"])
             if ghost:
                 o.append(f'<line x1="{xb:.1f}" y1="{Y(ys[0]) + r:.1f}" x2="{xa:.1f}" y2="{Y(ys[1]) - r:.1f}" stroke="{"var(--accent)" if hot else "var(--t-sec)"}" '
@@ -336,7 +339,7 @@ def cl_dot_strip(f, occ):
                 o.append(f'<circle cx="{xb:.1f}" cy="{Y(ys[0]):.1f}" r="{r}" fill="var(--t-sec)" fill-opacity="0.35" data-code="{esc(rw["code"])}" data-period="earlier"/>')
     gy = {g["id"]: ys[i] for i, g in enumerate(f.groups)} if f.groups else {}
     for rw in rows:
-        hot = rw["code"] in f.lead
+        hot = rw["code"] in f.hot
         y = gy.get(rw["group"], ys[-1])
         fill = 'fill="var(--accent)"' if hot else 'fill="var(--t-sec)" fill-opacity="0.5"'
         o.append(f'<circle cx="{f.x(rw["a"]):.1f}" cy="{Y(y):.1f}" r="{r}" {fill} stroke="var(--bg)" stroke-width="0.8" data-code="{esc(rw["code"])}"/>')

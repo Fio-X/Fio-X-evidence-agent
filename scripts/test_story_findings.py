@@ -25,6 +25,7 @@ import bake  # noqa: E402
 import findings as FN  # noqa: E402
 import geo  # noqa: E402
 import run  # noqa: E402
+import story  # noqa: E402
 import wbkit as K  # noqa: E402
 
 SHAPES = os.path.join(HERE, "..", "runtime", "pi", "assets", "naturalearth-admin0-50m.geojson")
@@ -1864,6 +1865,155 @@ class PageBlocks(unittest.TestCase):
             req, _ = mk(ASKED["pace"])
             c = next(x for x in FN.candidates(req)[1] if x["id"] == "below")
             self.assertIsNone(c["why"]["asked"])
+
+
+def accent_codes(svg):
+    """The members a drawn svg marks in the accent: a shape filled or stroked with it (its data-code or data-join; a key's glyph is
+    no member), and a text in it whose run is a name row."""
+    codes = set()
+    for tag in re.findall(r"<(?:rect|circle|line|path|polyline|polygon|g)\b[^>]*>", svg):
+        m = re.search(r'data-(?:code|join)="([^"]+)"', tag)
+        if m and not m[1].startswith("key-") and re.search(r'\b(?:fill|stroke)="var\(--accent\)"', tag): codes.add(m[1])
+    for t in re.findall(r'<text\b[^>]*fill="var\(--accent\)"[^>]*>(.*?)</text>', svg, re.S):
+        codes.update(re.findall(r'data-src="name:[^"]*:([^":]+)"', t))
+    return codes
+
+
+def colourless(svg):
+    """A drawn svg with its colours, strokes' widths and opacities and the texts' weights taken out: what the accent does not touch."""
+    return re.sub(r'\s(?:fill|stroke|stroke-width|stroke-opacity|fill-opacity|font-weight)="[^"]*"', "", svg)
+
+
+class AccentIsWhatTheHeadlineNames(unittest.TestCase):
+    """The page's legend says red is what a section's headline names: on a titled section a leaf that marks members (story.ACCENT_ONLY)
+    draws in the accent only those its title names ({name.<code>}); the others it marked keep their labels, numbers, places and
+    order in its plain look, and a section whose marks the headline names already is drawn as it was, byte for byte."""
+
+    def draw(self, req, names, picks, sid):
+        """(section, its leaf's svg as the composed data draws it, as the story page draws it, the codes the title names)."""
+        composed = FN.compose({**req, "picks": picks})
+        rows, _ = ledger(req, composed, names)
+        K.setup(rows, names, run.tables)
+        sec = next(s for s in composed["sections"] if s["id"] == sid)
+        layer = sec["layer"]
+        style = {layer: dict(composed.get("style", {}).get(layer, {}))}
+        given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+        mod = __import__(layer)
+        out = []
+        for data in (composed["leaves"][layer], given[layer]):
+            svg = mod.draw({"data": data, "style": style})
+            out.append(svg[0] if isinstance(svg, tuple) else svg)
+        self.assertEqual(composed["leaves"][layer].get("accent_only"), None)   # the composed data is not changed
+        return sec, out[0], out[1], set(story.headline_names(sec["title"]))
+
+    def narrowed(self, req, names, picks, sid, before, after):
+        sec, old, new, named = self.draw(req, names, picks, sid)
+        self.assertEqual(accent_codes(old), before, sid)                      # the shape: members the headline does not name in the accent
+        self.assertEqual(accent_codes(new), after, sid)
+        self.assertLessEqual(accent_codes(new), named, sid)
+        self.assertEqual(accent_codes(new), accent_codes(old) & named, sid)   # the named ones keep it
+        self.assertEqual(story.printed(new), story.printed(old), sid)         # the same numbers, names and periods, in the same order
+        self.assertEqual(colourless(new), colourless(old), sid)               # nothing but the colours moves
+        return old, new
+
+    def test_the_movers_keep_the_accent_on_the_member_the_title_names(self):
+        req, names = eu27_request()
+        self.narrowed(req, names, ["movers", "overtake", "tiles"], "movers", {"DK", "RO"}, {"DK"})
+        req, names = wb12_request()
+        self.narrowed(req, names, ["movers", "overtake", "tiles"], "movers", {"USA", "CHN"}, {"USA"})
+
+    def test_the_grid_keeps_the_accent_on_the_lit_members_the_title_names(self):
+        req, names = wb12_request()
+        _, new = self.narrowed(req, names, ["overtake", "below"], "below", {"BRA", "FRA", "GBR", "IDN", "IND", "ZAF"}, {"BRA", "FRA", "GBR", "IDN", "IND"})
+        self.assertIn('data-code="ZAF" data-lit="1"', new)   # still lit, in ink
+
+    def test_the_overtake_drops_the_accent_from_a_faller_the_title_does_not_name(self):
+        """The title names the riser and the one it passed; the accent was on the riser and the one that fell most (another member)."""
+        req, names = eu27_request()
+        sec, *_ = self.draw(req, names, ["movers", "overtake", "tiles"], "overtake")
+        self.assertEqual(set(story.headline_names(sec["title"])), {"DK", "LV"})
+        old, new = self.narrowed(req, names, ["movers", "overtake", "tiles"], "overtake", {"DK", "PL"}, {"DK"})
+        self.assertIn(">波兰<", old); self.assertIn(">波兰<", new)          # the faller is still named by its rows
+
+    def test_the_strip_leads_the_title_does_not_name_lose_the_accent_and_keep_their_labels(self):
+        req, names = wb24_request()
+        _, new = self.narrowed(req, names, ["overtake", "ends"], "overtake_dot_strip", {"CHN", "CHE", "NLD"}, set())
+        for c in ("CHN", "CHE", "NLD"): self.assertIn(f'data-leader="lead {c}"', new)
+
+    def marks_of(self, svg, code, name):
+        """Every element of a drawn svg that is the member's: its shapes and joins (data-code, data-join), its leaders (data-leader),
+        and each <text> that prints its name."""
+        own = re.findall(rf'<(?:rect|circle|line|path|polyline|polygon|g)\b[^>]*data-(?:code|join|leader)="(?:lead )?{code}"[^>]*>', svg)
+        texts = [t for t in re.findall(r"<text\b[^>]*>.*?</text>", svg, re.S) if f">{name}<" in t]
+        return own, texts
+
+    def test_a_member_out_of_the_accent_keeps_its_label_leader_and_mark_in_the_plain_colour(self):
+        """The leaves that keep their marked list (story.ACCENT_ONLY), where a narrowed list would drop a label, a leader or a lit
+        glyph: the member taken out of the accent has the same shapes, leader and name texts before and after, only their colours,
+        widths, opacities and weights differ, and none is in the accent after."""
+        for mk, picks, sid, code, kinds in ((wb24_request, ["overtake", "ends"], "overtake_dot_strip", "CHE", ("circle", "line", "text")),
+                                            (eu27_request, ["movers", "overtake", "tiles"], "overtake", "PL", ("line", "circle", "text")),
+                                            (wb12_request, ["overtake", "below"], "below", "ZAF", ("rect", "text"))):
+            req, names = mk()
+            sec, old, new, named = self.draw(req, names, picks, sid)
+            self.assertIn(sec["layer"], story.ACCENT_ONLY)
+            self.assertNotIn(code, named)
+            o_own, o_txt = self.marks_of(old, code, names[code])
+            n_own, n_txt = self.marks_of(new, code, names[code])
+            for k in kinds: self.assertTrue(any(x.startswith(f"<{k}") for x in o_own + o_txt), (sid, k))
+            if sec["layer"] == "dot_strip": self.assertTrue(any("data-leader" in x for x in n_own), sid)   # its leader is still drawn
+            self.assertEqual([colourless(x) for x in n_own], [colourless(x) for x in o_own], sid)
+            self.assertEqual([colourless(x) for x in n_txt], [colourless(x) for x in o_txt], sid)
+            self.assertTrue(any("var(--accent)" in x for x in o_own + o_txt), sid)
+            self.assertFalse(any("var(--accent)" in x for x in n_own + n_txt), sid)
+
+    def test_a_section_whose_marks_the_title_names_is_drawn_as_it_was(self):
+        for mk, picks, sid in ((eu_request, ["movers", "overtake"], "overtake"), (wb24_request, ["groups", "rank"], "groups_dot_strip"),
+                               (wb12_request, ["overtake", "members"], "members")):
+            req, names = mk()
+            sec, old, new, named = self.draw(req, names, picks, sid)
+            self.assertTrue(accent_codes(old) and accent_codes(old) <= named, (sid, accent_codes(old), named))
+            self.assertEqual(new, old, sid)
+
+    def test_no_section_of_any_two_picks_draws_in_the_accent_a_member_its_title_does_not_name(self):
+        """Every ordered pair of candidates on four shapes, each titled section that marks members: its accent is within its title's names."""
+        n = 0
+        for mk in (eu_request, wb_request, eu27_request, wb24_request):
+            req, names = mk()
+            ids = [c["id"] for c in FN.candidates(req)[1]]
+            for a in ids:
+                for b in ids:
+                    if a == b: continue
+                    try: composed = FN.compose({**req, "picks": [a, b]})
+                    except FN.Refused: continue
+                    rows, _ = ledger(req, composed, names)
+                    K.setup(rows, names, run.tables)
+                    given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+                    for s in composed["sections"]:
+                        if s["layer"] not in story.ACCENT_ONLY + story.ACCENT_DATA or not s.get("title"): continue
+                        svg = __import__(s["layer"]).draw({"data": given[s["layer"]], "style": {s["layer"]: dict(composed.get("style", {}).get(s["layer"], {}))}})
+                        svg = svg[0] if isinstance(svg, tuple) else svg
+                        self.assertLessEqual(accent_codes(svg), set(story.headline_names(s["title"])), (mk.__name__, a, b, s["id"]))
+                        n += 1
+        self.assertGreater(n, 50)
+
+    def test_the_page_child_draws_each_section_s_accent_within_its_h2_names(self):
+        """Through the real child (run.py): each titled section's svg on the page marks in the accent only members its h2 names by
+        their name rows; the grid's legend swatch is ink when a lit glyph its headline does not name is drawn in ink."""
+        for mk, picks in ((eu27_request, ["movers", "overtake", "tiles"]), (wb12_request, ["below", "overtake", "members"])):
+            req, names = mk()
+            composed, _, _, page_html = Findings._page(self, req, names, picks)
+            n = 0
+            for sid, body in re.findall(r'<section class="sec" data-id="([a-z0-9_]+)"[^>]*>(.*?)</section>', page_html, re.S):
+                h2 = re.search(r"<h2\b[^>]*>(.*?)</h2>", body, re.S)
+                svg = re.search(r"<svg\b.*?</svg>", body, re.S)
+                if not h2 or not svg: continue
+                named = set(re.findall(r'data-src="name:[^"]*:([^":]+)"', h2[1]))
+                self.assertLessEqual(accent_codes(svg[0]), named, (mk.__name__, sid))
+                n += 1
+            self.assertGreaterEqual(n, 3, mk.__name__)
+            if "unit_grid" in composed["leaves"]:
+                self.assertIn('<span class="sw ink"></span><span data-word="grid.legend">', page_html)
 
 
 if __name__ == "__main__":

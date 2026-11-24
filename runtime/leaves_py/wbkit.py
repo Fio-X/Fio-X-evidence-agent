@@ -400,6 +400,16 @@ def check_codes(node, v, known):
     return {c for c in v.split(",") if c}
 
 
+def accent_only(node, d, marked):
+    """The codes of `marked` (the members a leaf marks: its accent rows, lead dots or lit glyphs) drawn in the accent colour: all of
+    them, or, when the data gives "accent_only" (a story page: the members its section's headline names, story.accent_only), those
+    of them it lists. The others keep their place, labels and order, in the leaf's look for a mark that is not the accent."""
+    only = d.get("accent_only")
+    if only is None: return set(marked)
+    if not isinstance(only, list) or not all(isinstance(c, str) for c in only): raise Refused(f"{node}: accent_only is a list of codes")
+    return set(marked) & set(only)
+
+
 # The time axis of the line leaves (line.py, stacked_area.py): periods, the query form of a series, labels spread.
 # A period as a number of years: 2024, 2024-03 / 2024M03 (a month), 2024-Q2 / 2024Q2 (a quarter).
 _YEAR = re.compile(r"(\d{4})")

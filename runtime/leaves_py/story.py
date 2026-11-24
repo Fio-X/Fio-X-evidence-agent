@@ -183,7 +183,8 @@ DOT_NO_TARGET = ("dot.legend_plain",)
 
 def legend_rows(layers, leaves=None):
     """The accent line, then each picture kind's line once (the map and the tile map share one); the small multiples' word is the
-    one its leaf data names when it is one of LEGEND_NO_TARGET."""
+    one its leaf data names when it is one of LEGEND_NO_TARGET; the grid's swatch is ink when a lit glyph its headline does not
+    name is drawn in ink (`leaves` with accent_only, as accent_only gives them)."""
     out = [("accent", "story.legend.accent")]
     named = ((leaves or {}).get("small_multiples") or {}).get("legend")
     for n in layers:
@@ -192,8 +193,43 @@ def legend_rows(layers, leaves=None):
         dot = ((leaves or {}).get("dot_strip") or {}).get("legend")
         if n == "dot_strip" and dot in DOT_NO_TARGET: row = ("pale", dot)
         if n == "rank_slope" and not ((leaves or {}).get("rank_slope") or {}).get("ref"): row = None   # no whole drawn, no black line to explain
+        grid = (leaves or {}).get("unit_grid") or {}
+        if n == "unit_grid" and grid.get("accent_only") is not None:
+            mem = [m for m in grid.get("members") or [] if isinstance(m, dict)]
+            lit = {m.get("code") for m in mem if m.get("flag")} if any("flag" in m for m in mem) else {m.get("code") for m in mem}
+            if lit - set(grid["accent_only"]): row = ("ink", row[1])
         if row and row not in out: out.append(row)
     return out
+
+
+# The leaves whose accent falls on members (rows, cells, lead dots, lit glyphs, each printed with its name row): on a titled section
+# the accent keeps only the members its headline names ({name.<code>} in its title wording), so the legend's accent line ("red is
+# what this section's headline names") holds for every section; a headline naming none leaves none in the accent. The others
+# marked keep their labels, numbers and places in the leaf's plain look. ACCENT_DATA: the data's "accent" list is no more than the
+# accent colour (change_dots: a row's colours and its name's weight; small_multiples: a cell's colours), so it is narrowed here.
+# ACCENT_ONLY: the marked list does more (rank_slope's accent keeps a row's label in a dense chart and draws it over the others,
+# dot_strip's lead names the rows on leaders, unit_grid's lit glyphs are the rule's, recomputed and counted), so it stays and the
+# leaf is given "accent_only" (wbkit.accent_only), the colour alone.
+ACCENT_DATA = ("change_dots", "small_multiples")
+ACCENT_ONLY = ("rank_slope", "dot_strip", "unit_grid")
+NAMED = re.compile(r"\{name\.([A-Za-z0-9_]+)\}")
+
+
+def headline_names(title):
+    """The member codes a section's title wording names ({name.<code>}), sorted."""
+    return sorted(set(NAMED.findall(title or "")))
+
+
+def accent_only(spec):
+    """hero.leaves with each titled section's leaf narrowed to the codes its headline names: in ACCENT_DATA its "accent" list, in
+    ACCENT_ONLY given "accent_only" (a copy; the spec is not changed)."""
+    leaves = dict(spec["hero"].get("leaves") or {})
+    for _, _, layer, _, title, _ in sections(spec):
+        d, named = leaves.get(layer), headline_names(title)
+        if title is None or not isinstance(d, dict): continue
+        if layer in ACCENT_DATA and isinstance(d.get("accent"), list): leaves[layer] = {**d, "accent": [c for c in d["accent"] if c in named]}
+        elif layer in ACCENT_ONLY: leaves[layer] = {**d, "accent_only": named}
+    return leaves
 
 
 def legend_html(layers, box=None, leaves=None):
@@ -329,9 +365,12 @@ SECTION_MAX_H = 3 * PAGE_W   # the height told when a leaf refuses before the la
 
 
 class Frame:
-    """What a story page's layers read: the hero (leaves and styles); the page itself has no picture of its own."""
+    """What a story page's layers read: the hero (leaves and styles), each leaf's data with the accent_only its section's headline
+    gives (accent_only; a spec that is no story keeps its leaves, and story_page refuses it); the page itself has no picture of its own."""
     def __init__(f, c, spec):
-        f.c, f.spec, f.h, f.W, f.H = c, spec, spec["hero"], PAGE_W, SECTION_MAX_H
+        try: h = {**spec["hero"], "leaves": accent_only(spec)}
+        except FX.Refused: h = spec["hero"]
+        f.c, f.spec, f.h, f.W, f.H = c, spec, h, PAGE_W, SECTION_MAX_H
 
 
 def sections(spec):
@@ -475,7 +514,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None):
     layer_of = {s[0]: s[2] for s in secs}
     for how, ids in rows:
         for i in ids: body.append(sec(i, "pair" if how == "pair" else how))
-        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], spec["hero"].get("leaves")))
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], accent_only(spec)))
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)

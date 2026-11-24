@@ -27,6 +27,8 @@ hero.data (the data shape this leaf eats; on a story page, the hero's leaves.uni
   "total": ledger src?,                             # the number of members as printed, when the words print it
   "fill_ref": ledger src?,                          # fill mode: the reference a full cell stands for (default the rule's ref)
   "key": {"lit": segs, "unlit": segs?, "fill": segs?},   # the key's words: a lit glyph, a grey one, a full cell (fill mode)
+  "accent_only": [code, ...]?,                      # of the lit members, the ones in the accent; the other lit glyphs, and the
+                                                    # key's lit glyph when any is, in ink (wbkit.accent_only)
   "omit": segs?, "footnote": segs?}                 # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
 needs I4 facts (derived numbers this leaf reads and never computes; placeholder key names): the count of members the rule holds
@@ -141,6 +143,7 @@ class Frame:
         if not isinstance(key, dict) or (f.lit and key.get("lit") is None): raise Refused("unit_grid: the key needs the lit glyph's words (key.lit)")
         for n in ("lit", "unlit", "fill"):
             if key.get(n) is not None: K.segs(key[n], f"key {n}")
+        f.hot = K.accent_only("unit_grid", d, f.lit)   # the lit glyphs in the accent (accent_when flag); the other lit ones in ink
         f.rows = [dict(code=m["code"], v=vals[m["code"]], lit=m["code"] in f.lit, name=K.named(m["code"], kind), i=i) for i, m in enumerate(mem)]
         if k("sort") == "value": f.rows.sort(key=lambda r: (-r["v"], r["code"]))
         elif k("sort") == "flag_first": f.rows.sort(key=lambda r: (not r["lit"], -r["v"], r["code"]))
@@ -187,8 +190,8 @@ def cell(x, y, s, fill, code, lit, share=None, empty="var(--empty)"):
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{s}" height="{s}" rx="{r:.1f}" fill="{empty}"/><g fill="{fill}">{body}</g></g>')
 
 
-def glyph(f, x, y, s, lit, code, share=None):
-    on = "var(--accent)" if f.k("accent_when") == "flag" else "var(--t-title)"
+def glyph(f, x, y, s, lit, code, share=None, hot=True):
+    on = "var(--accent)" if f.k("accent_when") == "flag" and hot else "var(--t-title)"
     if f.k("glyph") == "turbine": return turbine(x, y, s, on if lit else "var(--bar)", code, lit)
     if f.mode == "fill": return cell(x, y, s, on if lit else "var(--t-sec)", code, lit, share)
     return cell(x, y, s, on if lit else "var(--bar)", code, lit)
@@ -211,7 +214,7 @@ def cl_unit_grid(f, occ):
     y += size * 1.2 + ks; kx = 8
     for part, lit, share in (("lit", True, 1.0), ("unlit", False, 1.0), ("fill", True, 0.5)):
         if key.get(part) is None or (part == "fill" and f.mode != "fill"): continue
-        o.append(glyph(f, kx, y - ks * 0.85, ks, lit, f"key-{part}", share if f.mode == "fill" else None).replace('class="glyph', 'class="key glyph'))
+        o.append(glyph(f, kx, y - ks * 0.85, ks, lit, f"key-{part}", share if f.mode == "fill" else None, f.hot == f.lit).replace('class="glyph', 'class="key glyph'))
         t, box, _ = K.words(B, key[part], f"key {part}", kx + ks + 6, y, size, "var(--t-sec)")
         o.append(t); kx = box[2] + 18
     top = y + size * 1.2
@@ -221,7 +224,7 @@ def cl_unit_grid(f, occ):
         col, row = i % f.cols, i // f.cols
         x, gy = 8 + col * f.pitch, top + row * pitch_y
         share = min(max(r["v"] / f.ref, 0.0), 1.0) if f.mode == "fill" else None
-        o.append(glyph(f, x, gy, s, r["lit"], r["code"], share))
+        o.append(glyph(f, x, gy, s, r["lit"], r["code"], share, r["code"] in f.hot))
     # names: every glyph's under it, or the lit ones' (one that would meet the name before it in its row drops to a second line on a leader)
     last, first_line = {}, {}
     for i, r in enumerate(f.rows):
@@ -238,7 +241,7 @@ def cl_unit_grid(f, occ):
         x0 = max(cx - w / 2, 0.0); x0 = min(x0, W - w); line = 0
         if f.names == "lit" and row in last and x0 < last[row] + 6: line = 1
         ny = gy + s + size * 1.1 + line * size * 1.35
-        hot = r["lit"] and f.k("accent_when") == "flag"
+        hot = r["lit"] and f.k("accent_when") == "flag" and r["code"] in f.hot
         if line:
             # the leader falls through the first line of names: it must meet none of them, and it stops clear of its own name's box
             # (a Chinese face's text box rises above the baseline by more than 0.85 of its size, so a leader to the cap line touches it)

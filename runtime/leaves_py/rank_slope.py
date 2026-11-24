@@ -17,6 +17,8 @@ hero.data (the data shape this leaf eats; run.py leaf): {
             "a_rank": ledger src, "b_rank": ledger src}],   # its rank at each period as printed (layer 1's position facts)
   "periods": [ledger src, ledger src],              # period:<table>:<period> entries of the start and the end, for the key
   "accent": [code, ...]?,                           # rows drawn in the accent (at most three)
+  "accent_only": [code, ...]?,                      # of those, the ones that keep the accent colour; the others keep their
+                                                    # label and stand over the plain lines, drawn plain (wbkit.accent_only)
   "ref": code?,                                     # the row of the whole, drawn bold in ink
   "footnote": segs?}                                # layer 1's line under the picture
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
@@ -90,6 +92,7 @@ class Frame:
         if not isinstance(acc, list) or len(acc) > 3 or not all(isinstance(a, str) for a in acc): raise Refused("rank_slope: accent is a list of at most three codes")
         if any(a not in codes for a in acc): raise Refused(f"rank_slope: accent names {[a for a in acc if a not in codes]}, no row")
         f.acc = set(acc)
+        f.hot = K.accent_only("rank_slope", d, acc)
         f.ref = d.get("ref")
         if f.ref is not None and f.ref not in codes: raise Refused(f"rank_slope: ref {f.ref!r} is no row")
         # each column's order: by value (the rank), a tie by code, one row of its own to each place
@@ -120,7 +123,7 @@ def cl_rank_slope(f, occ):
     yo = lambda slot: top + pitch * (slot + 0.5)
     ordered = sorted(f.rows, key=lambda r: (r["code"] in f.acc or r["code"] == f.ref, r["code"]))   # plain lines first, the marked ones over them
     for r in ordered:
-        hot, whole = r["code"] in f.acc, r["code"] == f.ref
+        hot, whole = r["code"] in f.hot, r["code"] == f.ref
         ya, yb = yo(r["sa"]), yo(r["sb"])
         ink = "var(--accent)" if hot else "var(--t-title)" if whole else "var(--t-sec)"
         faint = f.dense and not (hot or whole or r["lab"])   # a middle line of a dense chart: a faint grey stroke
@@ -133,7 +136,7 @@ def cl_rank_slope(f, occ):
         o.append(f'<circle cx="{f.x1:.1f}" cy="{yb:.1f}" r="{r0}" fill="{ink}"{dim} data-code="{esc(r["code"])}"/>')
     for r in f.rows:
         if not r["lab"]: continue
-        hot, whole = r["code"] in f.acc, r["code"] == f.ref
+        hot, whole = r["code"] in f.hot, r["code"] == f.ref
         fill = "var(--accent)" if hot else "var(--t-title)" if whole else "var(--t-body)"
         wt = 700 if hot or whole else 400
         nm_svg, nm = r["name"]
