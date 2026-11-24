@@ -311,8 +311,11 @@ def note(key, word, **bind):
     return {"num": f"fact:{key}", "text": ST(word, **bind)}
 
 
-def ratio(q, f, name, a, b, va, vb):
-    """The short note's comparison: `a` as a multiple of `b` (op times), only where it is a plain ratio (a >= 0, b > 0); True when written."""
+def ratio(q, f, name, a, b, va, vb, flip=False):
+    """The short note's comparison: `a` as a multiple of `b` (op times), only where it is a plain ratio (a >= 0, b > 0); True when written.
+    `flip`: for the smaller of the two (a below b), the other way round, b as a multiple of a ("the whole is 1.8 times the lowest", not
+    "the lowest is 0.6 times the whole"); then the smaller must be above 0."""
+    if flip: a, b, va, vb = b, a, vb, va
     if vb > 0 and va >= 0:
         f[name] = {"op": "times", "a": a, "b": b, "fmt": q.fmts["times"]}
         return True
@@ -813,11 +816,11 @@ def angle_rank(q):
     if q.wseries:   # each end as a multiple of the whole, where the end is on the side its words say
         w0 = q.wseries[y][0]
         hx = at[hi] > w0 and ratio(q, f, "t_hi", key(hi), key(q.whole), at[hi], w0)
-        lx = at[lo] < w0 and ratio(q, f, "t_lo", key(lo), key(q.whole), at[lo], w0)
+        lx = at[lo] < w0 and ratio(q, f, "t_lo", key(lo), key(q.whole), at[lo], w0, flip=True)
         anns = [note(f"g_{hi.lower()}", "story.note.rank.hi" + "_x" * hx, hi=hi, w=q.whole, rw=key(q.whole), tx="t_hi"),
                 note(f"g_{lo.lower()}", "story.note.rank.lo" + "_x" * lx, lo=lo, w=q.whole, rw=key(q.whole), tx="t_lo")]
     else:
-        lx = ratio(q, f, "t_lo", key(lo), key(hi), at[lo], at[hi])
+        lx = ratio(q, f, "t_lo", key(lo), key(hi), at[lo], at[hi], flip=True)
         anns = [note(f"g_{lo.lower()}", "story.note.rank.lo_top" + "_x" * lx, lo=lo, hi=hi, rhi=key(hi), tx="t_lo")]
     return with_part({"angle": "rank", "shows": [q.shows(y, "rank")], "about": [hi, lo], "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": claim, "notes": [], "members": True, "last": key(hi),

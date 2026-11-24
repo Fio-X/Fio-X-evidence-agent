@@ -439,13 +439,18 @@ class Findings(unittest.TestCase):
         rank = next(c for c in cands if c["id"] == "rank")
         f = rank["facts"]
         self.assertEqual((f["t_hi"]["op"], f["t_hi"]["a"], f["t_hi"]["b"]), ("times", f"r_{rank['about'][0].lower()}", "r_eu27_2020"))
-        self.assertEqual(f["t_lo"]["b"], "r_eu27_2020")
+        # the lowest is below the whole: the whole as a multiple of it (a ratio above 1), never the lowest as 0.6 times the whole
+        self.assertEqual((f["t_lo"]["a"], f["t_lo"]["b"]), ("r_eu27_2020", f"r_{rank['about'][1].lower()}"))
+        segs = rank["anns"][1]["text"]
+        i = next(k for k, g in enumerate(segs) if g.get("w", "").endswith("相差，"))
+        self.assertEqual([g.get("name") or g.get("w") or g.get("src") for g in segs[i + 1:]],
+                         ["EU27_2020", "是", rank["about"][1], "的 ", "fact:t_lo", " 倍"])   # the whole is N times the lowest, never the lowest 0.6 times the whole
         self.assertTrue(all("倍" in w for w in self._note_words(rank)), self._note_words(rank))
         req, _ = wb_request()
         _, cands, _ = FN.candidates(req)
         rank = next(c for c in cands if c["id"] == "rank")
         hi, lo = rank["about"]
-        self.assertEqual((rank["facts"]["t_lo"]["a"], rank["facts"]["t_lo"]["b"]), (f"r_{lo.lower()}", f"r_{hi.lower()}"))
+        self.assertEqual((rank["facts"]["t_lo"]["a"], rank["facts"]["t_lo"]["b"]), (f"r_{hi.lower()}", f"r_{lo.lower()}"))
         self.assertNotIn("t_hi", rank["facts"])
         self.assertIn("倍", self._note_words(rank)[0])
 
@@ -456,6 +461,11 @@ class Findings(unittest.TestCase):
         for va, vb in ((6.0, 0.0), (6.0, -1.0), (-1.0, 2.0)):
             g = {}
             self.assertFalse(FN.ratio(q, g, "x", "a", "b", va, vb)); self.assertEqual(g, {})
+        # flip: the smaller one `a` below `b` is written the other way round (b over a), and only where the smaller is above 0
+        g = {}
+        self.assertTrue(FN.ratio(q, g, "x", "a", "b", 2.0, 6.0, flip=True)); self.assertEqual((g["x"]["a"], g["x"]["b"]), ("b", "a"))
+        g = {}
+        self.assertFalse(FN.ratio(q, g, "x", "a", "b", 0.0, 6.0, flip=True)); self.assertEqual(g, {})
 
     # ---------------------------------------------------------------- the header: three big numbers above the thesis
 
