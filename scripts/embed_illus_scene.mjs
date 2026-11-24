@@ -14,7 +14,7 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCENE = 'illus_hero/scene';
 const dirs = [SCENE], files = [];
 const walk = (rel) => {
-  for (const e of readdirSync(join(repo, 'runtime', rel), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of readdirSync(join(repo, 'runtime', rel), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, "en"))) {
     const r = `${rel}/${e.name}`;
     if (e.isDirectory()) { dirs.push(r); walk(r); } else if (e.isFile()) files.push(r);
   }

@@ -390,7 +390,7 @@ for (const [why, req, raw] of [
 }
 
 // the node and its library copy read nothing: no fs, fetch, import.meta, dynamic import, top-level await, process start or env
-function* files(d) { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = join(d, e.name); if (e.isDirectory()) yield* files(p); else yield p; } }
+function* files(d) { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, "en"))) { const p = join(d, e.name); if (e.isDirectory()) yield* files(p); else yield p; } }
 for (const p of files(SCENE_DIR)) {
   if (!p.endsWith('.mjs')) { fail(`${p}: not a code file (the node folder holds only .mjs)`); continue; }
   const t = readFileSync(p, 'utf8');

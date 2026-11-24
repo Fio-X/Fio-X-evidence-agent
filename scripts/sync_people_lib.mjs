@@ -54,7 +54,7 @@ for (const f of readdirSync(join(src, 'skins')).filter((f) => f.endsWith('.js'))
 writeFileSync(join(out, 'lib.mjs'), LIB);
 // the copy must read nothing at run time
 const bad = [];
-const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = join(d, e.name); if (e.isDirectory()) walk(p); else { const t = readFileSync(p, 'utf8'); for (const [re, why] of [[/\bnode:fs\b|\brequire\(|\bfetch\(/, 'fs/fetch'], [/import\.meta/, 'import.meta'], [/^\s*(?:const|let|var)?[^\n]*\bawait\b/m, 'await'], [/\bimport\(/, 'dynamic import']]) if (re.test(t)) bad.push(`${p}: ${why}`); } } };
+const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, "en"))) { const p = join(d, e.name); if (e.isDirectory()) walk(p); else { const t = readFileSync(p, 'utf8'); for (const [re, why] of [[/\bnode:fs\b|\brequire\(|\bfetch\(/, 'fs/fetch'], [/import\.meta/, 'import.meta'], [/^\s*(?:const|let|var)?[^\n]*\bawait\b/m, 'await'], [/\bimport\(/, 'dynamic import']]) if (re.test(t)) bad.push(`${p}: ${why}`); } } };
 walk(out);
 if (bad.length) { console.error('sync_people_lib: the copy still reads files:\n' + bad.join('\n')); process.exit(4); }
 
