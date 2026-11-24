@@ -8,8 +8,9 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
         the tags are not needed; the lit count is recomputed from the rows and refused when it is not the declared one. "lead" is the page's lead finding, one of
         node.json stories.angles; it picks the scene, so a story's opening picture follows its story, not its table (pick_scene).
         Under a scene a named ground (warm, cool) takes the tone of the scene's story arc (stories.arc_grounds: happened, in_time, lagging); given colours stand as given.
-        A subject may instead be a proportion ({"proportion": {"share", "figures"}, "declared": {"count", "total"}}): N figures, K = N x share half to even
-        recomputed here; it is drawn by the scene renderer (topics.scene_renderer, the node child scene/scene.mjs; build_scene), as a people-topic tally is.
+        A subject may also carry a proportion ({..., "proportion": {"share", "figures", "declared": {"count", "total"}}}, beside its own form): N figures,
+        K = N x share half to even recomputed here. On a topic whose renderer is the scene renderer (topics.scene_renderer, the node child scene/scene.mjs;
+        build_scene) the proportion is drawn; on any other topic it is ignored and the subject's own form is drawn as without it.
   out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
         "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
@@ -478,13 +479,35 @@ def build(inp, work):
     return out, float(width), h, secs, scene["scene"], scene.get("composition")
 
 
+def takes_proportion(inp):
+    """Whether the request draws its subject's proportion: the subject carries one and the topic's renderer is the scene renderer (people, trade, tech);
+    on a topic of another renderer the key is ignored and the subject's own form is drawn as without it."""
+    sub = inp.get("subject")
+    return isinstance(sub, dict) and "proportion" in sub and TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"] == "scene"
+
+
+def without_ignored_proportion(inp):
+    """The request as this child draws it: on a topic whose renderer is not the scene renderer a subject's proportion is dropped, and a subject that
+    held only the proportion is no subject (nor its family, which the caller sends only with a subject): the request is the tags-and-hero one it was
+    before the proportion was added. With no hero parts (tags) either there is nothing to draw: `unavailable`, the page's strip stands in, as the caller
+    does itself for a page with neither."""
+    sub = inp.get("subject")
+    if not isinstance(sub, dict) or "proportion" not in sub or takes_proportion(inp): return inp
+    sub = {k: v for k, v in sub.items() if k != "proportion"}
+    if sub: return {**inp, "subject": sub}
+    out = {k: v for k, v in inp.items() if k not in ("subject", "family")}
+    if not out.get("tags"): raise Unavailable("the subject holds only a proportion, which this topic does not draw, and the request names no hero parts")
+    return out
+
+
 def renderer_of(inp):
     """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people or scene); a request without a subject
     (the tags-and-hero scene) is the 3D path's own. A topic whose renderer is scene draws the layouts topics.scene_renderer.kinds lists with it and
-    the others with its renderer_else; a proportion subject is the scene renderer's whatever the topic (no other renderer draws one)."""
+    the others with its renderer_else; on such a topic a subject carrying a proportion is drawn by the scene renderer as that proportion (takes_proportion),
+    on any other topic the proportion is ignored."""
     sub = inp.get("subject")
     if sub is None: return "3d"
-    if isinstance(sub, dict) and "proportion" in sub: return "scene"
+    if takes_proportion(inp): return "scene"
     sc = TOPICS["scenes"][topic_of(inp.get("family"))]
     if sc["renderer"] == "scene" and kind_of(inp) not in TOPICS["scene_renderer"]["kinds"]: return sc["renderer_else"]
     return sc["renderer"]
@@ -545,7 +568,8 @@ SR = TOPICS["scene_renderer"]
 
 
 def proportion_flags(sub):
-    """The lit flags of a proportion subject ({"proportion": {"share", "figures"}, "declared": {"count", "total"}}): N figures, the first K lit,
+    """The lit flags of a subject's proportion ({"proportion": {"share", "figures", "declared": {"count", "total"}}}; the subject's own top-level
+    declared belongs to its own form and is not read here): N figures, the first K lit,
     K = N x share rounded half to even (GB/T 8170, as layer 1's fixed_exact) on the share's decimal value as written (Decimal(repr(share)); Python's
     round() is half-even too, but on the binary product, where 0.1-style drift can move a tie). Refused when K is not declared.count or N not declared.total:
     the page prints the share, the picture shows K of N, and the two must agree. A share outside 0..1 or N outside topics.scene_renderer.figures is refused."""
@@ -556,10 +580,10 @@ def proportion_flags(sub):
     n = p.get("figures"); lo, hi = SR["figures"]
     if isinstance(n, bool) or not isinstance(n, int) or not lo <= n <= hi: refuse(f"subject.proportion.figures: {n!r} is not a whole number on {lo}..{hi}")
     k = int((Decimal(repr(share)) * n).to_integral_value(rounding=ROUND_HALF_EVEN))
-    dec = sub.get("declared")
-    if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.declared: a proportion needs its declared count and total")
-    if dec["count"] != k: refuse(f"subject.declared.count {dec['count']!r} is not the {k} of {n} figures the share {share!r} gives (half to even)")
-    if dec["total"] != n: refuse(f"subject.declared.total {dec['total']!r} is not the {n} figures asked")
+    dec = p.get("declared")
+    if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.proportion.declared: a proportion needs its declared count and total")
+    if dec["count"] != k: refuse(f"subject.proportion.declared.count {dec['count']!r} is not the {k} of {n} figures the share {share!r} gives (half to even)")
+    if dec["total"] != n: refuse(f"subject.proportion.declared.total {dec['total']!r} is not the {n} figures asked")
     return [i < k for i in range(n)]
 
 
@@ -648,7 +672,7 @@ def build_scene(inp):
     sub = inp.get("subject"); topic = topic_of(inp.get("family")); ck = REG["composition_knobs"]
     if not isinstance(sub, dict): refuse("subject: an object required")
     given, omitted = False, 0      # given: the figures stand in the order sent (rank, pair), each lit where it stands, the middle a gap marker
-    if "proportion" in sub:
+    if takes_proportion(inp):
         flags = proportion_flags(sub); kind = "proportion"; acc, c = scene_knobs(inp, topic)
     else:
         kind = kind_of(inp)
@@ -693,6 +717,7 @@ def serve():
     try:
         inp = json.loads(line)
         if not isinstance(inp, dict): raise Refused("the request is not an object")
+        inp = without_ignored_proportion(inp)
         drawer = renderer_of(inp)
         if drawer == "line": svg, w, h, secs, name, comp = build_line(inp)
         elif drawer == "people": svg, w, h, secs, name, comp = build_people(inp)

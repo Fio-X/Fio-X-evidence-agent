@@ -2875,7 +2875,7 @@ mod tests {
         for style in ["ink", "iso", "geo"] {
             for subject in [
                 json!({"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}),
-                json!({"proportion": {"share": 0.284, "figures": 8}, "declared": {"count": 2, "total": 8}}),
+                json!({"proportion": {"share": 0.284, "figures": 8, "declared": {"count": 2, "total": 8}}}),
             ] {
                 let ask = json!({"family": "unemployment", "lead": "members", "width": 1140.0, "accent": "#b8433a",
                                  "subject": subject, "composition": {"style": style}});
@@ -2894,7 +2894,7 @@ mod tests {
         // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion
         for (style, share, figures, count) in [("ink", 0.3, 30, 9), ("geo", 0.284, 8, 2)] {
             let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a", "composition": {"style": style},
-                             "subject": {"proportion": {"share": share, "figures": figures}, "declared": {"count": count, "total": figures}}});
+                             "subject": {"proportion": {"share": share, "figures": figures, "declared": {"count": count, "total": figures}}}});
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {figures}: {e:?}"));
             assert_eq!(
                 hero_faults(&got.svg),

@@ -455,6 +455,40 @@ def illus_series(q, vals, split):
             "declared": {"count": len(lit), "total": len(ys)}}
 
 
+# A rate (a measure whose value prints with the percent sign, layer 1's fmt_defs suffix "%") read off one member may also be drawn as a share
+# of PROPORTION_FIGURES figures (a classroom), K = N x share half to even: run_hero recounts it from Decimal(repr(share)) and refuses another
+# count; a K of 0 or N has nothing to count and gives no proportion. It is a key beside the angle's own subject, never in its place: the
+# child draws it only where the topic's renderer is the scene renderer, and the angle's own subject everywhere else.
+PROPORTION_FIGURES = 30
+
+
+def proportion_count(share, n):
+    """K of n figures for a share, half to even on the share's decimal value as written (run_hero.proportion_flags' own rule)."""
+    from decimal import Decimal, ROUND_HALF_EVEN
+    return int((Decimal(repr(share)) * n).to_integral_value(rounding=ROUND_HALF_EVEN))
+
+
+def illus_proportion(q, c):
+    """{"share", "figures", "declared": {"count", "total"}} (the subject's "proportion") of a finding whose claim (the lead section's title) names one
+    member and prints its value: a value fact of the main table read off that member at a year (no op), on a measure that is a rate.
+    The share is that member's row at that year in the page's units over 100, nothing retyped; the page prints the fact, never K. None
+    otherwise: a measure that is no rate (a money unit, a count), a claim naming no member or more than one, a number that is no value
+    (a position, a change, a multiple), a share off 0..1, or a K of 0 or of every figure."""
+    if (q.defs.get(q.fmts["value"]) or {}).get("suffix", "").strip() != "%": return None
+    named = [v for kind, v in c["claim"]["head"] if kind == "n"]
+    num = c["claim"]["num"]
+    if len(set(named)) != 1 or not num.startswith("fact:"): return None
+    code, f = named[0], c["facts"].get(num[len("fact:"):]) or {}
+    if f.get("op", "value") != "value" or f.get("table") != q.table or (f.get("filter") or {}).get(q.by) != code: return None
+    cell = q.panel.get(code, {}).get(str(f.get("time")))
+    if cell is None or number(cell[0]) is None: return None
+    share = round(illus_value(q, number(cell[0])) / 100, 12)
+    if not 0.0 <= share <= 1.0: return None
+    k = proportion_count(share, PROPORTION_FIGURES)
+    if not 0 < k < PROPORTION_FIGURES: return None
+    return {"share": share, "figures": PROPORTION_FIGURES, "declared": {"count": k, "total": PROPORTION_FIGURES}}
+
+
 # ---------------------------------------------------------------- the angles
 
 def paces(s):
@@ -1732,8 +1766,11 @@ def compose(r):
             num = c["claim"]["num"]
             if not num.startswith("fact:"): raise Refused(f"findings: the lead finding's claim number {num!r} is no fact")
             lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
+            # the lead's own rows, for the opening picture: the angle's own subject, and beside it a rate its claim reads off one member as a share of figures
+            subject, prop = q.illus.get(c["id"]), illus_proportion(q, c)
+            if prop: subject = {**(subject or {}), "proportion": prop}
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead),
-                             **({"picture": {"subject": q.illus[c["id"]]}} if c["id"] in q.illus else {})})   # the lead's own rows, for the opening picture
+                             **({"picture": {"subject": subject}} if subject else {})})
         else:
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
                              "text": wording(c["text"])})

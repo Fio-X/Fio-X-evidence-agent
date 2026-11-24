@@ -6,10 +6,12 @@ renderer; a node reply whose lit or total is not the asked one refused; no node 
 has the other paths' shape and passes the hero grammar (a mirror of next_leaf.rs hero_faults). The node is a stub with the same contract
 (scripts/fixtures/illus_scene/scene_stub.mjs); when runtime/illus_hero/scene/scene.mjs exists, RealNode runs the same requests through it.
 Run: python3 -I -B scripts/test_illus_scene_wiring.py"""
+import copy
 import io
 import json
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -35,8 +37,13 @@ def rule_req(**extra):
     return {"family": "unemployment", "lead": "members", "width": 1140, "ground": "warm", "accent": "#b8433a", "subject": sub, **extra}
 
 
+def prop(share, n, count, total=None):
+    """A subject's proportion as findings.py sends it beside the subject's own form: share, figures and its own declared count and total."""
+    return {"share": share, "figures": n, "declared": {"count": count, "total": n if total is None else total}}
+
+
 def prop_req(share, n, count, total=None, **extra):
-    return {"family": "unemployment", "width": 1140, "subject": {"proportion": {"share": share, "figures": n}, "declared": {"count": count, "total": n if total is None else total}}, **extra}
+    return {"family": "unemployment", "width": 1140, "subject": {"proportion": prop(share, n, count, total)}, **extra}
 
 
 def styled(r, style): return {**r, "composition": {**r.get("composition", {}), "style": style}}
@@ -54,6 +61,12 @@ def serve(inp):
     sys.stdin, sys.stdout = io.StringIO(json.dumps(inp) + "\n"), io.StringIO()
     try: R.serve(); return json.loads(sys.stdout.getvalue())
     finally: sys.stdin, sys.stdout = old
+
+
+def child(inp):
+    """One request through the real child run_hero.py in its own process, as the visual group starts it."""
+    p = subprocess.run([sys.executable, "-I", "-B", os.path.join(ROOT, "runtime", "illus_hero", "run_hero.py")], input=json.dumps(inp) + "\n", capture_output=True, text=True, timeout=60)
+    return json.loads(p.stdout)
 
 
 def lit_in(svg, accent):
@@ -80,7 +93,7 @@ class Wiring(unittest.TestCase):
 
     def test_the_proportion_shape_rounds_half_to_even(self):
         for share, n, k in ((0.284, 8, 2), (0.25, 10, 2), (0.35, 10, 4), (0.15, 10, 2), (0.5, 1, 0), (1, 6, 6)):
-            self.assertEqual(sum(R.proportion_flags({"proportion": {"share": share, "figures": n}, "declared": {"count": k, "total": n}})), k, (share, n))
+            self.assertEqual(sum(R.proportion_flags({"proportion": prop(share, n, k)})), k, (share, n))
         for st in STYLES:
             for share, n, k in ((0.284, 8, 2), (0.25, 10, 2)):
                 svg, w, h, secs, name, comp = R.build_scene(styled(prop_req(share, n, k), st))
@@ -91,10 +104,12 @@ class Wiring(unittest.TestCase):
         with self.assertRaisesRegex(R.Refused, "declared.count 3 is not the 2 of 10"): R.build_scene(prop_req(0.25, 10, 3))
         with self.assertRaisesRegex(R.Refused, "declared.total 9 is not the 10"): R.build_scene(prop_req(0.25, 10, 2, total=9))
         with self.assertRaisesRegex(R.Refused, "declared count and total"): R.build_scene({**prop_req(0.25, 10, 2), "subject": {"proportion": {"share": 0.25, "figures": 10}}})
+        top = {**prop_req(0.25, 10, 2), "subject": {"proportion": {"share": 0.25, "figures": 10}, "declared": {"count": 2, "total": 10}}}
+        with self.assertRaisesRegex(R.Refused, "proportion.declared"): R.build_scene(top)      # the old top-level declared is the subject's own form's, not the proportion's
         for share, n in ((1.2, 10), (-0.1, 10), ("0.3", 10), (0.3, 0), (0.3, 61), (0.3, 2.5), (0.3, True)):
             with self.assertRaises(R.Refused, msg=(share, n)): R.build_scene(prop_req(share, n, 0))
         self.assertEqual(list(serve(prop_req(0.25, 10, 3))), ["refused"])
-        self.assertEqual(R.renderer_of(prop_req(0.25, 10, 2, family="co2")), "scene")    # no other renderer draws a proportion
+        self.assertEqual(R.renderer_of(prop_req(0.25, 10, 2, family="co2")), "3d")    # a topic of another renderer ignores the proportion
 
     def test_unknown_style_or_scene_is_refused_and_the_knobs_are_the_scene_renderers_only(self):
         with self.assertRaisesRegex(R.Refused, "style 'pastel'"): R.build_scene(styled(rule_req(), "pastel"))
@@ -224,6 +239,51 @@ class RankAndEnds(unittest.TestCase):
         with Captured() as cap: R.build_scene(rule_req())
         self.assertNotIn("order", cap.sent[0]); self.assertEqual(sorted(cap.sent[0]), ["box", "figures", "palette", "scene", "seed", "style"])
         self.assertTrue(all(set(f) == {"lit"} for f in cap.sent[0]["figures"])); self.assertEqual(len(cap.sent[0]["figures"]), 27)
+
+
+class ProportionBeside(unittest.TestCase):
+    """The proportion findings.py sends beside a subject's own form: drawn on a scene-renderer topic (people), ignored elsewhere (the energy topic's
+    line drawing is the same with or without it)."""
+    def setUp(self): self.s = Script(STUB); self.s.__enter__()
+    def tearDown(self): self.s.__exit__()
+
+    def test_a_people_tally_with_a_proportion_draws_the_proportion_on_a_grid(self):
+        r = rule_req(); r["subject"]["proportion"] = prop(0.3, 30, 9)
+        self.assertEqual(R.renderer_of(r), "scene")
+        with Captured() as cap: svg, w, h, secs, name, comp = R.build_scene(r)
+        self.assertEqual((cap.sent[0]["scene"], comp["lit"], comp["objects"], name), ("grid", 9, 30, "people.proportion"))
+        self.assertEqual([f["lit"] for f in cap.sent[0]["figures"]], [True] * 9 + [False] * 21)
+        g = styled(rule_req(), "geo"); g["subject"]["proportion"] = prop(0.284, 8, 2)
+        with Captured() as cap: R.build_scene(g)
+        self.assertEqual(cap.sent[0]["scene"], "door")
+        bad = rule_req(); bad["subject"]["proportion"] = prop(0.3, 30, 8)
+        with self.assertRaisesRegex(R.Refused, "proportion.declared.count 8 is not the 9 of 30"): R.build_scene(bad)
+        self.assertEqual(list(serve(bad)), ["refused"])
+
+    def test_an_energy_tally_ignores_the_proportion(self):
+        plain = {**rule_req(), "family": "renewable_share"}
+        withp = copy.deepcopy(plain); withp["subject"]["proportion"] = prop(0.3, 30, 9)
+        self.assertEqual(R.renderer_of(withp), "line")
+        a, b = child(plain), child(withp)      # the real child, one process each (this test process holds the people drawing's `draw` module)
+        for x in (a, b): x.pop("seconds", None)
+        self.assertEqual(a, b); self.assertEqual(b["scene"], "energy.tally")
+
+    def test_a_proportion_alone_on_another_topic_is_no_subject(self):
+        # the energy page as next_visual sends it: the set's hero parts, its hero, ground and accent; a subject (and its family) only when the lead has one
+        tags = {"tags": ["wind", "solar", "hydro", "coal", "grid"], "hero": "wind", "width": 1140.0, "ground": "warm", "accent": "#1a9a6c", "lead": "members"}
+        alone = {**tags, "family": "renewable_share", "subject": {"proportion": prop(0.3, 30, 9)}}
+        self.assertEqual(R.without_ignored_proportion(alone), tags)
+        a, b = child(tags), child(alone)
+        for x in (a, b): x.pop("seconds", None)
+        self.assertEqual(json.dumps(a, sort_keys=True), json.dumps(b, sort_keys=True))
+        with self.assertRaisesRegex(R.Unavailable, "only a proportion"): R.without_ignored_proportion({**prop_req(0.3, 30, 9), "family": "renewable_share"})
+        self.assertEqual(list(serve({**prop_req(0.3, 30, 9), "family": "renewable_share"})), ["unavailable"])
+        people = {**tags, "family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}
+        self.assertIs(R.without_ignored_proportion(people), people)
+        r = child(people); self.assertEqual((r["composition"]["scene_layout"], r["composition"]["lit"], r["composition"]["objects"]), ("grid", 9, 30))
+        # a subject with its own form keeps it, the proportion dropped
+        own = {**rule_req(), "family": "renewable_share"}; own["subject"]["proportion"] = prop(0.3, 30, 9)
+        self.assertNotIn("proportion", R.without_ignored_proportion(own)["subject"])
 
 
 class SceneChoice(unittest.TestCase):
