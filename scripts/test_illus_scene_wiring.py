@@ -131,9 +131,21 @@ class Wiring(unittest.TestCase):
         ms = rule_req()["subject"]["members"]
         self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "rank", "subject": {"members": ms}}), "people")
         self.assertEqual(R.renderer_of({"family": "renewable_share", "lead": "members", "subject": rule_req()["subject"]}), "line")
-        self.assertEqual(R.renderer_of({"family": "gdp", "lead": "members", "subject": rule_req()["subject"]}), "3d")
+        self.assertEqual(R.renderer_of({"family": "co2", "lead": "members", "subject": rule_req()["subject"]}), "3d")
+        self.assertEqual(R.renderer_of({"family": "asylum", "lead": "members", "subject": rule_req()["subject"]}), "3d")
         with self.assertRaises(R.Unavailable): R.build_scene({**rule_req(), "lead": "rank"})
-        self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "trade": "geo", "migration": "ink", "neutral": "ink"})
+        self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "trade": "geo", "migration": "ink", "tech": "iso", "neutral": "ink"})
+
+    def test_economy_tallies_are_geo_scenes_and_their_rankings_keep_3d(self):
+        sub = rule_req()["subject"]
+        for fam, style in (("gdp_pc", "geo"), ("gdp", "geo"), ("energy_imports", "geo")):
+            r = {**rule_req(), "family": fam}
+            self.assertEqual(R.renderer_of(r), "scene", fam)
+            svg, w, h, secs, name, comp = R.build_scene(r)
+            self.assertEqual((comp["style"], comp["lit"], comp["objects"]), (style, ABOVE, 27), fam)
+            self.assertEqual(R.renderer_of({"family": fam, "lead": "rank", "subject": {"members": sub["members"]}}), "3d", fam)     # rank/ends: renderer_else
+        self.assertNotIn("tech", R.TOPICS["families"].values()); self.assertEqual(R.TOPICS["scenes"]["tech"]["renderer"], "scene"); self.assertEqual(R.topic_of(None), "neutral")   # tech: inert until a family maps to it
+        self.assertEqual(R.TOPICS["scenes"]["neutral"]["style"], "ink")
 
 
 @unittest.skipUnless(os.path.isfile(REAL), "runtime/illus_hero/scene/scene.mjs is not there yet")

@@ -149,6 +149,7 @@ pub enum Request<'a> {
 const PIECE_SETS: &[&str] = &[
     include_str!("../runtime/leaves_js/pieces-energy.json"),
     include_str!("../runtime/leaves_js/pieces-people.json"),
+    include_str!("../runtime/leaves_js/pieces-economy.json"),
 ];
 
 /// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and second pen by name, so the page
@@ -1656,9 +1657,28 @@ mod tests {
         };
         assert_eq!(f(&["nrg_ind_ren"]).as_deref(), Some("renewable_share"));
         assert_eq!(f(&["sdg", "sdg_07_40"]).as_deref(), Some("renewable_share"));
-        assert_eq!(f(&["EG.ELC.RNEW"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["EG.ELC.RNEW.ZS"]).as_deref(), Some("renewable_share"));
         assert_eq!(f(&["nrg_bal_c"]).as_deref(), Some("energy_balance"));
         assert_eq!(f(&["not_a_table"]), None);
+        // a World Bank family prefix ends in a dot, so the page's own indicator id is held (not the neutral topic)
+        assert_eq!(f(&["SL.UEM.1524.ZS"]).as_deref(), Some("unemployment"));
+        assert_eq!(f(&["NY.GDP.PCAP.CD"]).as_deref(), Some("gdp_pc"));
+        assert_eq!(f(&["SP.POP.TOTL"]).as_deref(), Some("population"));
+    }
+
+    /// The economy tables have a piece set (so the opening picture is asked for them at all); a table no set names has none.
+    #[test]
+    fn the_economy_tables_have_their_piece_set() {
+        let set = |t: &str| {
+            pick_set(&[t.to_string()])
+                .unwrap()
+                .map(|s| s["set"].as_str().unwrap_or_default().to_string())
+        };
+        for t in ["nama_10_pc", "NY.GDP.PCAP.CD"] {
+            assert_eq!(set(t).as_deref(), Some("economy"), "{t}");
+        }
+        assert_eq!(set("une_rt_a").as_deref(), Some("people"));
+        assert_eq!(set("tec00114"), None);
     }
 
     /// With Blender installed and a python3 that has the painting's packages, the energy tables get a drawn hero and no strip;

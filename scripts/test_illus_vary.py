@@ -113,8 +113,10 @@ class TopicScenes(unittest.TestCase):
     def test_at_least_five_topics_with_their_own_units(self):
         used = {R.topic_of(f) for f in T["families"]}
         self.assertTrue({"energy", "emissions", "people", "trade", "migration"} <= used)
-        units = {T["scenes"][t]["unit"] for t in used | {T["neutral"]}}
-        self.assertEqual(len(units), len(used | {T["neutral"]}), "every topic draws its own unit")
+        own = (used | {T["neutral"]}) - {"tech"}      # tech draws the neutral cairn in its renderer_else layouts until it has a unit of its own
+        units = {T["scenes"][t]["unit"] for t in own}
+        self.assertEqual(len(units), len(own), "every topic draws its own unit")
+        self.assertEqual(T["scenes"]["tech"]["unit"], T["scenes"][T["neutral"]]["unit"])
 
     def test_unknown_family_falls_back_to_the_neutral_scene(self):
         for fam in (None, "no_such_family", 5):
