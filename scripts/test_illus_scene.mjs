@@ -254,6 +254,37 @@ for (const style of ['ink', 'iso', 'geo']) {
 }
 console.log('worst head+torso hidden: ' + occ.join(' '));
 
+// ---------- order "given" (rank and ends): each flag stays at its own place, gap markers are empty slots ----------
+const RANK = Array.from({ length: 12 }, (_, i) => ({ lit: i === 0 }));
+const ENDS = [{ lit: true }, { lit: false }, { lit: false }, { lit: false }, { gap: true }, { lit: false }, { lit: false }, { lit: false }, { lit: true }];
+for (const [shape, items] of [['rank', RANK], ['ends', ENDS]]) {
+  const realFlags = items.filter((f) => !f.gap).map((f) => f.lit), nGap = items.length - realFlags.length;
+  for (const style of ['ink', 'iso', 'geo']) {
+    const tag = `given ${shape}/${style}`;
+    const req = { ...base(style, items, { w: 1200, h: 460 }), order: 'given' };
+    const { reply } = ask(req);
+    if (reply.refused) { fail(`${tag}: refused: ${reply.refused}`); continue; }
+    if (reply.total !== realFlags.length || reply.lit !== realFlags.filter(Boolean).length || reply.gaps !== nGap) fail(`${tag}: total/lit/gaps ${reply.total}/${reply.lit}/${reply.gaps}, want ${realFlags.length}/${realFlags.filter(Boolean).length}/${nGap}`);
+    const off = heroFaults(reply.svg); if (off.length) fail(`${tag}: gate: ${off[0]}`);
+    if (/<text/i.test(reply.svg) || /<svg/i.test(reply.svg)) fail(`${tag}: holds <text or <svg`);
+    if (Buffer.byteLength(reply.svg) >= HERO_MAX_BYTES) fail(`${tag}: ${reply.svg.length} bytes`);
+    if (ask(req).reply.svg !== reply.svg) fail(`${tag}: not deterministic`);
+    const rep = draw(req, { geometry: true }), G = rep.geometry;
+    // lit places equal the given flags' places: queue place q (0 = front) carries the q-th real flag
+    for (const g of G.figures) if (g.lit !== realFlags[g.q]) fail(`${tag}: place ${g.q} lit=${g.lit}, given ${realFlags[g.q]}`);
+    // the order runs from the front of the queue: place 0 at the front row's left end, places left to right
+    const front = G.figures.filter((g) => g.row === 0).sort((a, b) => a.q - b.q);
+    if (front[0].q !== 0 || front[0].col !== 0 || front.some((g, k) => k && g.x <= front[k - 1].x)) fail(`${tag}: the order does not run from the front-row head`);
+    // no group-of-five gaps: in each row the figures and gap markers fill the columns without a hole
+    const rows = new Map(); for (const g of [...G.figures, ...G.gaps]) { if (!rows.has(g.row)) rows.set(g.row, []); rows.get(g.row).push(g.col); }
+    for (const [k, cols] of rows) { cols.sort((a, b) => a - b); if (cols.some((c, j) => c !== j)) fail(`${tag}: row ${k} has an empty slot that is no gap marker: ${cols.join(',')}`); }
+    if (G.gaps.length !== nGap) fail(`${tag}: ${G.gaps.length} gap slots for ${nGap} markers`);
+    const w = occlusion(G); occ.push(`${shape}/${style}:${(w.f * 100).toFixed(1)}%`);
+    if (w.f > 0.05) fail(`${tag}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 5%)`);
+  }
+}
+console.log('given order, worst head+torso hidden: ' + occ.slice(-6).join(' '));
+
 // refusals
 const one = [{ lit: true }];
 for (const [why, req, raw] of [
@@ -271,6 +302,13 @@ for (const [why, req, raw] of [
   ['seed not int', { ...base('ink', one), seed: 1.5 }],
   ['unknown key', { ...base('ink', one), n: 8 }],
   ['not json', null, '{not json'],
+  ['gap marker first', { ...base('ink', [{ gap: true }, { lit: true }, { lit: false }]), order: 'given' }],
+  ['gap marker last', { ...base('ink', [{ lit: true }, { lit: false }, { gap: true }]), order: 'given' }],
+  ['two gap markers side by side', { ...base('ink', [{ lit: true }, { gap: true }, { gap: true }, { lit: false }]), order: 'given' }],
+  ['gap marker without order given', base('ink', [{ lit: true }, { gap: true }, { lit: false }])],
+  ['gap marker with a flag', { ...base('ink', [{ lit: true }, { gap: true, lit: false }, { lit: false }]), order: 'given' }],
+  ['order other than given', { ...base('ink', one), order: 'rank' }],
+  ['order empty', { ...base('ink', one), order: '' }],
 ]) {
   const { reply } = ask(req, raw);
   if (typeof reply.refused !== 'string' || reply.svg !== undefined) fail(`refusal ${why}: got ${JSON.stringify(reply).slice(0, 120)}`);

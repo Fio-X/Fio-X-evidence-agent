@@ -129,23 +129,106 @@ class Wiring(unittest.TestCase):
 
     def test_the_people_topics_other_layouts_keep_the_people_renderer_and_other_topics_their_own(self):
         ms = rule_req()["subject"]["members"]
-        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "rank", "subject": {"members": ms}}), "people")
+        for lead in ("rank", "ends", "spread"): self.assertEqual(R.renderer_of({"family": "unemployment", "lead": lead, "subject": {"members": ms}}), "scene", lead)
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "path", "subject": {"path": {}}}), "people")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "pace", "subject": {"series": []}}), "people")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "groups", "subject": {"groups": []}}), "people")
         self.assertEqual(R.renderer_of({"family": "renewable_share", "lead": "members", "subject": rule_req()["subject"]}), "line")
         self.assertEqual(R.renderer_of({"family": "co2", "lead": "members", "subject": rule_req()["subject"]}), "3d")
         self.assertEqual(R.renderer_of({"family": "asylum", "lead": "members", "subject": rule_req()["subject"]}), "3d")
-        with self.assertRaises(R.Unavailable): R.build_scene({**rule_req(), "lead": "rank"})
+        with self.assertRaises(R.Unavailable): R.build_scene({**rule_req(), "lead": "path"})
         self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "trade": "geo", "migration": "ink", "tech": "iso", "neutral": "ink"})
 
-    def test_economy_tallies_are_geo_scenes_and_their_rankings_keep_3d(self):
+    def test_economy_tallies_and_rankings_are_geo_scenes_and_their_paths_keep_3d(self):
         sub = rule_req()["subject"]
         for fam, style in (("gdp_pc", "geo"), ("gdp", "geo"), ("energy_imports", "geo")):
             r = {**rule_req(), "family": fam}
             self.assertEqual(R.renderer_of(r), "scene", fam)
             svg, w, h, secs, name, comp = R.build_scene(r)
             self.assertEqual((comp["style"], comp["lit"], comp["objects"]), (style, ABOVE, 27), fam)
-            self.assertEqual(R.renderer_of({"family": fam, "lead": "rank", "subject": {"members": sub["members"]}}), "3d", fam)     # rank/ends: renderer_else
+            self.assertEqual(R.renderer_of({"family": fam, "lead": "rank", "subject": {"members": sub["members"]}}), "scene", fam)
+            self.assertEqual(R.renderer_of({"family": fam, "lead": "path", "subject": {"path": {}}}), "3d", fam)     # path, series, groups: renderer_else
         self.assertNotIn("tech", R.TOPICS["families"].values()); self.assertEqual(R.TOPICS["scenes"]["tech"]["renderer"], "scene"); self.assertEqual(R.topic_of(None), "neutral")   # tech: inert until a family maps to it
         self.assertEqual(R.TOPICS["scenes"]["neutral"]["style"], "ink")
+
+
+def rank_req(lead="rank", n=27, **extra):
+    return {"family": "unemployment", "lead": lead, "width": 1140, "accent": "#b8433a", "subject": {"members": [{"code": c, "value": v} for c, v in zip(CODES[:n], RATES[:n])]}, **extra}
+
+
+def sequence(svg):
+    """The stub's figures in drawing order: L lit, u unlit, G the gap marker."""
+    return "".join("G" if 'stroke-width="1"' in p else "L" if 'fill="#b8433a"' in p else "u" for p in re.findall(r"<path [^>]*>", svg))
+
+
+class Captured:
+    """Keep the requests the child sends to the node."""
+    def __enter__(self):
+        self.sent = []; self.was = R.ask_child
+        def ask(cmd, request, deadline): self.sent.append(request); return self.was(cmd, request, deadline)
+        R.ask_child = ask; return self
+    def __exit__(self, *a): R.ask_child = self.was
+
+
+class RankAndEnds(unittest.TestCase):
+    """Rank and ends leads on the scene renderer (stub node): the members highest first, rank lighting the highest, ends the highest and the
+    lowest, each at its own place; 27 members fold to 6 + a gap + 6 with 15 omitted; 8 members fold nothing."""
+    def setUp(self): self.s = Script(STUB); self.s.__enter__()
+    def tearDown(self): self.s.__exit__()
+
+    def test_rank_lights_the_highest_at_the_head_and_folds_the_middle_in_each_style(self):
+        top = max(zip(RATES, CODES))[1]
+        for st in STYLES:
+            with Captured() as cap: svg, w, h, secs, name, comp = R.build_scene(styled(rank_req(), st))
+            self.assertEqual(sequence(svg), "L" + "u" * 5 + "G" + "u" * 6, st)
+            self.assertEqual((name, comp["lit"], comp["objects"], comp["omitted"], comp["style"]), ("people.rank", 1, 12, 15, st))
+            self.assertEqual(cap.sent[0]["order"], "given"); self.assertEqual(sum(1 for f in cap.sent[0]["figures"] if f.get("gap")), 1)
+        self.assertEqual(top, "EL")
+        three = {"members": [{"code": "A", "value": 1.0}, {"code": "B", "value": 5.0}, {"code": "C", "value": 3.0}, {"code": "D", "value": 3.0}]}
+        self.assertEqual(R.ranked_items(three, "rank"), ([{"lit": True}, {"lit": False}, {"lit": False}, {"lit": False}], 0))     # B first, C before D (ties by code)
+        self.assertEqual(R.ranked_items({**three, "members": three["members"] + [{"code": "E", "value": 5.0, "flag": False}]}, "rank")[0][0], {"lit": True})   # B and E tie: B (by code) is lit
+        svg = R.build_scene(rank_req(n=8))[0]; self.assertEqual(sequence(svg), "L" + "u" * 7)
+        self.assertEqual(R.build_scene(rank_req(n=8))[5]["omitted"], 0)
+
+    def test_ends_light_both_ends_in_each_style(self):
+        for lead in ("ends", "spread"):
+            for st in STYLES:
+                svg, w, h, secs, name, comp = R.build_scene(styled(rank_req(lead), st))
+                self.assertEqual(sequence(svg), "L" + "u" * 5 + "G" + "u" * 5 + "L", (lead, st))
+                self.assertEqual((name, comp["lit"], comp["objects"], comp["omitted"]), ("people.pair", 2, 12, 15))
+        self.assertEqual(sequence(R.build_scene(rank_req("ends", n=8))[0]), "L" + "u" * 6 + "L")
+        self.assertEqual(sequence(R.build_scene({**rank_req(), "composition": {"reading_order": "right_to_left"}})[0]), "u" * 6 + "G" + "u" * 5 + "L")
+
+    def test_a_declared_count_total_or_flag_that_is_not_the_rows_is_refused(self):
+        bad = rank_req(); bad["subject"]["declared"] = {"count": 2}
+        with self.assertRaisesRegex(R.Refused, "declared.count 2 is not the 1"): R.build_scene(bad)
+        bad = rank_req("ends"); bad["subject"]["declared"] = {"count": 2, "total": 26}
+        with self.assertRaisesRegex(R.Refused, "declared.total 26 is not the 27"): R.build_scene(bad)
+        bad = rank_req(); bad["subject"]["members"][0]["flag"] = True      # AT is not the highest
+        with self.assertRaisesRegex(R.Refused, "flag of AT"): R.build_scene(bad)
+        flat = rank_req("ends", n=4); [m.update(value=1.0) for m in flat["subject"]["members"]]
+        with self.assertRaisesRegex(R.Refused, "highest above the lowest"): R.build_scene(flat)
+        self.assertEqual(list(serve({**bad})), ["refused"])
+
+    def test_the_reply_carries_omitted_as_the_rank_layout_does_and_a_wrong_gap_count_is_refused(self):
+        r = serve(rank_req())
+        self.assertEqual((r["omitted"], r["omitted_label_key"], r["composition"]["omitted"]), (15, R.TOPICS["omitted"]["label_key"], 15))
+        was = R.ask_child
+        def lying(cmd, request, deadline): rep, s_ = was(cmd, request, deadline); rep["gaps"] = 0; return rep, s_
+        R.ask_child = lying
+        try:
+            with self.assertRaisesRegex(R.Refused, "0 gaps, asked 1"): R.build_scene(rank_req())
+        finally: R.ask_child = was
+
+    def test_the_tally_request_is_unchanged(self):
+        with Captured() as cap: R.build_scene(rule_req())
+        self.assertNotIn("order", cap.sent[0]); self.assertEqual(sorted(cap.sent[0]), ["box", "figures", "palette", "scene", "seed", "style"])
+        self.assertTrue(all(set(f) == {"lit"} for f in cap.sent[0]["figures"])); self.assertEqual(len(cap.sent[0]["figures"]), 27)
+
+
+def real_given():
+    try: return "given" in open(REAL, encoding="utf-8").read()
+    except OSError: return False
 
 
 @unittest.skipUnless(os.path.isfile(REAL), "runtime/illus_hero/scene/scene.mjs is not there yet")
@@ -162,6 +245,13 @@ class RealNode(unittest.TestCase):
                 self.assertLessEqual(set(re.findall(r"<([A-Za-z]+)", svg)), gate, (st, name)); self.assertIsNone(re.search(r">[^<\s]", svg), (st, name))
                 for v in re.findall(r'(?:fill|stroke|stop-color)="([^"]*)"', svg): self.assertRegex(v, r"^(#[0-9a-fA-F]{6}|none|url\(#[\w-]+\))$", (st, name))
                 self.assertLess(len(svg), 4 * 1024 * 1024)
+
+    @unittest.skipUnless(real_given(), "scene.mjs has no order: given mode yet")
+    def test_rank_and_ends_in_each_style(self):
+        for st in STYLES:
+            for r, k, n, om in ((rank_req(), 1, 12, 15), (rank_req("ends"), 2, 12, 15), (rank_req(n=8), 1, 8, 0)):
+                svg, w, h, secs, name, comp = R.build_scene(styled(r, st))
+                self.assertEqual((comp["lit"], comp["objects"], comp["omitted"]), (k, n, om), (st, name)); self.assertIsNone(re.search(r">[^<\s]", svg))
 
 
 if __name__ == "__main__":

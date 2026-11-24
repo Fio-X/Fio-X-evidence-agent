@@ -2891,6 +2891,17 @@ mod tests {
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{family}: {e:?}"));
             assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{family}");
         }
+        // a rank and an ends lead (the figures highest first, the middle of 20 members folded into one gap marker, 8 omitted)
+        let many: Vec<Value> = (1..=20)
+            .map(|i| json!({"code": format!("M{i:02}"), "value": f64::from(i)}))
+            .collect();
+        for lead in ["rank", "ends"] {
+            let ask = json!({"family": "unemployment", "lead": lead, "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"members": many}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{lead}: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{lead}");
+            assert_eq!(got.omitted, 8, "{lead}");
+        }
     }
 
     const LAID: &str =

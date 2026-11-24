@@ -16,7 +16,8 @@ import { normalizeFragment, writeItems, writeD, hexOk, mix, fbm } from './normal
 const SKINS = { ink: inkSkin, iso: isoSkin, geo: geoSkin };
 const MIN_W = 160, MIN_H = 100, MAX_SIDE = 4000, MIN_FIG_PX = 36, MAX_FIGS = 60;
 const PALETTE_KEYS = ['ink', 'paper', 'accent', 'skin', 'hair', 'top', 'bottom', 'outer', 'shade'];
-const REQUEST_KEYS = ['scene', 'style', 'seed', 'figures', 'box', 'palette'];
+const REQUEST_KEYS = ['scene', 'style', 'seed', 'figures', 'box', 'palette', 'order'];
+const MAX_ITEMS = 80; // real figures (<= 60) plus gap markers
 
 // ---------- seeded helpers ----------
 function rng(seed) {
@@ -32,12 +33,22 @@ export function check(req) {
   if (!Object.prototype.hasOwnProperty.call(SCENES, req.scene)) return `unknown scene ${JSON.stringify(req.scene)}; allowed: ${Object.keys(SCENES).join(', ')} (e.g. "queue")`;
   if (!Object.prototype.hasOwnProperty.call(SKINS, req.style)) return `unknown style ${JSON.stringify(req.style)}; allowed: ink, iso, geo (e.g. "ink")`;
   if (!Number.isSafeInteger(req.seed)) return 'seed must be an integer (e.g. 7)';
+  if ('order' in req && req.order !== 'given') return `order ${JSON.stringify(req.order)} is not known; allowed: "given" (rank order, first = front of the queue), or leave it out (lit at the tail in fives)`;
+  const given = req.order === 'given';
   const F = req.figures;
-  if (!Array.isArray(F) || F.length < 1 || F.length > MAX_FIGS) return `figures must be a list of 1..${MAX_FIGS} {"lit":bool} (got ${Array.isArray(F) ? F.length : typeof F})`;
+  if (!Array.isArray(F) || F.length > MAX_ITEMS) return `figures must be a list of 1..${MAX_FIGS} {"lit":bool} (got ${Array.isArray(F) ? F.length : typeof F})`;
+  const isGap = (f) => f && typeof f === 'object' && !Array.isArray(f) && f.gap === true && Object.keys(f).length === 1;
   for (let i = 0; i < F.length; i++) {
     const f = F[i];
-    if (!f || typeof f !== 'object' || Array.isArray(f) || typeof f.lit !== 'boolean' || Object.keys(f).some((k) => k !== 'lit')) return `figures[${i}] must be {"lit":true} or {"lit":false}`;
+    if (given && isGap(f)) {
+      if (i === 0 || i === F.length - 1) return `figures[${i}]: a gap marker stands between figures, never at the start or the end`;
+      if (isGap(F[i - 1])) return `figures[${i}]: two gap markers side by side (one marker stands for all the members left out)`;
+      continue;
+    }
+    if (!f || typeof f !== 'object' || Array.isArray(f) || typeof f.lit !== 'boolean' || Object.keys(f).some((k) => k !== 'lit')) return given ? `figures[${i}] must be {"lit":true}, {"lit":false} or {"gap":true}` : `figures[${i}] must be {"lit":true} or {"lit":false} (gap markers only with "order":"given")`;
   }
+  const real = F.filter((f) => !isGap(f)).length;
+  if (real < 1 || real > MAX_FIGS) return `figures must hold 1..${MAX_FIGS} people (got ${real})`;
   const b = req.box;
   if (!b || typeof b !== 'object' || !Number.isFinite(b.w) || !Number.isFinite(b.h) || Object.keys(b).some((k) => k !== 'w' && k !== 'h')) return 'box must be {"w":number,"h":number}';
   if (b.w < MIN_W || b.h < MIN_H) return `box ${b.w}x${b.h} is too small; at least ${MIN_W}x${MIN_H}`;
@@ -140,7 +151,43 @@ function layoutQueue(n, box, r, K) {
   for (const row of rows) delete row.toks;
   return { H, s, pitch, cols: C, rows, hUsed: Math.min(Hb, yFront + H * 0.12) };
 }
-const SCENES = { queue: layoutQueue }; // grid (classroom rows) and door come later as more layouts
+// ---------- layout: queue in a given order (rank: position = rank, first = the front of the queue) ----------
+// Each figure keeps its own flag at its own place; nothing moves to the tail and no groups of five are cut. A gap
+// marker is one empty slot (the caller's "members left out"), drawn with a small three-dot ellipsis. Up to 12
+// stand in one row; more fill the front row from the head (left), then the rows behind, staggered half a slot.
+function layoutGiven(items, box, r) {
+  const W = box.w, Hb = box.h, side = 0.05;
+  const toks = items.map((f) => (f.gap ? 'gap' : 'fig')), T = toks.length, n = toks.filter((t) => t === 'fig').length;
+  let best = null;
+  for (const R of n <= 12 ? [1] : [2, 3]) {
+    const C = Math.ceil(T / R), rows = Math.ceil(T / C);
+    const cols = (C - 1) + (rows > 1 ? 0.5 : 0);
+    const H = Math.min((W * (1 - 2 * side)) / (cols * SLOT_K + 0.55), Hb / (1.22 + (rows - 1) * PITCH_K), Hb * 0.86);
+    if (!best || H > best.H * 1.12) best = { H, C, R: rows };
+  }
+  const { H, C, R } = best, s = H * SLOT_K, pitch = H * PITCH_K;
+  const span = (Math.min(C, T) - 1) * s + (R > 1 ? s / 2 : 0), x0 = (W - span) / 2;
+  const yFront = H * 0.08 + H * 1.02 + (R - 1) * pitch;
+  const rows = Array.from({ length: R }, (_, k) => ({ y: yFront - k * pitch, slots: [], gaps: [] }));
+  let q = 0;
+  toks.forEach((t, i) => {
+    const k = Math.floor(i / C), col = i % C, row = rows[k], x = x0 + col * s + (k % 2 ? s / 2 : 0);
+    if (t === 'gap') row.gaps.push({ col, x, y: row.y });
+    else row.slots.push({ q: q++, col, x, y: row.y + (r() * 2 - 1) * H * 0.008 });
+  });
+  return { H, s, pitch, cols: C, rows, hUsed: Math.min(Hb, yFront + H * 0.12) };
+}
+// three dots at chest height in an empty slot: the members left out
+function ellipsis(L, P) {
+  const rad = Math.max(1.6, L.H * 0.022), step = rad * 3.2, pts = [];
+  for (const row of L.rows) for (const g of row.gaps || []) for (const k of [-1, 0, 1]) {
+    const cx = g.x + k * step, cy = g.y - L.H * 0.5, ring = [];
+    for (let a = 0; a < 12; a++) ring.push([cx + rad * Math.cos(a / 12 * Math.PI * 2), cy + rad * Math.sin(a / 12 * Math.PI * 2)]);
+    pts.push({ closed: true, pts: ring });
+  }
+  return pts.length ? `<g fill="${P.ink}" stroke="none"><path d="${writeD(pts)}"/></g>` : '';
+}
+const SCENES = { queue: { tally: layoutQueue, given: layoutGiven } }; // grid (classroom rows) and door come later
 
 // ---------- ground and props, per style (in picture coordinates, gate-safe markup) ----------
 const extent = (L, pad) => { const xs = L.rows.flatMap((row) => row.slots.map((q) => q.x)); return [Math.min(...xs) - L.H * pad, Math.max(...xs) + L.H * pad]; };
@@ -190,7 +237,7 @@ function groundGeo(L, P, W, hUsed) {
   let s = `<path d="M0 0H${f1(W)}V${f1(hUsed)}H0Z" fill="${wall}" stroke="none"/>`;
   const [ea, eb] = extent(L, 0.5), yB = L.rows[L.rows.length - 1].y - L.H * 0.035, yF = L.rows[0].y + L.H * 0.075;
   s += `<path d="${writeD([{ closed: true, pts: [[ea, yB], [eb, yB], [eb - L.H * 0.12, yF], [ea + L.H * 0.04, yF]] }])}" fill="${floor}" stroke="none"/>`;
-  const front = L.rows[0], hx = extent(L, 0)[0] - L.H * 0.2;
+  const front = L.rows[0], hx = extent(L, 0)[0] - L.H * 0.34; // clear of the first person and their arms
   const dw = Math.min(L.H * 0.42, Math.max(L.H * 0.2, hx)), y = yB, x0 = Math.max(-dw * 0.4, hx - dw);
   s += `<path d="${writeD([{ closed: true, pts: [[x0 - L.H * 0.04, 0], [x0 + dw + L.H * 0.04, 0], [x0 + dw + L.H * 0.04, y], [x0 - L.H * 0.04, y]] }])}" fill="${P.ink}" stroke="none"/>`;
   s += `<path d="${writeD([{ closed: true, pts: [[x0, 0], [x0 + dw, 0], [x0 + dw, y], [x0, y]] }])}" fill="${light}" stroke="none"/>`;
@@ -210,17 +257,20 @@ export function draw(req, opts = {}) {
   if (why) return { refused: why };
   const { style, seed, figures, box } = req;
   const P = req.palette;
-  const n = figures.length;
-  const K = figures.filter((f) => f.lit).length;
+  const given = req.order === 'given';
+  const people0 = figures.filter((f) => !f.gap), nGaps = figures.length - people0.length;
+  const n = people0.length;
+  const K = people0.filter((f) => f.lit).length;
   const r = rng((seed >>> 0) ^ 0x9e3779b9);
-  const L = SCENES[req.scene](n, box, r, K);
+  const L = given ? SCENES[req.scene].given(figures, box, r) : SCENES[req.scene].tally(n, box, r, K);
   if (L.H < MIN_FIG_PX) return { refused: `box ${box.w}x${box.h} is too small for ${n} figures (each would be ${Math.floor(L.H)} px tall; at least ${MIN_FIG_PX})` };
   const skin = SKINS[style];
   const crowd = makeCrowd({ n, seed: seed >>> 0, scene: 'queue', highlightK: K, highlightRule: 'queue_tail', layout: { type: 'queue', w: box.w, h: L.H } });
   if (crowd.items.length !== n) return { refused: `the people library made ${crowd.items.length} figures for ${n}` };
   // the caller's flags, stably partitioned: queue place q carries a lit flag exactly when q >= n - K (the caller's
   // K lit flags, all at the tail); the library's own pick is discarded. lit/total below count what is drawn.
-  crowd.items.forEach((it, q) => { it.figure.highlight = q >= n - K; });
+  // order "given": queue place q (0 = the front) is the q-th real figure and carries its own flag, unmoved
+  crowd.items.forEach((it, q) => { it.figure.highlight = given ? people0[q].lit : q >= n - K; });
 
   const W = box.w, Hpic = Math.round(L.hUsed);
   const shadows = [], people = [], geometry = [];
@@ -261,9 +311,12 @@ export function draw(req, opts = {}) {
   const shadowSvg = writeItems(shadows.map((x) => ({ d: x.d, fill: x.fill, stroke: 'none', sw: 0, op: x.op, wash: style === 'ink' })), null);
   let defs = '';
   if (style === 'ink') defs = `<defs><linearGradient id="gfade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/><stop offset="0.25" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.75"/><stop offset="0.8" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.6"/><stop offset="1" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/></linearGradient></defs>`;
-  const svg = `${defs}<g>${ground}</g><g>${shadowSvg}</g>${people.join('')}`;
+  const dots = given ? ellipsis(L, P) : '';
+  const svg = `${defs}<g>${ground}</g><g>${shadowSvg}</g>${dots}${people.join('')}`;
   const reply = { svg, w: W, h: Hpic, lit, total, dropped: [] };
-  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols }, enumerable: false });
+  if (given) reply.gaps = L.rows.reduce((s, row) => s + row.gaps.length, 0);
+  if (given && reply.gaps !== nGaps) return { refused: `drew ${reply.gaps} gap markers for ${nGaps}` };
+  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols, gaps: L.rows.flatMap((row, k) => (row.gaps || []).map((g) => ({ row: k, col: g.col }))) }, enumerable: false });
   return reply;
 }
 

@@ -563,6 +563,40 @@ def proportion_flags(sub):
     return [i < k for i in range(n)]
 
 
+def ranked_items(sub, kind):
+    """(figures, omitted) of a rank or pair subject (the rank lead's and the ends/spread lead's members, findings.py illus_pair): the members
+    highest first (ties by code, as layout_rank and layout_pair order them), rank lighting the highest and pair the highest and the lowest, recomputed
+    from the values; a member's own flag, when given, must be the rule's, and a declared count or total must be the lit and the members. More members
+    than topics.scene_renderer.fold's head + tail keep the head and the tail, the middle one gap marker {"gap": true}; `omitted` is the members folded
+    (the page prints its own caption from it, as for layout_rank). A pair whose highest is its lowest has no ends and is refused."""
+    ms = members_of(sub); val = {m["code"]: float(m["value"]) for m in ms}
+    order = sorted(val, key=lambda c: (-val[c], c))
+    if kind == "pair":
+        if val[order[0]] == val[order[-1]]: refuse("subject: a pair needs a highest above the lowest")
+        lit = {order[0], order[-1]}
+    else:
+        lit = {order[0]}
+    for m in ms:
+        if "flag" in m and bool(m["flag"]) != (m["code"] in lit): refuse(f"subject.members: the flag of {m['code']} is not the one the {kind} gives")
+    dec = sub.get("declared") or {}
+    if "count" in dec and dec["count"] != len(lit): refuse(f"subject.declared.count {dec['count']!r} is not the {len(lit)} members the {kind} lights")
+    if "total" in dec and dec["total"] != len(ms): refuse(f"subject.declared.total {dec['total']!r} is not the {len(ms)} members given")
+    items = [{"lit": c in lit} for c in order]; head, tail = SR["fold"]
+    if len(items) <= head + tail: return items, 0
+    return items[:head] + [{"gap": True}] + items[-tail:], len(items) - head - tail
+
+
+def scene_knobs(inp, topic):
+    """(accent, composition knobs) of a scene request that compose_subject does not check (a proportion, a rank, a pair): the knobs registered
+    and the scene renderer's, the reading order one of its values, the accent hex (the topic's when none is given)."""
+    ck = REG["composition_knobs"]; comp_in = dict(inp.get("composition", {})); check_knobs(comp_in, "scene")
+    c = {k: s.get("default") for k, s in ck.items()}; c.update(comp_in)
+    if c["reading_order"] not in ck["reading_order"]["values"]: refuse("reading_order must be left_to_right or right_to_left")
+    acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
+    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    return acc, c
+
+
 def node_path():
     """The node program the scene child runs: `node` on PATH, as next_leaf Runner::node starts its children (the caller passes PATH through)."""
     p = shutil.which("node")
@@ -589,39 +623,41 @@ def ask_child(cmd, request, deadline):
 def build_scene(inp):
     """The same reply the other paths give, drawn by the scene node (topics.scene_renderer). The lit flags are this child's: a rule subject's
     members in order_members order (the lit first), lit by lit_codes (the tally's own recount; compose_subject checks the request as for any
-    renderer), or a proportion subject's first K of N (proportion_flags). The node draws the flags it is given; its reply's lit and total must
+    renderer), a proportion subject's first K of N (proportion_flags), or a rank or pair subject's members highest first, each lit where it
+    stands, the middle folded into one gap marker (ranked_items; request order: given, the reply's gaps the markers sent). The node draws the flags it is given; its reply's lit and total must
     be the recomputed ones, or the request is refused. Colours: hex only (the page's check): the page's ink and paper tokens, the request's accent."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
     sub = inp.get("subject"); topic = topic_of(inp.get("family")); ck = REG["composition_knobs"]
     if not isinstance(sub, dict): refuse("subject: an object required")
+    given, omitted = False, 0      # given: the figures stand in the order sent (rank, pair), each lit where it stands, the middle a gap marker
     if "proportion" in sub:
-        flags = proportion_flags(sub); kind = "proportion"
-        comp_in = dict(inp.get("composition", {})); check_knobs(comp_in, "scene")
-        c = {k: s.get("default") for k, s in ck.items()}; c.update(comp_in)
-        if c["reading_order"] not in ck["reading_order"]["values"]: refuse("reading_order must be left_to_right or right_to_left")
-        acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
-        if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+        flags = proportion_flags(sub); kind = "proportion"; acc, c = scene_knobs(inp, topic)
     else:
         kind = kind_of(inp)
         if kind not in SR["kinds"]: raise Unavailable(f"scene: the {kind!r} layout is not drawn by the scene renderer")      # the page's strip stands in
-        _, _, acc, c = compose_subject(inp, renderer="scene")
-        ms = members_of(sub); lit = lit_codes(sub)
-        flags = [m["code"] in lit for m in order_members(ms, lit)]
+        if kind == "tally":
+            _, _, acc, c = compose_subject(inp, renderer="scene")
+            ms = members_of(sub); lit = lit_codes(sub)
+            flags = [m["code"] in lit for m in order_members(ms, lit)]
+        else:
+            items, omitted = ranked_items(sub, kind); acc, c = scene_knobs(inp, topic); given = True
     style = c["style"] if c["style"] is not None else TOPICS["scenes"][topic]["style"]
     if style not in ck["style"]["values"]: refuse(f"style {style!r} is none of {'|'.join(ck['style']['values'])}")
     if c["scene"] not in ck["scene"]["values"]: refuse(f"scene {c['scene']!r} is none of {'|'.join(ck['scene']['values'])}")
     if isinstance(c["seed"], bool) or not isinstance(c["seed"], int): refuse(f"seed: {c['seed']!r} is not a whole number")
-    if c["reading_order"] == "right_to_left": flags = flags[::-1]
+    if not given: items = [{"lit": f} for f in flags]
+    if c["reading_order"] == "right_to_left": items = items[::-1]
     cols = page_colours(["--t-title", "--bg"])
-    request = {"scene": c["scene"], "style": style, "seed": c["seed"], "figures": [{"lit": f} for f in flags], "box": dict(SR["box"]),
-               "palette": {"ink": cols["--t-title"], "paper": cols["--bg"], "accent": acc.lower()}}
+    request = {"scene": c["scene"], "style": style, "seed": c["seed"], "figures": items, "box": dict(SR["box"]),
+               "palette": {"ink": cols["--t-title"], "paper": cols["--bg"], "accent": acc.lower()}, **({"order": "given"} if given else {})}
     reply, secs = ask_child([node_path(), os.path.join(HERE, SR["script"])], request, SR["deadline"])
     if "refused" in reply: refuse(f"scene: {reply['refused']}")
-    k, n = sum(flags), len(flags)
+    k = sum(1 for f in items if f.get("lit")); n = sum(1 for f in items if "gap" not in f); gaps = len(items) - n
     if reply.get("lit") != k or isinstance(reply.get("lit"), bool) or reply.get("total") != n or isinstance(reply.get("total"), bool):
         refuse(f"scene: the node drew {reply.get('lit')!r} lit of {reply.get('total')!r}, asked {k} of {n}")
+    if given and (reply.get("gaps") != gaps or isinstance(reply.get("gaps"), bool)): refuse(f"scene: the node drew {reply.get('gaps')!r} gaps, asked {gaps}")
     svg, rw, rh, dropped = reply.get("svg"), reply.get("w"), reply.get("h"), reply.get("dropped", [])
     if not isinstance(svg, str) or not isinstance(dropped, list): refuse("scene: the reply has no svg or no dropped list")
     rw, rh = number(rw, "scene reply w"), number(rh, "scene reply h")
@@ -630,7 +666,7 @@ def build_scene(inp):
     if body.startswith("<svg"): body = body[body.index(">") + 1:body.rindex("</svg>")]      # the hero is the inside of the page's own svg
     sk = width / rw; h = round(rh * sk, 2)
     name = f"{topic}.{kind}"
-    comp = dict(scene=name, renderer="scene", style=style, scene_layout=c["scene"], layout=f"{c['scene']}-{k}of{n}", objects=n, lit=k, omitted=0,
+    comp = dict(scene=name, renderer="scene", style=style, scene_layout=c["scene"], layout=f"{c['scene']}-{k}of{n}" + (f"-{omitted}folded" if omitted else ""), objects=n, lit=k, omitted=omitted,
                 dropped=[str(d) for d in dropped])
     return f'<g transform="scale({sk:.5f})">{body}</g>', float(width), h, {"scene": secs, "total": round(time.time() - t0, 2)}, name, comp
 
