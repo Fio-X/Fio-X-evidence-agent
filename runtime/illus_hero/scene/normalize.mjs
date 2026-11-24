@@ -290,6 +290,38 @@ export function normalizeFragment(src, ctx) {
   return items;
 }
 
+// ---------- cut a drawn figure at a horizontal line (keep y <= yMax): what a desk board hides is not drawn at all,
+// so the board can be thin. Closed rings are clipped to the half-plane (exact), open lines split where they cross.
+export function cutBelow(items, yMax) {
+  const out = [];
+  for (const it of items) {
+    const subs = [];
+    for (const u of flatten(it.d, 1.5)) {
+      const P = u.pts;
+      if (u.closed) {
+        const q = [];
+        for (let i = 0; i < P.length; i++) {
+          const a = P[i], b = P[(i + 1) % P.length], ia = a[1] <= yMax, ib = b[1] <= yMax;
+          if (ia) q.push(a);
+          if (ia !== ib) { const t = (yMax - a[1]) / (b[1] - a[1]); q.push([a[0] + (b[0] - a[0]) * t, yMax]); }
+        }
+        if (q.length >= 3) subs.push({ closed: true, pts: q });
+      } else {
+        let run = [];
+        for (let i = 0; i < P.length; i++) {
+          const a = P[i];
+          if (a[1] <= yMax) run.push(a);
+          const b = P[i + 1];
+          if (b && (a[1] <= yMax) !== (b[1] <= yMax)) { const t = (yMax - a[1]) / (b[1] - a[1]); run.push([a[0] + (b[0] - a[0]) * t, yMax]); if (b[1] > yMax) { if (run.length >= 2) subs.push({ closed: false, pts: run }); run = []; } }
+        }
+        if (run.length >= 2) subs.push({ closed: false, pts: run });
+      }
+    }
+    if (subs.length) out.push({ ...it, d: writeD(subs) });
+  }
+  return out;
+}
+
 // ---------- writer: runs of equal style share one <g>; strokes of one style share one path ----------
 const num = (v, p = 2) => { const s = (+v).toFixed(p).replace(/\.?0+$/, ''); return s === '-0' || s === '' ? '0' : s; };
 export function writeItems(items, washMask) {

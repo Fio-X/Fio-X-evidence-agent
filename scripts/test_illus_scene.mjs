@@ -321,6 +321,34 @@ for (const [scene, styles, cases] of [['grid', ['ink', 'iso', 'geo'], [[30, 9], 
     if (w.f > 0.05) fail(`${tag}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 5%)`);
     // (a seated torso counts only above its desk top: below it the desk already covers it)
     G.figures.forEach((a, i) => G.figures.forEach((b, j) => { if (i !== j && (b.clipY == null || a.head[1] < b.clipY) && inHull(a.head[0], a.head[1], w.cores[j])) fail(`${tag}: the head of q=${a.q} sits inside the torso of q=${b.q}`); }));
+    if (scene === 'grid' && style !== 'iso') {
+      // flat class: what shows of each person (own fills above the own board's top edge) on a 1 px grid
+      const vis = G.figures.map((g) => {
+        const subsAll = g.fills.map((d) => flatten(d).filter((u) => u.pts.length >= 3)).filter((x) => x.length);
+        const pts = subsAll.flat().flatMap((u) => u.pts); const x0 = Math.floor(Math.min(...pts.map((p) => p[0]))), x1 = Math.ceil(Math.max(...pts.map((p) => p[0]))), y0 = Math.floor(Math.min(...pts.map((p) => p[1]))), y1 = Math.min(Math.ceil(g.clipY), Math.ceil(Math.max(...pts.map((p) => p[1]))));
+        const px = new Set();
+        for (let y = y0 + 0.5; y < y1; y++) for (let x = x0 + 0.5; x < x1; x++) if (y < g.clipY && subsAll.some((subs) => winding(x, y, subs) !== 0)) px.add(`${x | 0},${y | 0}`);
+        return { g, px, bb: [x0, y0, x1, y1] };
+      });
+      // no two people's visible bodies overlap by more than 5% of the smaller
+      for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
+        const A = vis[i], B = vis[j]; if (A.bb[2] < B.bb[0] || B.bb[2] < A.bb[0] || A.bb[3] < B.bb[1] || B.bb[3] < A.bb[1]) continue;
+        let both = 0; for (const k of A.px) if (B.px.has(k)) both++;
+        if (both > 0.05 * Math.min(A.px.size, B.px.size)) fail(`${tag}: people q=${A.g.q} and q=${B.g.q} overlap by ${both} px`);
+      }
+      // rows do not overlap: each row's band (top of its people to the bottom of its board) is disjoint from the next
+      const bands = G.boards.map((b) => { const top = Math.min(...vis.filter((v) => v.g.row === b.row).map((v) => v.bb[1]), b.top); return [top, b.bottom]; });
+      for (let k = 1; k < bands.length; k++) if (bands[k][1] > bands[k - 1][0]) fail(`${tag}: row ${k} (y ${bands[k][0].toFixed(0)}..${bands[k][1].toFixed(0)}) overlaps row ${k - 1} (from y ${bands[k - 1][0].toFixed(0)})`);
+    }
+    if (scene === 'grid' && style === 'iso') {
+      // no arm reaches past its desk's sides by more than 4 px
+      for (const g of G.figures) for (const p of g.arms) if (p[0] < g.deskX[0] - 4 || p[0] > g.deskX[1] + 4) fail(`${tag}: an arm of q=${g.q} reaches ${(p[0] < g.deskX[0] ? g.deskX[0] - p[0] : p[0] - g.deskX[1]).toFixed(1)} px past its desk`);
+      // no head sits in the legs of another row (the desk legs, or the people's leg span) behind or in front
+      for (const a of G.figures) {
+        for (const d of G.desks) if (d.row !== a.row) for (const leg of d.legs) if (inHull(a.head[0], a.head[1], hull(leg))) fail(`${tag}: the head of q=${a.q} sits in a desk leg of row ${d.row}`);
+        for (const b of G.figures) if (b.row !== a.row && inHull(a.head[0], a.head[1], hull(b.legs))) fail(`${tag}: the head of q=${a.q} sits in the legs of q=${b.q}`);
+      }
+    }
     scOcc[scOcc.length - 1] += `,${(Buffer.byteLength(reply.svg) / 1024).toFixed(0)}KB`;
   }
 }

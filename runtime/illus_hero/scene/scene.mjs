@@ -11,7 +11,7 @@ import { turnToFace, posedJoints } from './people_lib/skins/common.mjs';
 import * as inkSkin from './people_lib/skins/ink.mjs';
 import * as isoSkin from './people_lib/skins/iso.mjs';
 import * as geoSkin from './people_lib/skins/geo.mjs';
-import { normalizeFragment, writeItems, writeD, hexOk, mix, fbm } from './normalize.mjs';
+import { normalizeFragment, writeItems, writeD, hexOk, mix, fbm, cutBelow } from './normalize.mjs';
 
 const SKINS = { ink: inkSkin, iso: isoSkin, geo: geoSkin };
 const MIN_W = 160, MIN_H = 100, MAX_SIDE = 4000, MIN_FIG_PX = 36, MAX_FIGS = 60;
@@ -196,7 +196,7 @@ function ellipsis(L, P) {
 // people in a 1200x560 box sit 5 x 6, 20 sit 4 x 5, 12 sit 3 x 4, 8 sit 3 x 3, 60 sit 7 x 9; desks past N stay
 // empty at the back right. Rows recede up and to the right (oblique, no perspective). Desk q runs row-major from
 // the front-left, and the lit are the first K desks: one contiguous block counted by rows.
-const GRID_COL = 0.95, GRID_PITCH = 0.52, GRID_DX = 0.22, DESK_TOP = 0.43; // a seated class: desk top above the lap
+const GRID_COL = 0.95, GRID_PITCH = 0.82, GRID_DX = 0.22, DESK_TOP = 0.43; // a seated class: desk top above the lap
 // Seated poses for the class, as scene data: the library's one chair-height sit (sit_bench: thigh 85, knee 85)
 // with the arms (and head, and hand-held prop) of standing poses, so the hands show above the desk. Registered in
 // the copy's pose table at load (no file is changed); sit_bench's own bench prop is dropped (this scene draws a chair).
@@ -206,15 +206,65 @@ const SEATED = (() => {
   const desk = { pitch: 30, roll: 4, elbow: 95, twist: 30 };
   const mk = (id, extra) => { P[id] = { ...base, needs: null, props: [], tags: ['sit'], ...extra }; return id; };
   const from = (k) => (P[k] ? { head: P[k].head, armL: P[k].armL, armR: P[k].armR, props: (P[k].props || []).filter((x) => /phone|folder/.test(x.type)) } : {});
-  return [
-    mk('sit_desk_rest', { armL: desk, armR: { ...desk, elbow: 84 }, head: { pitch: 8, yaw: 6, roll: 0 } }),
-    mk('sit_desk_phone', from('phone_look')),
-    mk('sit_desk_cross', from('arms_crossed')),
-    mk('sit_desk_watch', from('check_watch')),
-    mk('sit_desk_chin', { armL: desk, armR: { pitch: 34, roll: 10, elbow: 140, twist: 40 }, head: { pitch: 4, yaw: 10, roll: 6 } }),
-  ];
+  return {
+    rest: mk('sit_desk_rest', { armL: desk, armR: { ...desk, elbow: 84 }, head: { pitch: 8, yaw: 6, roll: 0 } }),
+    phone: mk('sit_desk_phone', from('phone_look')),
+    cross: mk('sit_desk_cross', from('arms_crossed')),
+    chin: mk('sit_desk_chin', { armL: desk, armR: { pitch: 34, roll: 10, elbow: 140, twist: 40 }, head: { pitch: 4, yaw: 10, roll: 6 } }),
+  };
 })();
-function layoutGrid(n, box, r) {
+function layoutGrid(n, box, r, K, style) {
+  return style === 'iso' ? layoutGridIso(n, box, r) : layoutGridFlat(n, box, r);
+}
+// flat styles (geo, ink): a frontal, eye-level class. Rows stack up the picture (further = higher, each step 6.5%
+// smaller); each row sits behind one long desk board that hides its laps and legs, so only head, shoulders and
+// upper torso show above it. Rows and people never overlap; desk q runs row-major from the front-left (bottom row).
+const FLAT_STEP = 0.935, BOARD_TOP = 0.36, BOARD_BOTTOM = 0.17, CUT_AT = 0.2, HEAD_TOP = 0.84, ROW_GAP = 0.06, FLAT_COL = 0.78;
+function layoutGridFlat(n, box, r) {
+  const W = box.w, Hb = box.h;
+  const A = (W / Hb) * 0.39, c = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))), R = Math.ceil(n / c);
+  // feet lines in units of H (front row at 0, rows behind higher), then H from the box
+  const sc = Array.from({ length: R }, (_, k) => Math.pow(FLAT_STEP, k)), yu = [0];
+  // a row's band runs from its head tops (HEAD_TOP above the feet) to its board's bottom (BOARD_BOTTOM above the feet)
+  for (let k = 1; k < R; k++) yu.push(yu[k - 1] - (HEAD_TOP - BOARD_BOTTOM + ROW_GAP) * sc[k - 1]);
+  const topU = yu[R - 1] - HEAD_TOP * sc[R - 1], hU = 0.04 - BOARD_BOTTOM - topU + 0.04;
+  const H = Math.min((Hb * 0.98) / hU, (W * 0.92) / ((c - 1) * FLAT_COL + 1.0), Hb * 0.9);
+  // the class fills the width: seats spread up to 1.7 H apart (never closer than FLAT_COL)
+  const fc = c > 1 ? Math.max(FLAT_COL, Math.min(1.7, ((W * 0.9) / H - 1.0) / (c - 1))) : FLAT_COL;
+  const y0 = H * (0.04 - topU), boards = [];
+  const rows = yu.map((u, k) => ({ y: y0 + u * H, k: sc[k], slots: [], empty: [] }));
+  for (let d = 0; d < c * R; d++) {
+    const k = Math.floor(d / c), col = d % c, row = rows[k], step = fc * H * row.k, x = W / 2 + (col - (c - 1) / 2) * step;
+    if (d < n) row.slots.push({ q: d, col, x, y: row.y, k: row.k });
+  }
+  rows.forEach((row, k) => { const half = ((c - 1) / 2) * fc * H * row.k + 0.62 * FLAT_COL * H * row.k; boards.push({ row: k, x0: W / 2 - half, x1: W / 2 + half, top: row.y - BOARD_TOP * H * row.k, bottom: row.y - BOARD_BOTTOM * H * row.k, k: row.k }); });
+  const hUsed = Math.min(Hb, y0 + (0.04 - BOARD_BOTTOM) * H);
+  return {
+    H, s: fc * H, cols: c, rows, boards, hUsed, noDoor: true,
+    litOf: (q, K) => q < K, seated: true, poses: [SEATED.rest, SEATED.chin, SEATED.cross, SEATED.phone],
+    // facing the class front (the viewer), turned a little either way, never square on
+    face: (sl, fr) => (fr() < 0.5 ? -1 : 1) * (24 + fr() * 18),
+    clipY: (sl) => sl.y - BOARD_TOP * H * sl.k,
+    // everything below the board's bottom edge is cut from the figure (the board hides the rest of the lap)
+    cutY: (sl) => sl.y - CUT_AT * H * sl.k, // a little above the board's bottom edge, so nothing peeks below it
+    shadow: () => null,
+    ground: (P, style) => (style === 'geo' ? `<path d="M0 0H${f1(W)}V${f1(hUsed)}H0Z" fill="${mix(P.paper, P.ink, 0.2)}" stroke="none"/>` : ''),
+    board: (k, style, P) => boardSvg(boards[k], style, P, H),
+  };
+}
+function boardSvg(b, style, P, H) {
+  const lip = H * b.k * 0.05, ring = (y0, y1) => writeD([{ closed: true, pts: [[b.x0, y0], [b.x1, y0], [b.x1, y1], [b.x0, y1]] }]);
+  if (style === 'geo') return `<g stroke="none"><path d="${ring(b.top, b.bottom)}" fill="${mix(P.paper, P.ink, 0.07)}"/><path d="${ring(b.top, b.top + lip)}" fill="${P.paper}"/><path d="${ring(b.top + lip, b.top + lip * 1.6)}" fill="${mix(P.paper, P.ink, 0.28)}"/></g>`;
+  // ink: a paper board with a light wash, a heavy broken pen line along the top and a lighter one under the lip
+  const w = Math.max(1, Math.min(2.6, H * b.k * 0.014)), line = (y, x0, x1, sd) => { const pts = []; for (let x = x0; x <= x1 + 0.01; x += 8) pts.push([x, y + fbm(x / 60, y / 40, sd) * 1.2]); return { closed: false, pts }; };
+  const cut = b.x0 + (b.x1 - b.x0) * 0.62;
+  return `<g stroke="none"><path d="${ring(b.top, b.bottom)}" fill="${P.paper}"/><path d="${ring(b.top + lip * 0.4, b.top + lip * 2.4)}" fill="${mix(P.paper, '#d6b85e', 0.5)}" opacity="0.55"/></g>`
+    + `<g fill="none" stroke="${P.ink}" stroke-width="${f1(w)}" stroke-linejoin="round"><path d="${writeD([line(b.top, b.x0 - 4, cut, 11), line(b.top + 0.5, cut + 6, b.x1 + 4, 12)])}"/></g>`
+    + `<g fill="none" stroke="${P.ink}" stroke-width="${f1(w * 0.45)}" stroke-linejoin="round"><path d="${writeD([line(b.top + lip, b.x0, b.x1, 13), { closed: false, pts: [[b.x0, b.top], [b.x0 + 1, b.bottom]] }, { closed: false, pts: [[b.x1, b.top], [b.x1 - 1, b.bottom]] }])}"/></g>`;
+}
+// iso: the oblique class with a desk and a chair per person; rows 0.82 H apart so a head never meets the legs of
+// the desk behind; only poses whose arms stay over the desk (forearms on the desk, hand to chin, arms crossed)
+function layoutGridIso(n, box, r) {
   const W = box.w, Hb = box.h, side = 0.04;
   const A = (W / Hb) * 0.39, c = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))), R = Math.ceil(n / c);
   // H is a standing person's height; seated, the head tops out near 0.78 H
@@ -232,7 +282,7 @@ function layoutGrid(n, box, r) {
     litOf: (q, K) => q < K,
     // facing the front of the class (the viewer's left), three-quarter, never square on
     face: (sl, fr) => -(32 + fr() * 28),
-    desk: true, seated: true,
+    desk: true, seated: true, chair: true, poses: [SEATED.rest, SEATED.chin, SEATED.cross],
     // the level of the desk top's back edge: above it a seated person must stay in view
     clipY: (sl) => sl.y - H * (DESK_TOP + 0.03),
   };
@@ -418,7 +468,7 @@ export function draw(req, opts = {}) {
   const n = people0.length;
   const K = people0.filter((f) => f.lit).length;
   const r = rng((seed >>> 0) ^ 0x9e3779b9);
-  const L = given ? SCENES[req.scene].given(figures, box, r) : SCENES[req.scene].tally(n, box, r, K);
+  const L = given ? SCENES[req.scene].given(figures, box, r) : SCENES[req.scene].tally(n, box, r, K, style);
   const litOf = L.litOf || ((q) => q >= n - K);
   if (L.H < MIN_FIG_PX) return { refused: `box ${box.w}x${box.h} is too small for ${n} figures (each would be ${Math.floor(L.H)} px tall; at least ${MIN_FIG_PX})` };
   const skin = SKINS[style];
@@ -430,8 +480,8 @@ export function draw(req, opts = {}) {
   // grid: the first K desks (row-major from the front-left); door: the last K in the line (outside the light)
   crowd.items.forEach((it, q) => { it.figure.highlight = given ? people0[q].lit : litOf(q, K); });
   // a seated scene keeps each person's body, hair and outfit and seats them (a seeded spread of the seated poses)
-  if (L.seated && SEATED.length) {
-    const order = SEATED.map((p, i) => [p, rng((seed ^ (i * 2654435761)) >>> 0)()]).sort((a, b) => a[1] - b[1]).map((a) => a[0]);
+  if (L.seated && L.poses && L.poses.length) {
+    const order = L.poses.map((p, i) => [p, rng((seed ^ (i * 2654435761)) >>> 0)()]).sort((a, b) => a[1] - b[1]).map((a) => a[0]);
     crowd.items.forEach((it, q) => { const f = it.figure; it.figure = makeFigure({ pose: order[q % order.length], body: f.body, hair: f.hair, outfit: f.outfit, seed: f.seed, facing: f.facing, highlight: f.highlight }); });
   }
 
@@ -443,7 +493,7 @@ export function draw(req, opts = {}) {
   const byQ = new Map(slots.map((sl) => [sl.q, sl]));
   // back rows first; within a row the lower (nearer) foot line later, then left to right
   slots.sort((a, b) => b.row - a.row || a.y - b.y || a.x - b.x);
-  for (const sl of slots) {
+  slots.forEach((sl, si) => {
     let fig = crowd.items[sl.q].figure;
     if (style === 'iso') fig = resampleHeight(fig, 6);
     else if (fig.height < skin.info.headRatio) fig = resampleHeight(fig, skin.info.headRatio);
@@ -456,14 +506,15 @@ export function draw(req, opts = {}) {
     const px = ((L.H * (sl.k || 1)) / fig.height) * (fig.scale || 1);
     const pal = looks(style, P, sl.q, fr);
     const frag = skin.drawFigure(fig, { x: sl.x, y: sl.y, px, palette: pal, seed: fig.seed, turn });
-    const items = normalizeFragment(frag, { px, seed: (fig.seed ^ seed) >>> 0, palette: pal });
-    if (!items.length) continue;
+    let items = normalizeFragment(frag, { px, seed: (fig.seed ^ seed) >>> 0, palette: pal });
+    if (L.cutY) items = cutBelow(items, L.cutY(sl));
+    if (!items.length) return;
     const hh = L.H * (sl.k || 1) * (fig.scale || 1);
     const sh = L.shadow ? L.shadow(sl, hh, fig, P) : style === 'ink' ? shadowInk(sl.x, sl.y, hh, P) : style === 'iso' ? shadowIso(sl.x, sl.y, hh, P) : (fig.highlight ? null : shadowGeo(sl.x, sl.y, hh, P));
     if (sh) shadows.push(sh);
     // seated: a chair behind the person (drawn first), then the person, then the desk in front of them
     let chair = '';
-    if (L.seated) {
+    if (L.chair) {
       const J0 = posedJoints(fig, turn), pv = [sl.x + J0.pelvis[0] * px, sl.y - J0.pelvis[1] * px];
       const fx = (fig.dirs && fig.dirs.face) ? Math.sign(Math.cos(turn * Math.PI / 180) * fig.dirs.face[0] + Math.sin(turn * Math.PI / 180) * fig.dirs.face[2]) || -1 : -1;
       const ch = chairPaths(pv, fx, L.H);
@@ -471,18 +522,24 @@ export function draw(req, opts = {}) {
       if (opts.geometry) occluders.push({ after: geometry.length - 1, d: writeD(ch.map((pts) => ({ closed: true, pts }))) });
     }
     const desk = L.desk ? deskSvg(style, sl.x, sl.y, L.H, P, (seed + sl.q * 131) >>> 0) : '';
-    people.push(`${chair}<g>${writeItems(items, null)}</g>${desk}`);
+    // a row's long desk board goes in right after the row's last person (flat grid)
+    const lastOfRow = L.board && (si === slots.length - 1 || slots[si + 1].row !== sl.row);
+    const board = lastOfRow ? L.board(sl.row, style, P) : '';
+    people.push(`${chair}<g>${writeItems(items, null)}</g>${desk}${board}`);
     if (desk && opts.geometry) occluders.push({ after: geometry.length, ...deskGeom(sl.x, sl.y, L.H) });
     total++; if (fig.highlight) lit++;
     if (opts.geometry) {
       // for the test only (never in the reply): the head disc and torso core in picture pixels, and the fills drawn
       const J = posedJoints(fig, turn), S = (p) => [sl.x + p[0] * px, sl.y - p[1] * px];
       geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, footY: sl.y, clipY: L.clipY ? L.clipY(sl) : null, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
+        arms: ['elL', 'wrL', 'fingL', 'elR', 'wrR', 'fingR'].map((k) => S(J[k])), legs: ['hipL', 'knL', 'anL', 'hipR', 'knR', 'anR'].map((k) => S(J[k])),
+        deskX: L.desk ? [sl.x - L.H * 0.33, sl.x + L.H * 0.39] : null,
         torso: ['shL', 'shR', 'hipR', 'hipL', 'neck'].map((k) => S(J[k])), shW: (Math.max(fig.thick.upperArm || 0.4, fig.thick.torsoDepth || 0.9) / 2) * px, hipW: (Math.max(fig.thick.thigh || 0.6, (fig.thick.torsoDepth || 0.9) * 0.8) / 2) * px, fills: items.filter((it) => it.fill !== 'none').map((it) => it.d) });
     }
-  }
+    if (board && opts.geometry) { const bd = L.boards[sl.row]; occluders.push({ after: geometry.length - 1, row: sl.row, d: writeD([{ closed: true, pts: [[bd.x0, bd.top], [bd.x1, bd.top], [bd.x1, bd.bottom], [bd.x0, bd.bottom]] }]) }); }
+  });
   const empty = L.desk ? L.rows.flatMap((row) => row.empty || []).map((e) => deskSvg(style, e.x, e.y, L.H, P, (seed + e.col * 977) >>> 0)).join('') : '';
-  const ground = L.ground ? L.ground(P) : style === 'ink' ? groundInk(L, P, W, r, seed >>> 0) : style === 'iso' ? groundIso(L, P, W) : groundGeo(L, P, W, Hpic, !L.noDoor);
+  const ground = L.ground ? L.ground(P, style) : style === 'ink' ? groundInk(L, P, W, r, seed >>> 0) : style === 'iso' ? groundIso(L, P, W) : groundGeo(L, P, W, Hpic, !L.noDoor);
   const shadowSvg = writeItems(shadows.map((x) => ({ d: x.d, fill: x.fill, stroke: 'none', sw: 0, op: x.op, wash: style === 'ink' })), null);
   let defs = '';
   if (style === 'ink') defs = `<defs><linearGradient id="gfade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/><stop offset="0.25" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.75"/><stop offset="0.8" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.6"/><stop offset="1" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/></linearGradient></defs>`;
@@ -491,7 +548,7 @@ export function draw(req, opts = {}) {
   const reply = { svg, w: W, h: Hpic, lit, total, dropped: [] };
   if (given) reply.gaps = L.rows.reduce((s, row) => s + row.gaps.length, 0);
   if (given && reply.gaps !== nGaps) return { refused: `drew ${reply.gaps} gap markers for ${nGaps}` };
-  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols, gaps: L.rows.flatMap((row, k) => (row.gaps || []).map((g) => ({ row: k, col: g.col }))), occluders, spill: L.spill || null }, enumerable: false });
+  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols, gaps: L.rows.flatMap((row, k) => (row.gaps || []).map((g) => ({ row: k, col: g.col }))), occluders, spill: L.spill || null, boards: L.boards || null, desks: L.desk ? L.rows.flatMap((row, k) => row.slots.map((sl) => ({ row: k, legs: deskPaths(sl.x, sl.y, L.H).legs }))) : null }, enumerable: false });
   return reply;
 }
 
