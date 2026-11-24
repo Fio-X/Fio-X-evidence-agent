@@ -2891,6 +2891,17 @@ mod tests {
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{family}: {e:?}"));
             assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{family}");
         }
+        // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion
+        for (style, share, figures, count) in [("ink", 0.3, 30, 9), ("geo", 0.284, 8, 2)] {
+            let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a", "composition": {"style": style},
+                             "subject": {"proportion": {"share": share, "figures": figures}, "declared": {"count": count, "total": figures}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {figures}: {e:?}"));
+            assert_eq!(
+                hero_faults(&got.svg),
+                Vec::<String>::new(),
+                "{style} {figures}"
+            );
+        }
         // a rank and an ends lead (the figures highest first, the middle of 20 members folded into one gap marker, 8 omitted)
         let many: Vec<Value> = (1..=20)
             .map(|i| json!({"code": format!("M{i:02}"), "value": f64::from(i)}))

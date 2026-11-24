@@ -32,7 +32,10 @@ export function check(req) {
   for (const k of Object.keys(req)) if (!REQUEST_KEYS.includes(k)) return `unknown request key ${JSON.stringify(k)}; allowed: ${REQUEST_KEYS.join(', ')}`;
   if (!Object.prototype.hasOwnProperty.call(SCENES, req.scene)) return `unknown scene ${JSON.stringify(req.scene)}; allowed: ${Object.keys(SCENES).join(', ')} (e.g. "queue")`;
   if (!Object.prototype.hasOwnProperty.call(SKINS, req.style)) return `unknown style ${JSON.stringify(req.style)}; allowed: ink, iso, geo (e.g. "ink")`;
+  const spec = SCENES[req.scene];
+  if (spec.styles && !spec.styles.includes(req.style)) return `scene ${JSON.stringify(req.scene)} is drawn only in style ${spec.styles.join(', ')} (got ${JSON.stringify(req.style)})`;
   if (!Number.isSafeInteger(req.seed)) return 'seed must be an integer (e.g. 7)';
+  if ('order' in req && !spec.given) return `order is only for scene "queue" (rank order); scene ${JSON.stringify(req.scene)} takes tally flags`;
   if ('order' in req && req.order !== 'given') return `order ${JSON.stringify(req.order)} is not known; allowed: "given" (rank order, first = front of the queue), or leave it out (lit at the tail in fives)`;
   const given = req.order === 'given';
   const F = req.figures;
@@ -49,6 +52,7 @@ export function check(req) {
   }
   const real = F.filter((f) => !isGap(f)).length;
   if (real < 1 || real > MAX_FIGS) return `figures must hold 1..${MAX_FIGS} people (got ${real})`;
+  if (spec.maxN && real > spec.maxN) return `scene ${JSON.stringify(req.scene)} holds at most ${spec.maxN} people (got ${real})`;
   const b = req.box;
   if (!b || typeof b !== 'object' || !Number.isFinite(b.w) || !Number.isFinite(b.h) || Object.keys(b).some((k) => k !== 'w' && k !== 'h')) return 'box must be {"w":number,"h":number}';
   if (b.w < MIN_W || b.h < MIN_H) return `box ${b.w}x${b.h} is too small; at least ${MIN_W}x${MIN_H}`;
@@ -187,7 +191,126 @@ function ellipsis(L, P) {
   }
   return pts.length ? `<g fill="${P.ink}" stroke="none"><path d="${writeD(pts)}"/></g>` : '';
 }
-const SCENES = { queue: { tally: layoutQueue, given: layoutGiven } }; // grid (classroom rows) and door come later
+// ---------- layout: grid (a classroom: one person standing behind each desk) ----------
+// columns = round(sqrt(N * A)), A = box aspect x 0.39 (the drawn grid's row pitch over its column step), so 30
+// people in a 1200x560 box sit 5 x 6, 20 sit 4 x 5, 12 sit 3 x 4, 8 sit 3 x 3, 60 sit 7 x 9; desks past N stay
+// empty at the back right. Rows recede up and to the right (oblique, no perspective). Desk q runs row-major from
+// the front-left, and the lit are the first K desks: one contiguous block counted by rows.
+const GRID_COL = 0.95, GRID_PITCH = 0.6, GRID_DX = 0.22, DESK_TOP = 0.4; // desk top just under hanging hands
+function layoutGrid(n, box, r) {
+  const W = box.w, Hb = box.h, side = 0.04;
+  const A = (W / Hb) * 0.39, c = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))), R = Math.ceil(n / c);
+  const H = Math.min((W * (1 - 2 * side)) / ((c - 1) * GRID_COL + (R - 1) * GRID_DX + 0.9), Hb / (1.14 + (R - 1) * GRID_PITCH + 0.1), Hb * 0.86);
+  const colStep = H * GRID_COL, pitch = H * GRID_PITCH, dx = H * GRID_DX;
+  const span = (c - 1) * colStep + (R - 1) * dx, x0 = (W - span) / 2;
+  const yFront = H * 1.1 + (R - 1) * pitch;
+  const rows = Array.from({ length: R }, (_, k) => ({ y: yFront - k * pitch, slots: [], empty: [] }));
+  for (let d = 0; d < c * R; d++) {
+    const k = Math.floor(d / c), col = d % c, x = x0 + col * colStep + k * dx, y = rows[k].y;
+    if (d < n) rows[k].slots.push({ q: d, col, x, y: y + (r() * 2 - 1) * H * 0.006 }); else rows[k].empty.push({ col, x, y });
+  }
+  return {
+    H, s: colStep, pitch, cols: c, rows, hUsed: Math.min(Hb, yFront + H * 0.14), noDoor: true,
+    litOf: (q, K) => q < K,
+    // facing the front of the class (the viewer's left), three-quarter, never square on
+    face: (sl, fr) => -(32 + fr() * 28),
+    desk: true,
+  };
+}
+// a desk in front of the person standing at (x, y): an oblique top, a front panel, a side and legs, per style
+function deskPaths(x, y, H) {
+  const a = [x - H * 0.33, y - H * DESK_TOP + H * 0.04], b = [x + H * 0.29, a[1]], o = [H * 0.1, -H * 0.07], th = H * 0.1;
+  const c = [b[0] + o[0], b[1] + o[1]], d = [a[0] + o[0], a[1] + o[1]], leg = H * 0.025, foot = y + H * 0.05;
+  return {
+    top: [a, b, c, d], front: [a, b, [b[0], b[1] + th], [a[0], a[1] + th]], side: [b, c, [c[0], c[1] + th], [b[0], b[1] + th]],
+    legs: [[a[0] + leg * 0.5, a[1] + th], [b[0] - leg * 1.5, b[1] + th], [c[0] - leg * 1.5, c[1] + th]].map(([lx, ly], i) => [[lx, ly], [lx + leg, ly], [lx + leg, i === 2 ? foot - H * 0.07 : foot], [lx, i === 2 ? foot - H * 0.07 : foot]]),
+  };
+}
+function deskSvg(style, x, y, H, P, seed) {
+  const D = deskPaths(x, y, H), poly = (pts) => writeD([{ closed: true, pts }]);
+  if (style === 'iso') {
+    const wood = mix(P.paper, '#b8925f', 0.5);
+    return `<g stroke="none"><path d="${poly(D.legs[2])}" fill="${mix(P.ink, P.paper, 0.35)}"/><path d="${poly(D.top)}" fill="${mix(wood, P.paper, 0.35)}"/><path d="${poly(D.front)}" fill="${wood}"/><path d="${poly(D.side)}" fill="${mix(wood, P.ink, 0.3)}"/><path d="${writeD(D.legs.slice(0, 2).map((pts) => ({ closed: true, pts })))}" fill="${mix(P.ink, P.paper, 0.35)}"/></g>`;
+  }
+  if (style === 'geo') {
+    // flat planes: a light top, a mid front, a darker side; thin legs
+    return `<g stroke="none"><path d="${writeD(D.legs.map((pts) => ({ closed: true, pts })))}" fill="${mix(P.paper, P.ink, 0.45)}"/><path d="${poly(D.top)}" fill="${mix(P.paper, P.ink, 0.03)}"/><path d="${poly(D.front)}" fill="${mix(P.paper, P.ink, 0.16)}"/><path d="${poly(D.side)}" fill="${mix(P.paper, P.ink, 0.3)}"/></g>`;
+  }
+  // ink: paper planes, a light wash on the top, broken pen lines with a little wobble
+  const w = Math.max(0.9, Math.min(2.2, H * 0.011)), wob = (pts) => pts.map(([px, py]) => [px + fbm(px / 30, py / 30, seed & 0xffff) * 0.8, py + fbm(px / 30 + 7, py / 30, (seed + 3) & 0xffff) * 0.8]);
+  const line = (p, q) => { const pts = []; for (let t = 0; t <= 1.0001; t += 0.125) pts.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); return { closed: false, pts: wob(pts) }; };
+  const [a, b, c, d] = D.top, fa = D.front[3], fb = D.front[2], sc = D.side[2];
+  const edges = [line(a, b), line(b, c), line(c, [d[0] + (c[0] - d[0]) * 0.35, d[1] + (c[1] - d[1]) * 0.35]), line(d, a), line(fa, fb), line(b, fb), line(c, sc), line(sc, fb)];
+  const legs = D.legs.map((L) => line([(L[0][0] + L[1][0]) / 2, L[0][1]], [(L[2][0] + L[3][0]) / 2, L[2][1]]));
+  return `<g stroke="none"><path d="${poly([a, b, c, sc, fb, fa])}" fill="${P.paper}"/><path d="${poly(D.top)}" fill="${mix(P.paper, '#d6b85e', 0.5)}" opacity="0.7"/></g><g fill="none" stroke="${P.ink}" stroke-width="${f1(w)}" stroke-linejoin="round"><path d="${writeD([...edges, ...legs])}"/></g>`;
+}
+
+// ---------- layout: door (geometric only): the light out of a tall doorway, people in a line facing it ----------
+// The composition of taste/geo/plate.html in picture units: a dark wall and floor, a tall doorway cropped by the
+// top edge, its light spilling across the floor; the line runs from the door toward the viewer, nearer people
+// larger. The light's left edge runs through the gap between the last person inside it and the first left out:
+// the K flagged people stand outside the light (in the accent), the others inside it (dark on the light).
+function layoutDoor(n, box, r, K) {
+  const W = box.w, Hpic = Math.min(box.h, Math.round(W * 0.667)), u = Hpic / 800, v = W / 1200;
+  const HW = 520 * u, DL = 880 * v, DR = 975 * v;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = n > 1 ? i / (n - 1) : 0.5, y = (548 + 232 * Math.pow(t, 0.9)) * u, x = (960 - 700 * t) * v;
+    pts.push({ q: i, col: i, x, y, k: 0.55 + ((y / u - 520) / 280) * 0.95 });
+  }
+  const inside = n - K;
+  let mid;
+  if (inside > 0 && K > 0) { const a = pts[inside - 1], b = pts[inside]; mid = { x: (a.x + b.x) / 2 - 4 * v, y: (a.y + b.y) / 2 }; }
+  else if (K === 0) { const a = pts[n - 1]; mid = { x: a.x - 90 * v, y: a.y }; }
+  else { const a = pts[0]; mid = { x: a.x + 60 * v, y: a.y }; }
+  const edgeAt = (y) => DL + (mid.x - DL) * (y - HW) / (mid.y - HW);
+  const spill = [[DL, HW], [DR, HW], [W, Hpic], [edgeAt(Hpic), Hpic]];
+  return {
+    H: 150 * u, s: 0, cols: n, rows: [{ y: 0, slots: pts }], hUsed: Hpic, spill,
+    litOf: (q, K2) => q >= n - K2,
+    face: (sl, fr) => 35 + fr() * 30 - 15,
+    ground: (P) => {
+      const wall = mix(P.ink, P.paper, 0.12), floor = mix(P.ink, P.paper, 0.2), light = P.paper, leaf = mix(P.ink, P.paper, 0.25);
+      const poly = (p) => writeD([{ closed: true, pts: p }]);
+      const LY = 640 * u, lx = edgeAt(LY);
+      return `<g stroke="none"><path d="${poly([[0, 0], [W, 0], [W, HW], [0, HW]])}" fill="${wall}"/><path d="${poly([[0, HW], [W, HW], [W, Hpic], [0, Hpic]])}" fill="${floor}"/>`
+        + `<path d="${poly(spill)}" fill="${light}"/><path d="${poly([[DL - 14 * v, 0], [DR + 14 * v, 0], [DR + 14 * v, HW], [DL - 14 * v, HW]])}" fill="${P.ink}"/>`
+        + `<path d="${poly([[DL, 0], [DR, 0], [DR, HW], [DL, HW]])}" fill="${light}"/><path d="${poly([[DL, 0], [lx, 0], [lx, LY], [DL, HW]])}" fill="${leaf}"/>`
+        + `<path d="${poly([[lx + 18 * v, 318 * u], [lx + 44 * v, 318 * u], [lx + 44 * v, 325 * u], [lx + 18 * v, 325 * u]])}" fill="${P.ink}"/></g>`
+        + `<g fill="none" stroke="${light}" stroke-width="${f1(Math.max(1, 2 * u))}" opacity="0.55"><path d="${writeD([{ closed: false, pts: [[lx, 0], [lx, LY]] }])}"/></g>`;
+    },
+    // a long shadow toward the viewer for the people in the light, cut to the light's shape
+    shadow: (sl, hh, fig, P) => {
+      if (fig.highlight) return null;
+      const s = sl.k, x = sl.x, y = sl.y, h = hh;
+      const shp = [[x - 13 * s * u, y - 1], [x + 13 * s * u, y - 1], [x - 0.5 * h + 9 * s * u, y + 0.55 * h], [x - 0.5 * h - 4 * s * u, y + 0.6 * h], [x - 0.5 * h - 15 * s * u, y + 0.53 * h]];
+      const cut = clipConvex(shp, spill);
+      return cut.length >= 3 ? { d: writeD([{ closed: true, pts: cut }]), fill: mix(P.paper, P.ink, 0.17), op: 1 } : null;
+    },
+  };
+}
+// the desk's outline (top, front and side as one ring) for the test's occlusion count
+function deskGeom(x, y, H) { const D = deskPaths(x, y, H); return { d: writeD([{ closed: true, pts: [D.top[0], D.top[1], D.top[2], D.side[2], D.front[2], D.front[3]] }, ...D.legs.map((pts) => ({ closed: true, pts }))]) }; }
+// Sutherland-Hodgman: polygon `p` cut to the convex polygon `c` (either winding)
+function clipConvex(p, c) {
+  let out = p;
+  const sgn = Math.sign(c.reduce((s, a, i) => { const b = c[(i + 1) % c.length]; return s + a[0] * b[1] - b[0] * a[1]; }, 0)) || 1;
+  for (let i = 0; i < c.length && out.length; i++) {
+    const a = c[i], b = c[(i + 1) % c.length], inn = (q) => sgn * ((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) >= 0;
+    const src = out; out = [];
+    for (let j = 0; j < src.length; j++) {
+      const P1 = src[j], P0 = src[(j + src.length - 1) % src.length];
+      const cross = () => { const d1 = [P1[0] - P0[0], P1[1] - P0[1]], d2 = [b[0] - a[0], b[1] - a[1]], den = d1[0] * d2[1] - d1[1] * d2[0]; const t = den ? ((a[0] - P0[0]) * d2[1] - (a[1] - P0[1]) * d2[0]) / den : 0; return [P0[0] + d1[0] * t, P0[1] + d1[1] * t]; };
+      if (inn(P1)) { if (!inn(P0)) out.push(cross()); out.push(P1); } else if (inn(P0)) out.push(cross());
+    }
+  }
+  return out;
+}
+const SCENES = {
+  queue: { tally: layoutQueue, given: layoutGiven },
+  grid: { tally: layoutGrid },
+  door: { tally: layoutDoor, styles: ['geo'], maxN: 10 },
+};
 
 // ---------- ground and props, per style (in picture coordinates, gate-safe markup) ----------
 const extent = (L, pad) => { const xs = L.rows.flatMap((row) => row.slots.map((q) => q.x)); return [Math.min(...xs) - L.H * pad, Math.max(...xs) + L.H * pad]; };
@@ -230,13 +353,14 @@ function shadowIso(x, y, H, P) {
   const pts = []; for (let k = 0; k < 16; k++) { const t = k / 16 * Math.PI * 2; pts.push([x + H * 0.05 + Math.cos(t) * H * 0.12, y + Math.sin(t) * H * 0.035]); }
   return { d: writeD([{ closed: true, pts }]), fill: mix(P.paper, P.ink, 0.4), op: 0.35 };
 }
-function groundGeo(L, P, W, hUsed) {
+function groundGeo(L, P, W, hUsed, door = true) {
   // one flat greyish base (the wall), a lighter floor band under each row, and a tall light doorway at the
   // head of the queue cropped by the top edge: the big shape the eye meets first
   const wall = mix(P.paper, P.ink, 0.2), floor = mix(P.paper, P.ink, 0.06), light = P.paper;
   let s = `<path d="M0 0H${f1(W)}V${f1(hUsed)}H0Z" fill="${wall}" stroke="none"/>`;
   const [ea, eb] = extent(L, 0.5), yB = L.rows[L.rows.length - 1].y - L.H * 0.035, yF = L.rows[0].y + L.H * 0.075;
   s += `<path d="${writeD([{ closed: true, pts: [[ea, yB], [eb, yB], [eb - L.H * 0.12, yF], [ea + L.H * 0.04, yF]] }])}" fill="${floor}" stroke="none"/>`;
+  if (!door) return s;
   const front = L.rows[0], hx = extent(L, 0)[0] - L.H * 0.34; // clear of the first person and their arms
   const dw = Math.min(L.H * 0.42, Math.max(L.H * 0.2, hx)), y = yB, x0 = Math.max(-dw * 0.4, hx - dw);
   s += `<path d="${writeD([{ closed: true, pts: [[x0 - L.H * 0.04, 0], [x0 + dw + L.H * 0.04, 0], [x0 + dw + L.H * 0.04, y], [x0 - L.H * 0.04, y]] }])}" fill="${P.ink}" stroke="none"/>`;
@@ -263,6 +387,7 @@ export function draw(req, opts = {}) {
   const K = people0.filter((f) => f.lit).length;
   const r = rng((seed >>> 0) ^ 0x9e3779b9);
   const L = given ? SCENES[req.scene].given(figures, box, r) : SCENES[req.scene].tally(n, box, r, K);
+  const litOf = L.litOf || ((q) => q >= n - K);
   if (L.H < MIN_FIG_PX) return { refused: `box ${box.w}x${box.h} is too small for ${n} figures (each would be ${Math.floor(L.H)} px tall; at least ${MIN_FIG_PX})` };
   const skin = SKINS[style];
   const crowd = makeCrowd({ n, seed: seed >>> 0, scene: 'queue', highlightK: K, highlightRule: 'queue_tail', layout: { type: 'queue', w: box.w, h: L.H } });
@@ -270,10 +395,11 @@ export function draw(req, opts = {}) {
   // the caller's flags, stably partitioned: queue place q carries a lit flag exactly when q >= n - K (the caller's
   // K lit flags, all at the tail); the library's own pick is discarded. lit/total below count what is drawn.
   // order "given": queue place q (0 = the front) is the q-th real figure and carries its own flag, unmoved
-  crowd.items.forEach((it, q) => { it.figure.highlight = given ? people0[q].lit : q >= n - K; });
+  // grid: the first K desks (row-major from the front-left); door: the last K in the line (outside the light)
+  crowd.items.forEach((it, q) => { it.figure.highlight = given ? people0[q].lit : litOf(q, K); });
 
   const W = box.w, Hpic = Math.round(L.hUsed);
-  const shadows = [], people = [], geometry = [];
+  const shadows = [], people = [], geometry = [], occluders = [];
   let lit = 0, total = 0;
   const slots = [];
   L.rows.forEach((row, k) => { for (const sl of row.slots) slots.push({ ...sl, row: k }); });
@@ -286,37 +412,41 @@ export function draw(req, opts = {}) {
     else if (fig.height < skin.info.headRatio) fig = resampleHeight(fig, skin.info.headRatio);
     const fr = rng((fig.seed ^ (sl.q * 7919)) >>> 0);
     // everyone faces the head of the queue (screen left), 3/4 to profile; a talking pair turn to each other
-    let target = -(62 + fr() * 40);
+    let target = L.face ? L.face(sl, fr) : -(62 + fr() * 40);
     const pi = fig.partner;
-    if (pi !== null && pi !== undefined && byQ.has(pi)) target = (byQ.get(pi).x > sl.x ? 1 : -1) * (60 + fr() * 20);
+    if (!L.face && pi !== null && pi !== undefined && byQ.has(pi)) target = (byQ.get(pi).x > sl.x ? 1 : -1) * (60 + fr() * 20);
     const turn = turnToFace(fig, target);
-    const px = (L.H / fig.height) * (fig.scale || 1);
+    const px = ((L.H * (sl.k || 1)) / fig.height) * (fig.scale || 1);
     const pal = looks(style, P, sl.q, fr);
     const frag = skin.drawFigure(fig, { x: sl.x, y: sl.y, px, palette: pal, seed: fig.seed, turn });
     const items = normalizeFragment(frag, { px, seed: (fig.seed ^ seed) >>> 0, palette: pal });
     if (!items.length) continue;
-    const hh = L.H * (fig.scale || 1);
-    const sh = style === 'ink' ? shadowInk(sl.x, sl.y, hh, P) : style === 'iso' ? shadowIso(sl.x, sl.y, hh, P) : (fig.highlight ? null : shadowGeo(sl.x, sl.y, hh, P));
+    const hh = L.H * (sl.k || 1) * (fig.scale || 1);
+    const sh = L.shadow ? L.shadow(sl, hh, fig, P) : style === 'ink' ? shadowInk(sl.x, sl.y, hh, P) : style === 'iso' ? shadowIso(sl.x, sl.y, hh, P) : (fig.highlight ? null : shadowGeo(sl.x, sl.y, hh, P));
     if (sh) shadows.push(sh);
-    people.push(`<g>${writeItems(items, null)}</g>`);
+    // a desk stands in front of its person (drawn right after them, before the next nearer row)
+    const desk = L.desk ? deskSvg(style, sl.x, sl.y, L.H, P, (seed + sl.q * 131) >>> 0) : '';
+    people.push(`<g>${writeItems(items, null)}</g>${desk}`);
+    if (desk && opts.geometry) occluders.push({ after: geometry.length, ...deskGeom(sl.x, sl.y, L.H) });
     total++; if (fig.highlight) lit++;
     if (opts.geometry) {
       // for the test only (never in the reply): the head disc and torso core in picture pixels, and the fills drawn
       const J = posedJoints(fig, turn), S = (p) => [sl.x + p[0] * px, sl.y - p[1] * px];
-      geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
+      geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, footY: sl.y, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
         torso: ['shL', 'shR', 'hipR', 'hipL', 'neck'].map((k) => S(J[k])), shW: (Math.max(fig.thick.upperArm || 0.4, fig.thick.torsoDepth || 0.9) / 2) * px, hipW: (Math.max(fig.thick.thigh || 0.6, (fig.thick.torsoDepth || 0.9) * 0.8) / 2) * px, fills: items.filter((it) => it.fill !== 'none').map((it) => it.d) });
     }
   }
-  const ground = style === 'ink' ? groundInk(L, P, W, r, seed >>> 0) : style === 'iso' ? groundIso(L, P, W) : groundGeo(L, P, W, Hpic);
+  const empty = L.desk ? L.rows.flatMap((row) => row.empty || []).map((e) => deskSvg(style, e.x, e.y, L.H, P, (seed + e.col * 977) >>> 0)).join('') : '';
+  const ground = L.ground ? L.ground(P) : style === 'ink' ? groundInk(L, P, W, r, seed >>> 0) : style === 'iso' ? groundIso(L, P, W) : groundGeo(L, P, W, Hpic, !L.noDoor);
   const shadowSvg = writeItems(shadows.map((x) => ({ d: x.d, fill: x.fill, stroke: 'none', sw: 0, op: x.op, wash: style === 'ink' })), null);
   let defs = '';
   if (style === 'ink') defs = `<defs><linearGradient id="gfade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/><stop offset="0.25" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.75"/><stop offset="0.8" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0.6"/><stop offset="1" stop-color="${P.shade || mix(P.paper, '#d6b85e', 0.5)}" stop-opacity="0"/></linearGradient></defs>`;
   const dots = given ? ellipsis(L, P) : '';
-  const svg = `${defs}<g>${ground}</g><g>${shadowSvg}</g>${dots}${people.join('')}`;
+  const svg = `${defs}<g>${ground}</g><g>${shadowSvg}</g>${dots}${empty}${people.join('')}`;
   const reply = { svg, w: W, h: Hpic, lit, total, dropped: [] };
   if (given) reply.gaps = L.rows.reduce((s, row) => s + row.gaps.length, 0);
   if (given && reply.gaps !== nGaps) return { refused: `drew ${reply.gaps} gap markers for ${nGaps}` };
-  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols, gaps: L.rows.flatMap((row, k) => (row.gaps || []).map((g) => ({ row: k, col: g.col }))) }, enumerable: false });
+  if (opts.geometry) Object.defineProperty(reply, 'geometry', { value: { figures: geometry, H: L.H, slot: L.s, cols: L.cols, gaps: L.rows.flatMap((row, k) => (row.gaps || []).map((g) => ({ row: k, col: g.col }))), occluders, spill: L.spill || null }, enumerable: false });
   return reply;
 }
 

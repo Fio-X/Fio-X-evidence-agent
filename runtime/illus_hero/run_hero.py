@@ -597,6 +597,22 @@ def scene_knobs(inp, topic):
     return acc, c
 
 
+def shape_fits(cond, form, style, n):
+    """Whether a request of this form, resolved style and figure count meets one condition of the registry (a scene_choice rule's `when`, a
+    scene's `draws`): form / forms, style / styles, n_max; a key the condition does not name holds."""
+    one = lambda k, v: (k not in cond or cond[k] == v) and (k + "s" not in cond or v in cond[k + "s"])
+    return one("form", form) and one("style", style) and ("n_max" not in cond or n <= cond["n_max"])
+
+
+def pick_scene_of(given, form, style, n):
+    """The scene a scene request draws (topics.scene_renderer): the scene knob when given (refused when its `draws` cannot hold the data), else the
+    first scene_choice rule the data's shape fits, else scene_default."""
+    if given is not None:
+        if not shape_fits(SR["draws"][given], form, style, n): refuse(f"scene {given!r} cannot draw a {form} of {n} figures in the {style} style ({json.dumps(SR['draws'][given])})")
+        return given
+    return next((r["scene"] for r in SR["scene_choice"] if shape_fits(r["when"], form, style, n)), SR["scene_default"])
+
+
 def node_path():
     """The node program the scene child runs: `node` on PATH, as next_leaf Runner::node starts its children (the caller passes PATH through)."""
     p = shutil.which("node")
@@ -645,12 +661,13 @@ def build_scene(inp):
             items, omitted = ranked_items(sub, kind); acc, c = scene_knobs(inp, topic); given = True
     style = c["style"] if c["style"] is not None else TOPICS["scenes"][topic]["style"]
     if style not in ck["style"]["values"]: refuse(f"style {style!r} is none of {'|'.join(ck['style']['values'])}")
-    if c["scene"] not in ck["scene"]["values"]: refuse(f"scene {c['scene']!r} is none of {'|'.join(ck['scene']['values'])}")
+    if c["scene"] is not None and c["scene"] not in ck["scene"]["values"]: refuse(f"scene {c['scene']!r} is none of {'|'.join(ck['scene']['values'])}")
     if isinstance(c["seed"], bool) or not isinstance(c["seed"], int): refuse(f"seed: {c['seed']!r} is not a whole number")
     if not given: items = [{"lit": f} for f in flags]
+    scene = pick_scene_of(c["scene"], kind, style, sum(1 for f in items if "gap" not in f))
     if c["reading_order"] == "right_to_left": items = items[::-1]
     cols = page_colours(["--t-title", "--bg"])
-    request = {"scene": c["scene"], "style": style, "seed": c["seed"], "figures": items, "box": dict(SR["box"]),
+    request = {"scene": scene, "style": style, "seed": c["seed"], "figures": items, "box": dict(SR["box"]),
                "palette": {"ink": cols["--t-title"], "paper": cols["--bg"], "accent": acc.lower()}, **({"order": "given"} if given else {})}
     reply, secs = ask_child([node_path(), os.path.join(HERE, SR["script"])], request, SR["deadline"])
     if "refused" in reply: refuse(f"scene: {reply['refused']}")
@@ -666,7 +683,7 @@ def build_scene(inp):
     if body.startswith("<svg"): body = body[body.index(">") + 1:body.rindex("</svg>")]      # the hero is the inside of the page's own svg
     sk = width / rw; h = round(rh * sk, 2)
     name = f"{topic}.{kind}"
-    comp = dict(scene=name, renderer="scene", style=style, scene_layout=c["scene"], layout=f"{c['scene']}-{k}of{n}" + (f"-{omitted}folded" if omitted else ""), objects=n, lit=k, omitted=omitted,
+    comp = dict(scene=name, renderer="scene", style=style, scene_layout=scene, layout=f"{scene}-{k}of{n}" + (f"-{omitted}folded" if omitted else ""), objects=n, lit=k, omitted=omitted,
                 dropped=[str(d) for d in dropped])
     return f'<g transform="scale({sk:.5f})">{body}</g>', float(width), h, {"scene": secs, "total": round(time.time() - t0, 2)}, name, comp
 

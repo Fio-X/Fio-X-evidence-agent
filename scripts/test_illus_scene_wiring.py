@@ -226,6 +226,51 @@ class RankAndEnds(unittest.TestCase):
         self.assertTrue(all(set(f) == {"lit"} for f in cap.sent[0]["figures"])); self.assertEqual(len(cap.sent[0]["figures"]), 27)
 
 
+class SceneChoice(unittest.TestCase):
+    """Which scene a request draws, by its data's shape (node.json topics.scene_renderer.scene_choice, first rule wins, default queue), and the
+    scene knob's override refused where the scene cannot draw the data (scene_renderer.draws). Stub node."""
+    def setUp(self): self.s = Script(STUB); self.s.__enter__()
+    def tearDown(self): self.s.__exit__()
+
+    def drawn(self, r):
+        with Captured() as cap: svg, w, h, secs, name, comp = R.build_scene(r)
+        self.assertEqual(comp["scene_layout"], cap.sent[0]["scene"])
+        return cap.sent[0], comp
+
+    def test_proportions_go_to_door_or_grid_and_the_rest_to_queue(self):
+        for r, scene, k, n in ((prop_req(0.3, 30, 9), "grid", 9, 30), (styled(prop_req(0.284, 8, 2), "geo"), "door", 2, 8), (styled(prop_req(0.284, 8, 2), "ink"), "grid", 2, 8),
+                               (styled(prop_req(0.25, 12, 3), "geo"), "grid", 3, 12), (styled(prop_req(0.5, 10, 5), "geo"), "door", 5, 10)):
+            sent, comp = self.drawn(r)
+            self.assertEqual((sent["scene"], comp["lit"], comp["objects"]), (scene, k, n), r["subject"])
+            self.assertEqual([f["lit"] for f in sent["figures"]], [True] * k + [False] * (n - k)); self.assertNotIn("order", sent)     # the recomputed flags, lit first
+        for r in (styled(rule_req(), "geo"), styled(rank_req(), "geo"), styled(rank_req("ends"), "geo"), rank_req(n=8)):
+            self.assertEqual(self.drawn(r)[0]["scene"], "queue", r["lead"])
+
+    def test_the_scene_knob_overrides_only_where_the_scene_can_draw_the_data(self):
+        over = lambda r, sc: {**r, "composition": {**r.get("composition", {}), "scene": sc}}
+        self.assertEqual(self.drawn(over(prop_req(0.3, 30, 9), "queue"))[0]["scene"], "queue")
+        self.assertEqual(self.drawn(over(rule_req(), "grid"))[0]["scene"], "grid")
+        self.assertEqual(self.drawn(over(styled(prop_req(0.25, 8, 2), "geo"), "grid"))[0]["scene"], "grid")
+        for r, sc, why in ((over(prop_req(0.284, 8, 2), "door"), "door", "ink style"), (over(styled(prop_req(0.25, 12, 3), "geo"), "door"), "door", "12 figures"),
+                           (over(rank_req(), "grid"), "grid", "a rank"), (over(rank_req("ends"), "door"), "door", "a pair"), (over(rule_req(), "door"), "door", "27 figures")):
+            with self.assertRaisesRegex(R.Refused, f"scene '{sc}' cannot draw", msg=why): R.build_scene(r)
+        with self.assertRaisesRegex(R.Refused, "scene 'stage' is none of queue|grid|door"): R.build_scene(over(rule_req(), "stage"))
+
+    def test_a_declared_mismatch_is_refused_before_any_scene(self):
+        with self.assertRaisesRegex(R.Refused, "declared.count 3 is not the 2 of 8"): R.build_scene(styled(prop_req(0.284, 8, 3), "geo"))
+        with self.assertRaisesRegex(R.Refused, "declared.count 10 is not the 9 of 30"): R.build_scene(prop_req(0.3, 30, 10))
+
+    def test_the_rule_table_is_data(self):
+        self.assertEqual([(r["when"], r["scene"]) for r in R.SR["scene_choice"]], [({"form": "proportion", "style": "geo", "n_max": 10}, "door"), ({"form": "proportion"}, "grid")])
+        self.assertEqual(R.SR["scene_default"], "queue"); self.assertEqual(R.REG["composition_knobs"]["scene"]["values"], ["queue", "grid", "door"])
+
+
+def real_scenes():
+    try: t = open(REAL, encoding="utf-8").read()
+    except OSError: return False
+    return re.search(r"\bgrid\s*:", t) is not None and re.search(r"\bdoor\s*:", t) is not None
+
+
 def real_given():
     try: return "given" in open(REAL, encoding="utf-8").read()
     except OSError: return False
@@ -240,11 +285,18 @@ class RealNode(unittest.TestCase):
         gate = {"g", "path", "image", "defs", "linearGradient", "stop", "mask"}
         for st in STYLES:
             for r, k, n in ((rule_req(), ABOVE, 27), (prop_req(0.284, 8, 2), 2, 8), (prop_req(0.25, 10, 2), 2, 10)):
+                if "proportion" in r["subject"] and not real_scenes(): r = {**r, "composition": {"scene": "queue"}}     # until the node has grid and door
                 svg, w, h, secs, name, comp = R.build_scene(styled(r, st))
                 self.assertEqual((comp["lit"], comp["objects"]), (k, n), st); self.assertEqual(w, 1140.0)
                 self.assertLessEqual(set(re.findall(r"<([A-Za-z]+)", svg)), gate, (st, name)); self.assertIsNone(re.search(r">[^<\s]", svg), (st, name))
                 for v in re.findall(r'(?:fill|stroke|stop-color)="([^"]*)"', svg): self.assertRegex(v, r"^(#[0-9a-fA-F]{6}|none|url\(#[\w-]+\))$", (st, name))
                 self.assertLess(len(svg), 4 * 1024 * 1024)
+
+    @unittest.skipUnless(real_scenes(), "scene.mjs has no grid and door scenes yet")
+    def test_grid_and_door(self):
+        for r, scene, k, n in ((prop_req(0.3, 30, 9), "grid", 9, 30), (styled(prop_req(0.284, 8, 2), "geo"), "door", 2, 8), (styled(prop_req(0.284, 8, 2), "ink"), "grid", 2, 8)):
+            svg, w, h, secs, name, comp = R.build_scene(r)
+            self.assertEqual((comp["scene_layout"], comp["lit"], comp["objects"]), (scene, k, n)); self.assertIsNone(re.search(r">[^<\s]", svg))
 
     @unittest.skipUnless(real_given(), "scene.mjs has no order: given mode yet")
     def test_rank_and_ends_in_each_style(self):

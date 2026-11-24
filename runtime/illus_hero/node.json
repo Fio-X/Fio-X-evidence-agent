@@ -825,17 +825,15 @@
   },
   "scene": {
    "values": [
-    "queue"
-   ],
-   "default": "queue",
-   "later": [
+    "queue",
     "grid",
     "door"
    ],
+   "default": null,
    "renderers": [
     "scene"
    ],
-   "note": "the scene the scene renderer stages the figures in (queue: one line of people, in order); grid and door are planned and refused until listed in values. Only the scene renderer has it"
+   "note": "the scene the scene renderer stages the figures in (queue: people in line; grid: classroom desks; door: a doorway the few walk through); the default (null) is the first rule of topics.scene_renderer.scene_choice the data matches. A scene given here must be able to draw the data (scene_renderer.draws), or it is refused. Only the scene renderer has it"
   }
  },
  "input": {
@@ -2515,6 +2513,51 @@
     6,
     6
    ],
+   "scene_choice_doc": "Which scene a request draws, by the data's shape: the first rule whose `when` the request matches (form: proportion, tally, rank or pair; style: the resolved style, the style knob's or the topic's; n_max: at most this many figures), else scene_default. The scene knob overrides it; `draws` says what each scene can draw (forms, styles, n_max), and an override it cannot draw is refused. Only queue takes the given order and gap markers of a rank or a pair.",
+   "scene_choice": [
+    {
+     "when": {
+      "form": "proportion",
+      "style": "geo",
+      "n_max": 10
+     },
+     "scene": "door"
+    },
+    {
+     "when": {
+      "form": "proportion"
+     },
+     "scene": "grid"
+    }
+   ],
+   "scene_default": "queue",
+   "draws": {
+    "queue": {
+     "forms": [
+      "proportion",
+      "tally",
+      "rank",
+      "pair"
+     ]
+    },
+    "grid": {
+     "forms": [
+      "proportion",
+      "tally"
+     ],
+     "n_max": 60
+    },
+    "door": {
+     "forms": [
+      "proportion",
+      "tally"
+     ],
+     "styles": [
+      "geo"
+     ],
+     "n_max": 10
+    }
+   },
    "figures": [
     1,
     60

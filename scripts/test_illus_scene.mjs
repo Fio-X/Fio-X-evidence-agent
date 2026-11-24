@@ -207,11 +207,13 @@ function occlusion(G) {
     const [sL, sR, hR, hL, nk] = g.torso, wide = hull([[sL[0] - g.shW, sL[1]], [sL[0] + g.shW, sL[1]], [sR[0] - g.shW, sR[1]], [sR[0] + g.shW, sR[1]], [hL[0] - g.hipW, hL[1]], [hL[0] + g.hipW, hL[1]], [hR[0] - g.hipW, hR[1]], [hR[0] + g.hipW, hR[1]], nk]);
     return { ...g, core: wide, paths };
   });
+  // scene props drawn after a figure (a grid's desks: its own desk right after it) hide it too
+  const occl = (G.occluders || []).map((o) => { const subs = flatten(o.d).filter((u) => u.pts.length >= 3); const xs = subs.flatMap((u) => u.pts.map((p) => p[0])), ys = subs.flatMap((u) => u.pts.map((p) => p[1])); return { after: o.after, subs, bb: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] }; });
   let worst = { f: 0, q: -1 };
   figs.forEach((g, i) => {
     const [hx, hy, hr] = g.head, pts = [...g.core, [hx - hr, hy - hr], [hx + hr, hy + hr]];
     const x0 = Math.floor(Math.min(...pts.map((p) => p[0]))), x1 = Math.ceil(Math.max(...pts.map((p) => p[0]))), y0 = Math.floor(Math.min(...pts.map((p) => p[1]))), y1 = Math.ceil(Math.max(...pts.map((p) => p[1])));
-    const later = figs.slice(i + 1).flatMap((o) => o.paths).filter((p) => p.bb[0] <= x1 && p.bb[2] >= x0 && p.bb[1] <= y1 && p.bb[3] >= y0);
+    const later = [...figs.slice(i + 1).flatMap((o) => o.paths), ...occl.filter((o) => o.after >= i)].filter((p) => p.bb[0] <= x1 && p.bb[2] >= x0 && p.bb[1] <= y1 && p.bb[3] >= y0);
     let n = 0, hid = 0;
     for (let y = y0 + 0.5; y < y1; y++) for (let x = x0 + 0.5; x < x1; x++) {
       if (!((x - hx) ** 2 + (y - hy) ** 2 <= hr * hr || inHull(x, y, g.core))) continue;
@@ -285,6 +287,41 @@ for (const [shape, items] of [['rank', RANK], ['ends', ENDS]]) {
 }
 console.log('given order, worst head+torso hidden: ' + occ.slice(-6).join(' '));
 
+// ---------- scene "grid" (classroom) and scene "door" (geometric only) ----------
+const scOcc = [];
+for (const [scene, styles, cases] of [['grid', ['ink', 'iso', 'geo'], [[30, 9], [8, 2], [60, 18]]], ['door', ['geo'], [[8, 2], [10, 3]]]]) {
+  for (const style of styles) for (const [n, K] of cases) {
+    const tag = `${scene} ${style}/${n}`;
+    const figs = Array.from({ length: n }, (_, i) => ({ lit: i % 3 === 0 && i / 3 < K })); // K flags spread out: the node gathers them
+    const req = { ...base(style, figs, { w: 1200, h: 560 }), scene };
+    const { reply } = ask(req);
+    if (reply.refused) { fail(`${tag}: refused: ${reply.refused}`); continue; }
+    if (reply.lit !== K || reply.total !== n) fail(`${tag}: lit/total ${reply.lit}/${reply.total}, want ${K}/${n}`);
+    const off = heroFaults(reply.svg); if (off.length) fail(`${tag}: gate: ${off[0]}`);
+    if (/<text/i.test(reply.svg) || /<svg/i.test(reply.svg)) fail(`${tag}: holds <text or <svg`);
+    if (Buffer.byteLength(reply.svg) >= HERO_MAX_BYTES) fail(`${tag}: ${reply.svg.length} bytes`);
+    if (reply.w !== 1200 || !(reply.h > 0 && reply.h <= 560)) fail(`${tag}: drawn ${reply.w}x${reply.h}`);
+    if (ask(req).reply.svg !== reply.svg) fail(`${tag}: not deterministic`);
+    const G = draw(req, { geometry: true }).geometry;
+    const litQ = G.figures.filter((g) => g.lit).map((g) => g.q).sort((a, b) => a - b);
+    if (scene === 'grid') {
+      // one contiguous block: the first K desks, row-major from the front-left (desk q = row x columns + column)
+      if (litQ.length !== K || litQ.some((q, k) => q !== k)) fail(`${tag}: lit desks ${litQ.join(',')}, not the first ${K}`);
+      for (const g of G.figures) if (g.q !== g.row * G.cols + g.col) fail(`${tag}: desk ${g.q} at row ${g.row} column ${g.col} breaks row-major order`);
+    } else {
+      // the last K in the line, contiguous, all outside the light; the others inside it
+      if (litQ.length !== K || litQ.some((q, k) => q !== n - K + k)) fail(`${tag}: lit places ${litQ.join(',')}, not the last ${K}`);
+      const inLight = (x, y) => { const c = G.spill; let w = true; for (let i = 0; i < c.length; i++) { const a = c[i], b = c[(i + 1) % c.length]; if ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0) w = false; } return w; };
+      for (const g of G.figures) { const y = g.footY; if (inLight(g.x, y) === g.lit) fail(`${tag}: q=${g.q} (lit=${g.lit}) stands ${g.lit ? 'inside' : 'outside'} the light`); }
+    }
+    const w = occlusion(G); scOcc.push(`${scene}-${style}/${n}:${(w.f * 100).toFixed(1)}%`);
+    if (w.f > 0.05) fail(`${tag}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 5%)`);
+    G.figures.forEach((a, i) => G.figures.forEach((b, j) => { if (i !== j && inHull(a.head[0], a.head[1], w.cores[j])) fail(`${tag}: the head of q=${a.q} sits inside the torso of q=${b.q}`); }));
+    scOcc[scOcc.length - 1] += `,${(Buffer.byteLength(reply.svg) / 1024).toFixed(0)}KB`;
+  }
+}
+console.log('grid/door, worst hidden and size: ' + scOcc.join(' '));
+
 // refusals
 const one = [{ lit: true }];
 for (const [why, req, raw] of [
@@ -309,6 +346,12 @@ for (const [why, req, raw] of [
   ['gap marker with a flag', { ...base('ink', [{ lit: true }, { gap: true, lit: false }, { lit: false }]), order: 'given' }],
   ['order other than given', { ...base('ink', one), order: 'rank' }],
   ['order empty', { ...base('ink', one), order: '' }],
+  ['door in ink', { ...base('ink', Array.from({ length: 8 }, (_, i) => ({ lit: i < 2 }))), scene: 'door' }],
+  ['door in iso', { ...base('iso', Array.from({ length: 8 }, (_, i) => ({ lit: i < 2 }))), scene: 'door' }],
+  ['door with 11', { ...base('geo', Array.from({ length: 11 }, (_, i) => ({ lit: i < 2 }))), scene: 'door' }],
+  ['grid with 0', { ...base('ink', []), scene: 'grid' }],
+  ['grid with 61', { ...base('ink', Array.from({ length: 61 }, () => ({ lit: false }))), scene: 'grid' }],
+  ['grid with order', { ...base('ink', one), scene: 'grid', order: 'given' }],
 ]) {
   const { reply } = ask(req, raw);
   if (typeof reply.refused !== 'string' || reply.svg !== undefined) fail(`refusal ${why}: got ${JSON.stringify(reply).slice(0, 120)}`);

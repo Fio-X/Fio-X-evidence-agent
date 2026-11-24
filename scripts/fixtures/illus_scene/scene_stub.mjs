@@ -3,7 +3,7 @@
 //   out: {svg, w, h, lit, total, gaps, dropped: []} | {refused}
 // (a gap marker only with order "given"; lit and total count the real figures)
 // One rounded block per figure, the lit ones filled in the accent, the others outlined in the ink; only <g> and <path>, hex colours.
-// seed 666 makes it misreport its lit count (the caller must refuse that reply).
+// scene: queue, grid or door (door: geo and at most 10 figures; order and gap markers on queue only). seed 666 makes it misreport its lit count (the caller must refuse that reply).
 import { createInterface } from 'node:readline';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -13,7 +13,9 @@ rl.once('line', (line) => {
   try {
     const r = JSON.parse(line);
     const why = [];
-    if (r.scene !== 'queue') why.push(`scene ${r.scene}`);
+    if (!['queue', 'grid', 'door'].includes(r.scene)) why.push(`scene ${r.scene}`);
+    if (r.scene !== 'queue' && r.order !== undefined) why.push(`order on ${r.scene}`);
+    if (r.scene === 'door' && (r.style !== 'geo' || (r.figures || []).length > 10)) why.push('door: geo and 10 figures at most');
     if (!['ink', 'iso', 'geo'].includes(r.style)) why.push(`style ${r.style}`);
     if (!Number.isInteger(r.seed)) why.push('seed');
     const real = Array.isArray(r.figures) ? r.figures.filter((f) => !f.gap) : [];
