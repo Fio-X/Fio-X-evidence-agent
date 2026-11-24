@@ -6,7 +6,7 @@
 // from the figures actually drawn. The svg is the picture's inner markup (no outer <svg>), made only of what
 // the page's hero gate takes (src/next_leaf.rs hero_faults): g, path, defs, linearGradient, stop, mask; hex
 // colours; no text. No file read, no process, no network, no environment: only sibling modules.
-import { makeCrowd, resampleHeight } from './people_lib/lib.mjs';
+import { makeCrowd, makeFigure, resampleHeight, _internal as LIBI } from './people_lib/lib.mjs';
 import { turnToFace, posedJoints } from './people_lib/skins/common.mjs';
 import * as inkSkin from './people_lib/skins/ink.mjs';
 import * as isoSkin from './people_lib/skins/iso.mjs';
@@ -196,14 +196,32 @@ function ellipsis(L, P) {
 // people in a 1200x560 box sit 5 x 6, 20 sit 4 x 5, 12 sit 3 x 4, 8 sit 3 x 3, 60 sit 7 x 9; desks past N stay
 // empty at the back right. Rows recede up and to the right (oblique, no perspective). Desk q runs row-major from
 // the front-left, and the lit are the first K desks: one contiguous block counted by rows.
-const GRID_COL = 0.95, GRID_PITCH = 0.6, GRID_DX = 0.22, DESK_TOP = 0.4; // desk top just under hanging hands
+const GRID_COL = 0.95, GRID_PITCH = 0.52, GRID_DX = 0.22, DESK_TOP = 0.43; // a seated class: desk top above the lap
+// Seated poses for the class, as scene data: the library's one chair-height sit (sit_bench: thigh 85, knee 85)
+// with the arms (and head, and hand-held prop) of standing poses, so the hands show above the desk. Registered in
+// the copy's pose table at load (no file is changed); sit_bench's own bench prop is dropped (this scene draws a chair).
+const SEATED = (() => {
+  const P = LIBI.DATA.poses, base = P.sit_bench;
+  if (!base) return [];
+  const desk = { pitch: 30, roll: 4, elbow: 95, twist: 30 };
+  const mk = (id, extra) => { P[id] = { ...base, needs: null, props: [], tags: ['sit'], ...extra }; return id; };
+  const from = (k) => (P[k] ? { head: P[k].head, armL: P[k].armL, armR: P[k].armR, props: (P[k].props || []).filter((x) => /phone|folder/.test(x.type)) } : {});
+  return [
+    mk('sit_desk_rest', { armL: desk, armR: { ...desk, elbow: 84 }, head: { pitch: 8, yaw: 6, roll: 0 } }),
+    mk('sit_desk_phone', from('phone_look')),
+    mk('sit_desk_cross', from('arms_crossed')),
+    mk('sit_desk_watch', from('check_watch')),
+    mk('sit_desk_chin', { armL: desk, armR: { pitch: 34, roll: 10, elbow: 140, twist: 40 }, head: { pitch: 4, yaw: 10, roll: 6 } }),
+  ];
+})();
 function layoutGrid(n, box, r) {
   const W = box.w, Hb = box.h, side = 0.04;
   const A = (W / Hb) * 0.39, c = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))), R = Math.ceil(n / c);
-  const H = Math.min((W * (1 - 2 * side)) / ((c - 1) * GRID_COL + (R - 1) * GRID_DX + 0.9), Hb / (1.14 + (R - 1) * GRID_PITCH + 0.1), Hb * 0.86);
+  // H is a standing person's height; seated, the head tops out near 0.78 H
+  const H = Math.min((W * (1 - 2 * side)) / ((c - 1) * GRID_COL + (R - 1) * GRID_DX + 0.9), Hb / (0.9 + (R - 1) * GRID_PITCH + 0.12), Hb * 1.1);
   const colStep = H * GRID_COL, pitch = H * GRID_PITCH, dx = H * GRID_DX;
   const span = (c - 1) * colStep + (R - 1) * dx, x0 = (W - span) / 2;
-  const yFront = H * 1.1 + (R - 1) * pitch;
+  const yFront = H * 0.86 + (R - 1) * pitch;
   const rows = Array.from({ length: R }, (_, k) => ({ y: yFront - k * pitch, slots: [], empty: [] }));
   for (let d = 0; d < c * R; d++) {
     const k = Math.floor(d / c), col = d % c, x = x0 + col * colStep + k * dx, y = rows[k].y;
@@ -214,7 +232,9 @@ function layoutGrid(n, box, r) {
     litOf: (q, K) => q < K,
     // facing the front of the class (the viewer's left), three-quarter, never square on
     face: (sl, fr) => -(32 + fr() * 28),
-    desk: true,
+    desk: true, seated: true,
+    // the level of the desk top's back edge: above it a seated person must stay in view
+    clipY: (sl) => sl.y - H * (DESK_TOP + 0.03),
   };
 }
 // a desk in front of the person standing at (x, y): an oblique top, a front panel, a side and legs, per style
@@ -288,6 +308,18 @@ function layoutDoor(n, box, r, K) {
       return cut.length >= 3 ? { d: writeD([{ closed: true, pts: cut }]), fill: mix(P.paper, P.ink, 0.17), op: 1 } : null;
     },
   };
+}
+// a chair under a seated person: a seat at the pelvis and a low back on the side away from the face
+function chairPaths(pv, faceX, H) {
+  const back = -faceX, sy = pv[1] + H * 0.035, x0 = pv[0] - H * 0.15, x1 = pv[0] + H * 0.15;
+  const bx = pv[0] + back * H * 0.13, top = sy - H * 0.2, w = H * 0.035;
+  return [[[x0, sy], [x1, sy], [x1 + H * 0.05, sy - H * 0.035], [x0 + H * 0.05, sy - H * 0.035]], [[bx - w, top], [bx + w, top], [bx + w, sy], [bx - w, sy]], [[x0 + H * 0.02, sy], [x0 + H * 0.04, sy], [x0 + H * 0.04, sy + H * 0.27], [x0 + H * 0.02, sy + H * 0.27]]];
+}
+function chairSvg(style, ch, P) {
+  const d = (k) => writeD([{ closed: true, pts: ch[k] }]);
+  if (style === 'iso') return `<g stroke="none"><path d="${d(2)}" fill="${mix(P.ink, P.paper, 0.35)}"/><path d="${d(1)}" fill="${mix(P.paper, '#7d6a55', 0.6)}"/><path d="${d(0)}" fill="${mix(P.paper, '#7d6a55', 0.45)}"/></g>`;
+  if (style === 'geo') return `<g stroke="none"><path d="${d(2)}" fill="${mix(P.paper, P.ink, 0.45)}"/><path d="${d(1)}" fill="${mix(P.paper, P.ink, 0.38)}"/><path d="${d(0)}" fill="${mix(P.paper, P.ink, 0.3)}"/></g>`;
+  return `<g fill="${P.paper}" stroke="${P.ink}" stroke-width="${f1(Math.max(0.8, Math.min(1.8, ch[0][1][0] - ch[0][0][0]) * 0.02))}" stroke-linejoin="round"><path d="${d(2)}"/><path d="${d(1)}"/><path d="${d(0)}"/></g>`;
 }
 // the desk's outline (top, front and side as one ring) for the test's occlusion count
 function deskGeom(x, y, H) { const D = deskPaths(x, y, H); return { d: writeD([{ closed: true, pts: [D.top[0], D.top[1], D.top[2], D.side[2], D.front[2], D.front[3]] }, ...D.legs.map((pts) => ({ closed: true, pts }))]) }; }
@@ -397,6 +429,11 @@ export function draw(req, opts = {}) {
   // order "given": queue place q (0 = the front) is the q-th real figure and carries its own flag, unmoved
   // grid: the first K desks (row-major from the front-left); door: the last K in the line (outside the light)
   crowd.items.forEach((it, q) => { it.figure.highlight = given ? people0[q].lit : litOf(q, K); });
+  // a seated scene keeps each person's body, hair and outfit and seats them (a seeded spread of the seated poses)
+  if (L.seated && SEATED.length) {
+    const order = SEATED.map((p, i) => [p, rng((seed ^ (i * 2654435761)) >>> 0)()]).sort((a, b) => a[1] - b[1]).map((a) => a[0]);
+    crowd.items.forEach((it, q) => { const f = it.figure; it.figure = makeFigure({ pose: order[q % order.length], body: f.body, hair: f.hair, outfit: f.outfit, seed: f.seed, facing: f.facing, highlight: f.highlight }); });
+  }
 
   const W = box.w, Hpic = Math.round(L.hUsed);
   const shadows = [], people = [], geometry = [], occluders = [];
@@ -424,15 +461,23 @@ export function draw(req, opts = {}) {
     const hh = L.H * (sl.k || 1) * (fig.scale || 1);
     const sh = L.shadow ? L.shadow(sl, hh, fig, P) : style === 'ink' ? shadowInk(sl.x, sl.y, hh, P) : style === 'iso' ? shadowIso(sl.x, sl.y, hh, P) : (fig.highlight ? null : shadowGeo(sl.x, sl.y, hh, P));
     if (sh) shadows.push(sh);
-    // a desk stands in front of its person (drawn right after them, before the next nearer row)
+    // seated: a chair behind the person (drawn first), then the person, then the desk in front of them
+    let chair = '';
+    if (L.seated) {
+      const J0 = posedJoints(fig, turn), pv = [sl.x + J0.pelvis[0] * px, sl.y - J0.pelvis[1] * px];
+      const fx = (fig.dirs && fig.dirs.face) ? Math.sign(Math.cos(turn * Math.PI / 180) * fig.dirs.face[0] + Math.sin(turn * Math.PI / 180) * fig.dirs.face[2]) || -1 : -1;
+      const ch = chairPaths(pv, fx, L.H);
+      chair = chairSvg(style, ch, P);
+      if (opts.geometry) occluders.push({ after: geometry.length - 1, d: writeD(ch.map((pts) => ({ closed: true, pts }))) });
+    }
     const desk = L.desk ? deskSvg(style, sl.x, sl.y, L.H, P, (seed + sl.q * 131) >>> 0) : '';
-    people.push(`<g>${writeItems(items, null)}</g>${desk}`);
+    people.push(`${chair}<g>${writeItems(items, null)}</g>${desk}`);
     if (desk && opts.geometry) occluders.push({ after: geometry.length, ...deskGeom(sl.x, sl.y, L.H) });
     total++; if (fig.highlight) lit++;
     if (opts.geometry) {
       // for the test only (never in the reply): the head disc and torso core in picture pixels, and the fills drawn
       const J = posedJoints(fig, turn), S = (p) => [sl.x + p[0] * px, sl.y - p[1] * px];
-      geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, footY: sl.y, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
+      geometry.push({ q: sl.q, row: sl.row, col: sl.col, x: sl.x, footY: sl.y, clipY: L.clipY ? L.clipY(sl) : null, lit: fig.highlight, head: [...S(J.head), (fig.thick.headR || 0.5) * px],
         torso: ['shL', 'shR', 'hipR', 'hipL', 'neck'].map((k) => S(J[k])), shW: (Math.max(fig.thick.upperArm || 0.4, fig.thick.torsoDepth || 0.9) / 2) * px, hipW: (Math.max(fig.thick.thigh || 0.6, (fig.thick.torsoDepth || 0.9) * 0.8) / 2) * px, fills: items.filter((it) => it.fill !== 'none').map((it) => it.d) });
     }
   }

@@ -184,7 +184,9 @@ console.log('sizes (svg bytes, box 1200x560): ' + sizes.join(' | '));
 // when it lies inside the figure's own fills AND inside its head disc (head joint, radius thick.headR) or its
 // torso hull (shL, shR, hipR, hipL, neck, with the shoulder points pushed out sideways by half of max(upper arm, torso
 // depth) and the hips by half of max(thigh, 0.8 x torso depth): the drawn torso seen front-on or side-on). A sample is hidden when it lies inside (nonzero winding) any fill path of a
-// figure drawn after it. Strokes are left out (pen lines are 1-3 px; the ink skin's
+// figure drawn after it. A seated person in the grid (geometry clipY = the level of their desk top's back edge)
+// counts only head and upper torso above that level, hidden by anything drawn after them (people, any desk,
+// their own desk included); the desk hiding the lap and legs is the picture. Queue and door keep the full count. Strokes are left out (pen lines are 1-3 px; the ink skin's
 // paper occluders, which do cover, are fills). hidden / samples must be <= 5% for every figure, and no head centre may lie inside another figure's torso core.
 const { draw } = await import(SCENE);
 const { flatten } = await import(join(SCENE_DIR, 'normalize.mjs'));
@@ -216,6 +218,7 @@ function occlusion(G) {
     const later = [...figs.slice(i + 1).flatMap((o) => o.paths), ...occl.filter((o) => o.after >= i)].filter((p) => p.bb[0] <= x1 && p.bb[2] >= x0 && p.bb[1] <= y1 && p.bb[3] >= y0);
     let n = 0, hid = 0;
     for (let y = y0 + 0.5; y < y1; y++) for (let x = x0 + 0.5; x < x1; x++) {
+      if (g.clipY != null && y >= g.clipY) continue; // seated at a desk: only what shows above the desk top counts
       if (!((x - hx) ** 2 + (y - hy) ** 2 <= hr * hr || inHull(x, y, g.core))) continue;
       if (!g.paths.some((p) => winding(x, y, p.subs) !== 0)) continue; // not drawn here: not part of the person
       n++;
@@ -316,7 +319,8 @@ for (const [scene, styles, cases] of [['grid', ['ink', 'iso', 'geo'], [[30, 9], 
     }
     const w = occlusion(G); scOcc.push(`${scene}-${style}/${n}:${(w.f * 100).toFixed(1)}%`);
     if (w.f > 0.05) fail(`${tag}: figure q=${w.q} has ${(w.f * 100).toFixed(1)}% of its head and torso hidden (max 5%)`);
-    G.figures.forEach((a, i) => G.figures.forEach((b, j) => { if (i !== j && inHull(a.head[0], a.head[1], w.cores[j])) fail(`${tag}: the head of q=${a.q} sits inside the torso of q=${b.q}`); }));
+    // (a seated torso counts only above its desk top: below it the desk already covers it)
+    G.figures.forEach((a, i) => G.figures.forEach((b, j) => { if (i !== j && (b.clipY == null || a.head[1] < b.clipY) && inHull(a.head[0], a.head[1], w.cores[j])) fail(`${tag}: the head of q=${a.q} sits inside the torso of q=${b.q}`); }));
     scOcc[scOcc.length - 1] += `,${(Buffer.byteLength(reply.svg) / 1024).toFixed(0)}KB`;
   }
 }
