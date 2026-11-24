@@ -219,7 +219,8 @@ function layoutGrid(n, box, r, K, style) {
 // flat styles (geo, ink): a frontal, eye-level class. Rows stack up the picture (further = higher, each step 6.5%
 // smaller); each row sits behind one long desk board that hides its laps and legs, so only head, shoulders and
 // upper torso show above it. Rows and people never overlap; desk q runs row-major from the front-left (bottom row).
-const FLAT_STEP = 0.935, BOARD_TOP = 0.36, BOARD_BOTTOM = 0.17, CUT_AT = 0.2, HEAD_TOP = 0.84, ROW_GAP = 0.06, FLAT_COL = 0.78;
+// the board is a desk edge (0.08 H): above it head, shoulders and chest; each row's band is about 0.52 H
+const FLAT_STEP = 0.935, BOARD_TOP = 0.45, BOARD_BOTTOM = 0.37, CUT_AT = 0.4, HEAD_TOP = 0.84, ROW_GAP = 0.04, FLAT_COL = 0.62;
 function layoutGridFlat(n, box, r) {
   const W = box.w, Hb = box.h;
   const A = (W / Hb) * 0.39, c = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))), R = Math.ceil(n / c);
@@ -228,23 +229,24 @@ function layoutGridFlat(n, box, r) {
   // a row's band runs from its head tops (HEAD_TOP above the feet) to its board's bottom (BOARD_BOTTOM above the feet)
   for (let k = 1; k < R; k++) yu.push(yu[k - 1] - (HEAD_TOP - BOARD_BOTTOM + ROW_GAP) * sc[k - 1]);
   const topU = yu[R - 1] - HEAD_TOP * sc[R - 1], hU = 0.04 - BOARD_BOTTOM - topU + 0.04;
-  const H = Math.min((Hb * 0.98) / hU, (W * 0.92) / ((c - 1) * FLAT_COL + 1.0), Hb * 0.9);
+  const H = Math.min((Hb * 0.98) / hU, (W * 0.8) / ((c - 1) * FLAT_COL + 1.24 * FLAT_COL), Hb * 0.9);
   // the class fills the width: seats spread up to 1.7 H apart (never closer than FLAT_COL)
-  const fc = c > 1 ? Math.max(FLAT_COL, Math.min(1.7, ((W * 0.9) / H - 1.0) / (c - 1))) : FLAT_COL;
+  // the front row (its board) spans about 76% of the width; never closer than FLAT_COL
+  const fc = c > 1 ? Math.max(FLAT_COL, Math.min(1.7, (W * 0.76 - 1.24 * FLAT_COL * H) / ((c - 1) * H))) : FLAT_COL;
   const y0 = H * (0.04 - topU), boards = [];
   const rows = yu.map((u, k) => ({ y: y0 + u * H, k: sc[k], slots: [], empty: [] }));
   for (let d = 0; d < c * R; d++) {
     const k = Math.floor(d / c), col = d % c, row = rows[k], step = fc * H * row.k, x = W / 2 + (col - (c - 1) / 2) * step;
     if (d < n) row.slots.push({ q: d, col, x, y: row.y, k: row.k });
   }
-  rows.forEach((row, k) => { const half = ((c - 1) / 2) * fc * H * row.k + 0.62 * FLAT_COL * H * row.k; boards.push({ row: k, x0: W / 2 - half, x1: W / 2 + half, top: row.y - BOARD_TOP * H * row.k, bottom: row.y - BOARD_BOTTOM * H * row.k, k: row.k }); });
+  rows.forEach((row, k) => { const half = ((c - 1) / 2) * fc * H * row.k + 0.62 * FLAT_COL * H * row.k; boards.push({ row: k, x0: W / 2 - half, x1: W / 2 + half, top: Math.round((row.y - BOARD_TOP * H * row.k) * 10) / 10, bottom: row.y - BOARD_BOTTOM * H * row.k, k: row.k }); });
   const hUsed = Math.min(Hb, y0 + (0.04 - BOARD_BOTTOM) * H);
   return {
     H, s: fc * H, cols: c, rows, boards, hUsed, noDoor: true,
     litOf: (q, K) => q < K, seated: true, poses: [SEATED.rest, SEATED.chin, SEATED.cross, SEATED.phone],
     // facing the class front (the viewer), turned a little either way, never square on
     face: (sl, fr) => (fr() < 0.5 ? -1 : 1) * (24 + fr() * 18),
-    clipY: (sl) => sl.y - BOARD_TOP * H * sl.k,
+    clipY: (sl) => boards[sl.row].top, // the board's top edge as drawn (to 0.1 px)
     // everything below the board's bottom edge is cut from the figure (the board hides the rest of the lap)
     cutY: (sl) => sl.y - CUT_AT * H * sl.k, // a little above the board's bottom edge, so nothing peeks below it
     shadow: () => null,
@@ -292,6 +294,8 @@ function deskPaths(x, y, H) {
   const a = [x - H * 0.33, y - H * DESK_TOP + H * 0.04], b = [x + H * 0.29, a[1]], o = [H * 0.1, -H * 0.07], th = H * 0.1;
   const c = [b[0] + o[0], b[1] + o[1]], d = [a[0] + o[0], a[1] + o[1]], leg = H * 0.025, foot = y + H * 0.05;
   return {
+    // iso's modesty panel: the front face carried down to the floor, and the side face with it
+    panel: [a, b, [b[0], foot], [a[0], foot]], sidePanel: [b, c, [c[0], foot - H * 0.07], [b[0], foot]],
     top: [a, b, c, d], front: [a, b, [b[0], b[1] + th], [a[0], a[1] + th]], side: [b, c, [c[0], c[1] + th], [b[0], b[1] + th]],
     legs: [[a[0] + leg * 0.5, a[1] + th], [b[0] - leg * 1.5, b[1] + th], [c[0] - leg * 1.5, c[1] + th]].map(([lx, ly], i) => [[lx, ly], [lx + leg, ly], [lx + leg, i === 2 ? foot - H * 0.07 : foot], [lx, i === 2 ? foot - H * 0.07 : foot]]),
   };
@@ -300,7 +304,7 @@ function deskSvg(style, x, y, H, P, seed) {
   const D = deskPaths(x, y, H), poly = (pts) => writeD([{ closed: true, pts }]);
   if (style === 'iso') {
     const wood = mix(P.paper, '#b8925f', 0.5);
-    return `<g stroke="none"><path d="${poly(D.legs[2])}" fill="${mix(P.ink, P.paper, 0.35)}"/><path d="${poly(D.top)}" fill="${mix(wood, P.paper, 0.35)}"/><path d="${poly(D.front)}" fill="${wood}"/><path d="${poly(D.side)}" fill="${mix(wood, P.ink, 0.3)}"/><path d="${writeD(D.legs.slice(0, 2).map((pts) => ({ closed: true, pts })))}" fill="${mix(P.ink, P.paper, 0.35)}"/></g>`;
+    return `<g stroke="none"><path d="${poly(D.top)}" fill="${mix(wood, P.paper, 0.35)}"/><path d="${poly(D.sidePanel)}" fill="${mix(wood, P.ink, 0.3)}"/><path d="${poly(D.panel)}" fill="${wood}"/><path d="${poly([D.front[2], D.front[3], [D.front[3][0], D.front[3][1] + H * 0.012], [D.front[2][0], D.front[2][1] + H * 0.012]])}" fill="${mix(wood, P.ink, 0.15)}"/></g>`;
   }
   if (style === 'geo') {
     // flat planes: a light top, a mid front, a darker side; thin legs
@@ -372,7 +376,7 @@ function chairSvg(style, ch, P) {
   return `<g fill="${P.paper}" stroke="${P.ink}" stroke-width="${f1(Math.max(0.8, Math.min(1.8, ch[0][1][0] - ch[0][0][0]) * 0.02))}" stroke-linejoin="round"><path d="${d(2)}"/><path d="${d(1)}"/><path d="${d(0)}"/></g>`;
 }
 // the desk's outline (top, front and side as one ring) for the test's occlusion count
-function deskGeom(x, y, H) { const D = deskPaths(x, y, H); return { d: writeD([{ closed: true, pts: [D.top[0], D.top[1], D.top[2], D.side[2], D.front[2], D.front[3]] }, ...D.legs.map((pts) => ({ closed: true, pts }))]) }; }
+function deskGeom(x, y, H, style) { const D = deskPaths(x, y, H); return { d: writeD([{ closed: true, pts: [D.top[0], D.top[1], D.top[2], D.side[2], D.front[2], D.front[3]] }, ...(style === 'iso' ? [{ closed: true, pts: D.panel }, { closed: true, pts: D.sidePanel }] : D.legs.map((pts) => ({ closed: true, pts })))]) }; }
 // Sutherland-Hodgman: polygon `p` cut to the convex polygon `c` (either winding)
 function clipConvex(p, c) {
   let out = p;
@@ -526,7 +530,7 @@ export function draw(req, opts = {}) {
     const lastOfRow = L.board && (si === slots.length - 1 || slots[si + 1].row !== sl.row);
     const board = lastOfRow ? L.board(sl.row, style, P) : '';
     people.push(`${chair}<g>${writeItems(items, null)}</g>${desk}${board}`);
-    if (desk && opts.geometry) occluders.push({ after: geometry.length, ...deskGeom(sl.x, sl.y, L.H) });
+    if (desk && opts.geometry) occluders.push({ after: geometry.length, ...deskGeom(sl.x, sl.y, L.H, style) });
     total++; if (fig.highlight) lit++;
     if (opts.geometry) {
       // for the test only (never in the reply): the head disc and torso core in picture pixels, and the fills drawn
