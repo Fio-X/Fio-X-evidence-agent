@@ -170,7 +170,7 @@ def notes_html(spec, layer, kn):
 
 # What the page's picture kinds need explained: (swatch, word) a layer adds to the legend block under the thesis; the accent line is always there.
 LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", "story.legend.chain"), "small_multiples": ("pale", "story.legend.members"),
-          "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank"),
+          "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rank_slope": ("ink", "story.legend.slope"),
           "unit_grid": ("accent", "grid.legend"), "glyph_row": ("area", "glyph.legend"), "dot_strip": ("dash", "dot.legend")}
 
 
@@ -191,6 +191,7 @@ def legend_rows(layers, leaves=None):
         if n == "small_multiples" and named in LEGEND_NO_TARGET: row = (row[0], named)
         dot = ((leaves or {}).get("dot_strip") or {}).get("legend")
         if n == "dot_strip" and dot in DOT_NO_TARGET: row = ("pale", dot)
+        if n == "rank_slope" and not ((leaves or {}).get("rank_slope") or {}).get("ref"): row = None   # no whole drawn, no black line to explain
         if row and row not in out: out.append(row)
     return out
 
@@ -531,6 +532,6 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        ".story .legend ul{list-style:none;margin:0;padding:0;display:flex;gap:26px;flex-wrap:wrap}.story .legend li{display:flex;align-items:center;gap:8px}"
        ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
        ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
-       ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}"
+       ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}.story .sw.ink{background:var(--t-title)}"
        ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}"
        ".story .sw.area{width:14px;height:14px;border-radius:50%;background:var(--bar)}")
