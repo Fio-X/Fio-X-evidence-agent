@@ -10693,6 +10693,38 @@ mod tests {
         let off = run(&[("bars", "tps00191")], vec![asylum_tps, pop_offered]);
         assert_eq!(off, vec!["C6: the question asks for population but the page draws no row from SP.POP.TOTL, demo_pjan, demo_gind".to_string()]);
     }
+
+    /// C6 over the real measure-families.json (the catalogue's own asked record for an unemployment question, nothing
+    /// offered): the youth unemployment rate a stand-in picked (tipslm80, 11-25) and the long-listed une_rt_a are the family's
+    /// tables, so a page drawing either passes; the employment rate (tipslm100), the participation rate (tipslm60) and the
+    /// long-term unemployment rate (tipslm70) of the same group are not, and a page drawing only one of them is refused.
+    #[test]
+    fn c6_reads_the_unemployment_family_s_tables_from_the_real_file() {
+        let asked = crate::l5geo::asked_zh("欧盟各国青年失业率这些年怎么变？");
+        let unemployment = asked
+            .iter()
+            .find(|a| a.id == "unemployment")
+            .expect("the question asks for unemployment");
+        let tables: Vec<&str> = unemployment.tables.iter().map(String::as_str).collect();
+        let rec = asked_rec("unemployment", &tables, &[]);
+        let run = |table: &str| {
+            let (spec, inp) = asked_page(&[("bars", table)], Some(vec![rec.clone()]), Some(vec![]));
+            asked_problems(&spec, &inp)
+        };
+        for table in ["tipslm80", "une_rt_a", "tesem140"] {
+            assert_eq!(run(table), Vec::<String>::new(), "{table}");
+        }
+        for table in ["tipslm100", "tipslm60", "tipslm70"] {
+            let off = run(table);
+            assert!(
+                off.len() == 1
+                    && off[0].starts_with(
+                        "C6: the question asks for unemployment but the page draws no row from "
+                    ),
+                "{table}: {off:?}"
+            );
+        }
+    }
     use std::path::{Path, PathBuf};
 
     fn fixtures() -> PathBuf {

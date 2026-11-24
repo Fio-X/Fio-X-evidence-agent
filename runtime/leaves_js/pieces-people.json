@@ -14,7 +14,16 @@
   "proj_23ndbi",
   "SP.POP.65UP.TO.ZS",
   "SP.POP.65UP.TO",
-  "SP.URB.TOTL.IN.ZS"
+  "SP.URB.TOTL.IN.ZS",
+  "tipslm80",
+  "tipsun30",
+  "ei_lmhr_m",
+  "tesem120",
+  "tesem140",
+  "tepsr_wc170",
+  "teilm020",
+  "teilm021",
+  "teilm022"
  ],
  "pieces": [
   {
@@ -148,7 +157,16 @@
    "proj_23ndbi": [],
    "SP.POP.65UP.TO.ZS": [],
    "SP.POP.65UP.TO": [],
-   "SP.URB.TOTL.IN.ZS": []
+   "SP.URB.TOTL.IN.ZS": [],
+   "tipslm80": [],
+   "tipsun30": [],
+   "ei_lmhr_m": [],
+   "tesem120": [],
+   "tesem140": [],
+   "tepsr_wc170": [],
+   "teilm020": [],
+   "teilm021": [],
+   "teilm022": []
   },
   "hero": "figures",
   "ground": "warm",

@@ -1663,6 +1663,9 @@ mod tests {
         // a World Bank family prefix ends in a dot, so the page's own indicator id is held (not the neutral topic)
         assert_eq!(f(&["SL.UEM.1524.ZS"]).as_deref(), Some("unemployment"));
         assert_eq!(f(&["NY.GDP.PCAP.CD"]).as_deref(), Some("gdp_pc"));
+        // a national headline rate table the family lists by its full id (the youth rate a stand-in picked, 11-25)
+        assert_eq!(f(&["tipslm80"]).as_deref(), Some("unemployment"));
+        assert_eq!(f(&["tipslm100"]), None);
         assert_eq!(f(&["SP.POP.TOTL"]).as_deref(), Some("population"));
     }
 
@@ -1678,6 +1681,7 @@ mod tests {
             assert_eq!(set(t).as_deref(), Some("economy"), "{t}");
         }
         assert_eq!(set("une_rt_a").as_deref(), Some("people"));
+        assert_eq!(set("tipslm80").as_deref(), Some("people"));
         assert_eq!(set("tec00114"), None);
     }
 
