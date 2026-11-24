@@ -7,10 +7,11 @@
 //         "kept": {piece: "kept/all"}} or {"refused": [why, ...]}.
 // The strip prints no number and no word: the cells' numbers are drawn with strokes. Every stroke is the ink or the accent
 // the request names, so the page's palette colours it; the strip has no ground of its own.
-// A set whose topic the scene renderer draws (its pieces are one topic's list in the module's strip_topics, and that topic's
-// ../illus_hero/node.json topics.scenes entry has renderer "scene") is drawn instead as a row of people in that topic's style
-// (ink, iso or geo; ../illus_hero/scene/people_lib, the skins the opening picture uses), nobody lit, as decoration only; the
-// skins' fills become line art (outlines and hatching, hidden lines removed), so the strip keeps the same two pens and no fill.
+// A set whose topic the scene renderer draws in the ink style (its pieces are one topic's list in the module's strip_topics,
+// and that topic's ../illus_hero/node.json topics.scenes entry has renderer "scene" and style "ink": the people topic) is
+// drawn instead as a row of people by the ink skin (../illus_hero/scene/people_lib, the skin the opening picture uses), nobody
+// lit, as decoration only: the skin's fills become line art (outlines and hatching, hidden lines removed), so the strip keeps
+// the same two pens and no fill; each figure is its own group, at least GAP_MIN px from the next, nothing under the ground.
 const path = require('path');
 const readline = require('readline');
 const rough = require('./roughjs-4.6.6.cjs.js');
@@ -81,7 +82,7 @@ function people() {
     try {
       PEOPLE = { L: require(path.join(SCENE_DIR, 'people_lib/lib.mjs')), C: require(path.join(SCENE_DIR, 'people_lib/skins/common.mjs')),
         N: require(path.join(SCENE_DIR, 'normalize.mjs')),
-        skins: Object.fromEntries(['ink', 'iso', 'geo'].map((k) => [k, require(path.join(SCENE_DIR, `people_lib/skins/${k}.mjs`))])) };
+        ink: require(path.join(SCENE_DIR, 'people_lib/skins/ink.mjs')) };
     } catch (e) { PEOPLE = false; }
   }
   return PEOPLE || null;
@@ -89,6 +90,7 @@ function people() {
 
 // The scene style of a set's topic, or none: the topic is the module's strip_topics list holding exactly the set's pieces, its
 // look the hero registry's topics.scenes.<topic> (style, when its renderer is the scene renderer). Nothing new is mapped here.
+// Only the ink style draws a people strip; a topic of another style keeps its pieces.
 function sceneStyle(set) {
   try {
     const T = set.strip_topics || JSON.parse(require('fs').readFileSync(path.join(__dirname, set.module.replace(/\.cjs$/, '.json')), 'utf8')).strip_topics;
@@ -97,7 +99,7 @@ function sceneStyle(set) {
     const own = names(set.pieces), topic = Object.keys(T.pieces).find((t) => names(T.pieces[t]) === own);
     if (!topic) return null;
     const sc = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'illus_hero', 'node.json'), 'utf8')).topics.scenes[topic];
-    return sc && sc.renderer === 'scene' && ['ink', 'iso', 'geo'].includes(sc.style) ? { topic, style: sc.style } : null;
+    return sc && sc.renderer === 'scene' && sc.style === 'ink' ? { topic, style: sc.style } : null;
   } catch (e) { return null; }
 }
 
@@ -111,16 +113,16 @@ function rng(seed) {
   return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 const pick = (r, a) => a[Math.floor(r() * a.length)];
-function looks(style, r) {
+function looks(r) {
   const T = TONE;
-  if (style === 'geo') return { ink: T.dark, paper: T.paper, detail: T.paper, hair: T.dark, accent: T.mid, grey: T.mid, tone: T.mid };
   const top = pick(r, [T.mid, T.mid2, T.light, T.dark, T.mid]), bottom = pick(r, [T.dark, T.mid, T.dark, T.mid2]);
   return { ink: T.dark, paper: T.paper, skin: T.light, hair: pick(r, [T.dark, T.dark, T.mid]), top, outer: top, bottom, accent: T.mid, shade: T.light, prop: T.mid, shoe: T.dark };
 }
 
 const bbox = (subs) => { const b = [Infinity, Infinity, -Infinity, -Infinity]; for (const s of subs) for (const [x, y] of s.pts) { if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (x > b[2]) b[2] = x; if (y > b[3]) b[3] = y; } return b; };
 const meets = (a, b) => !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
-function inside(x, y, o) { // nonzero winding of a point against a fill's closed subpaths
+function inside(x, y, o) { // nonzero winding of a point against a fill's closed subpaths (or under the ground: o.ground)
+  if (o.ground !== undefined) return y > o.ground;
   if (x < o.b[0] || x > o.b[2] || y < o.b[1] || y > o.b[3]) return false;
   let w = 0;
   for (const s of o.subs) {
@@ -181,66 +183,84 @@ function hatch(subs, th, sp, off) {
   return out;
 }
 
-// A row of people across the strip in a scene style: the people library's street crowd (nobody lit: the strip has no subject),
-// each figure drawn by the style's skin, then the skin's fills read as tones and redrawn as line art in the two pens.
-function sceneStrip(style, W, H, YG, seed, pens) {
+// A row of people across the strip: the people library's street crowd (nobody lit: the strip has no subject), each figure drawn
+// by the ink skin on its own, its tones redrawn as line art in the two pens, cut at the ground line, then the figures set side
+// by side by their boxes, GAP_MIN apart at least: one that does not fit is left out, never squeezed; the room left widens
+// the gaps so the row spans the strip.
+const GAP_MIN = 8; // px between two figures' boxes (stroke points), the 6 asked and a pen's width
+function sceneStrip(W, H, YG, seed, pens) {
   const M = people();
   if (!M) return null;
-  const { L, C, N } = M, skin = M.skins[style];
-  const FH = (YG - TOP) * 0.96, slot = FH * 0.44, n = Math.max(3, Math.floor((W - FH * 0.4) / slot));
+  const { L, C, N } = M, skin = M.ink;
+  const FH = (YG - TOP) * 0.96, slot = FH * 0.44, n = Math.max(3, Math.ceil(W / slot));
   const r = rng(Math.imul(seed, 2654435761) >>> 0);
   const crowd = L.makeCrowd({ n, seed, scene: 'street', highlightK: 0, layout: { type: 'queue', w: W, h: FH } });
-  const xs = []; let x = 0; // loose clusters along the ground line, fitted inside the strip
-  for (let i = 0; i < n; i++) { xs.push(x); x += slot * (0.8 + r() * 0.45) + (r() < 0.25 ? slot * 0.5 : 0); }
-  const span = xs[n - 1] || 1, k = Math.min(1, (W - 0.6 * FH) / span), x0 = (W - span * k) / 2;
-  const items = []; let lit = 0;
+  const ground = { ground: YG, b: [-Infinity, YG, Infinity, Infinity] };
+  const figs = [];
   crowd.items.forEach((it, i) => {
     let fig = it.figure; fig.highlight = false;
-    if (style === 'iso') fig = L.resampleHeight(fig, 6); else if (fig.height < skin.info.headRatio) fig = L.resampleHeight(fig, skin.info.headRatio);
-    if (fig.highlight) lit++;
+    if (fig.height < skin.info.headRatio) fig = L.resampleHeight(fig, skin.info.headRatio);
     const fr = rng((fig.seed ^ (i * 7919)) >>> 0), pi = fig.partner;
     let target = (fr() < 0.5 ? -1 : 1) * (40 + fr() * 50);
     if (pi !== null && pi !== undefined && pi < n) target = (pi > i ? 1 : -1) * (60 + fr() * 20);
-    const turn = C.turnToFace(fig, target), px = (FH / fig.height) * (fig.scale || 1), pal = looks(style, fr);
-    const frag = skin.drawFigure(fig, { x: x0 + xs[i] * k, y: YG - r() * 2, px, palette: pal, seed: fig.seed, turn });
-    for (const e of N.normalizeFragment(frag, { px, seed: (fig.seed ^ seed) >>> 0, palette: pal })) {
+    const turn = C.turnToFace(fig, target), px = (FH / fig.height) * (fig.scale || 1), pal = looks(fr);
+    const items = [];
+    for (const e of N.normalizeFragment(skin.drawFigure(fig, { x: 0, y: YG, px, palette: pal, seed: fig.seed, turn }), { px, seed: (fig.seed ^ seed) >>> 0, palette: pal })) {
       const subs = N.flatten(e.d).filter((u) => u.pts.length >= 2);
       if (!subs.length) continue;
-      if (style === 'iso' && e.fill !== 'none' && lum(e.fill) > 0.97) continue; // the iso skin's paper glints: no tone, no cover
       if (e.fill !== 'none') items.push({ subs: subs.map((u) => ({ pts: u.pts, closed: true })), fill: true, tone: toneOf(e.fill), op: e.op, wash: e.wash });
       if (e.stroke !== 'none' && e.sw > 0) items.push({ subs, fill: false, tone: toneOf(e.stroke), sw: e.sw, wash: e.wash });
     }
+    if (!items.length) return;
+    // on the ground: a pose whose lowest point stands above the foot line (a step, a lifted heel) is set down onto it
+    const low = bbox(items.filter((q) => (q.tone === 'dark' || q.tone === 'mid') && !(q.wash && !q.fill)).flatMap((q) => q.subs))[3];
+    if (low < YG) for (const q of items) for (const u of q.subs) u.pts = u.pts.map(([x, y]) => [x, y + YG - low]);
+    // under the top margin: a hat or a raised arm past the height the figure was sized by scales it about its foot
+    const top = bbox(items.flatMap((q) => q.subs))[1], fit = Math.min(1, (YG - 4) / Math.max(1, YG - top));
+    if (fit < 1) for (const q of items) for (const u of q.subs) u.pts = u.pts.map(([x, y]) => [x * fit, YG + (y - YG) * fit]);
+    for (const q of items) q.b = bbox(q.subs);
+    const lines = new Map(); // pen|width -> polylines
+    const add = (pen, w, runs) => { const key = `${pen}|${w.toFixed(2)}`; if (!lines.has(key)) lines.set(key, []); lines.get(key).push(...runs); };
+    items.forEach((q, j) => {
+      const occ = [ground]; // the ground, and the solid fills drawn over this one (washes are see-through)
+      for (let k = j + 1; k < items.length; k++) { const o = items[k]; if (o.fill && o.op >= 0.9 && !o.wash && meets(o.b, q.b)) occ.push(o); }
+      if (!q.fill) { // a pen line: the dark ones in the ink, the others in the second pen; the paper's own strokes and wash rims none
+        if (q.wash || !q.tone || q.tone === 'light') return;
+        for (const u of q.subs) add(q.tone === 'dark' ? pens.ink : pens.second, q.sw, visible(u.pts, u.closed, occ));
+        return;
+      }
+      if (q.tone === 'dark' || q.tone === 'mid') {
+        const dark = q.tone === 'dark';
+        for (const sg of hatch(q.subs, dark ? -0.9 : 1.3, dark ? 1.5 : 3.0, (j * 0.37) % 1)) add(dark ? pens.ink : pens.second, dark ? 0.6 : 0.55, visible(sg, false, occ));
+      }
+      if (q.tone === 'dark') for (const u of q.subs) add(pens.ink, 0.9, visible(u.pts, true, occ)); // the skin's dark masses (its swells)
+    });
+    const drawn = [...lines.values()].flat();
+    if (!drawn.length) return;
+    figs.push({ lines, x: bbox(drawn.map((p) => ({ pts: p }))) });
   });
-  // fit the crowd under the top margin, scaled about the ground line (a hat or a raised arm may reach past the height the
-  // figures were sized by)
-  const all = bbox(items.flatMap((it) => it.subs)), fit = Math.min(1, (YG - 4) / Math.max(1, YG - all[1]));
-  if (fit < 1) for (const it of items) for (const u of it.subs) u.pts = u.pts.map(([px, py]) => [W / 2 + (px - W / 2) * fit, YG + (py - YG) * fit]);
-  for (const it of items) it.b = bbox(it.subs);
-  const lines = new Map(); // pen|width -> polylines
-  const add = (pen, w, runs) => { const key = `${pen}|${w.toFixed(2)}`; if (!lines.has(key)) lines.set(key, []); lines.get(key).push(...runs); };
-  items.forEach((it, i) => {
-    const occ = []; // the solid fills drawn over this one (washes are see-through)
-    for (let j = i + 1; j < items.length; j++) { const o = items[j]; if (o.fill && o.op >= 0.9 && !o.wash && meets(o.b, it.b)) occ.push(o); }
-    if (!it.fill) { // a pen line: the dark ones in the ink, the others in the second pen; the paper's own strokes and wash rims none
-      if (it.wash || !it.tone || it.tone === 'light') return;
-      for (const u of it.subs) add(it.tone === 'dark' ? pens.ink : pens.second, it.sw, visible(u.pts, u.closed, occ));
-      return;
+  // side by side: each gap GAP_MIN and a share of a slot (some wider, so the row falls in groups); the figures that fit
+  const gaps = figs.map(() => (r() < 0.25 ? 0.5 : 0) + r() * 0.25);
+  const side = 4, room = W - 2 * side;
+  let k = figs.length;
+  const need = (m) => figs.slice(0, m).reduce((a, f) => a + f.x[2] - f.x[0], 0) + (m - 1) * GAP_MIN;
+  while (k > 1 && need(k) > room) k--;
+  const used = figs.slice(0, k), extra = gaps.slice(0, Math.max(0, k - 1)), weight = extra.reduce((a, g) => a + g, 0) || 1;
+  const spare = room - need(k);
+  let x = side + (k === 1 ? spare / 2 : 0), body = '';
+  used.forEach((f, i) => {
+    const dx = x - f.x[0];
+    let g = '';
+    for (const [key, runs] of f.lines) {
+      const cut = key.lastIndexOf('|'), d = N.writeD(runs.map((p) => ({ pts: p.map(([px, py]) => [px + dx, py]), closed: false })));
+      if (d) g += `<path d="${d}" stroke="${key.slice(0, cut)}" stroke-width="${+key.slice(cut + 1)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
-    if (it.tone === 'dark' || it.tone === 'mid') {
-      const dark = it.tone === 'dark';
-      for (const sg of hatch(it.subs, dark ? -0.9 : style === 'ink' ? 1.3 : 0.75, dark ? 1.5 : 3.0, (i * 0.37) % 1)) add(dark ? pens.ink : pens.second, dark ? 0.6 : 0.55, visible(sg, false, occ));
-    }
-    // the flat skins draw shapes, not lines: every shape gets its outline; the ink skin outlines its dark masses (its swells)
-    if (it.tone && (style !== 'ink' || it.tone === 'dark')) for (const u of it.subs) add(pens.ink, 0.9, visible(u.pts, true, occ));
+    body += `<g>${g}</g>`;
+    x += f.x[2] - f.x[0] + GAP_MIN + (i < k - 1 ? spare * extra[i] / weight : 0);
   });
   const gl = []; for (let gx = 4; gx <= W - 4; gx += 8) gl.push([gx, YG + 1 + Math.sin(gx * 0.05 + seed) * 0.6]);
-  add(pens.ink, 1.2, [gl]);
-  let body = '';
-  for (const [key, runs] of lines) {
-    const cut = key.lastIndexOf('|'), d = N.writeD(runs.map((p) => ({ pts: p, closed: false })));
-    if (d) body += `<path d="${d}" stroke="${key.slice(0, cut)}" stroke-width="${+key.slice(cut + 1)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-  }
-  return { svg: `<g>${body}</g>`, figures: n, lit };
+  body += `<path d="${N.writeD([{ pts: gl, closed: false }])}" stroke="${pens.ink}" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return { svg: `<g>${body}</g>`, figures: k, lit: 0 };
 }
 
 function strip(req) {
@@ -261,7 +281,7 @@ function strip(req) {
   const H = K.height, YG = K.baseline, R = K.roughness, PAD = K.margin;
   // a set of a scene-renderer topic, asked with no family and no count (the page's own request): its people, if they load
   const look = req.family === undefined && req.count === undefined ? sceneStyle(set) : null;
-  const crowd = look && sceneStrip(look.style, W, H, YG, K.seed, { ink: req.ink, second: req.accent });
+  const crowd = look && sceneStrip(W, H, YG, K.seed, { ink: req.ink, second: req.accent });
   if (crowd) return { svg: crowd.svg, w: W, h: H, dropped: [], kept: {}, topic: look.topic, style: look.style, figures: crowd.figures, lit: crowd.lit };
   const free = W - (PIECES.length - 1) * K.gap, weight = PIECES.reduce((a, p) => a + p.cell, 0);
   const pen = (e, seed, s) => {
