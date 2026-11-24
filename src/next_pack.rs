@@ -404,9 +404,8 @@ mod tests {
         // a rate of change whose label states no basis has no row (Annual average rate of change: against what is unsaid)
         assert_eq!(unit_short("RCH_A_AVG"), None);
         // a chain-linked volume's rate of change reads its basis past the price-basis prefix (n02's quarter on the same
-        // quarter a year before); an annualized one is not read, a chain-linked level a measure family's table carries has a
-        // reviewed row naming its reference year and adding up to nothing, and a chain-linked volume index is an index of its
-        // base year (owner 11-20 17:3x) printing no suffix, as I15 does
+        // quarter a year before); an annualized one or a chain-linked level is not read, and a chain-linked volume index is an
+        // index of its base year (owner 11-20 17:3x) printing no suffix, as I15 does
         assert_eq!(
             (
                 unit_short("CLV_PCH_SM"),
@@ -416,25 +415,9 @@ mod tests {
             (Some("%"), Some("%"), Some("%（同比）"))
         );
         assert_eq!(unit_line_form("CLV_PCH_PRE"), Some("%（较上期）"));
-        assert_eq!(unit_short("CLV_PCH_ANN"), None);
         assert_eq!(
-            (
-                unit_short("CLV10_MEUR"),
-                unit_number_suffix("CLV10_MEUR"),
-                unit_table_additive("CLV10_MEUR")
-            ),
-            (
-                Some("百万欧元（2010年不变价）"),
-                Some("百万欧元"),
-                Some(false)
-            )
-        );
-        assert_eq!(
-            (
-                unit_short("CLV20_EUR_HAB"),
-                unit_number_suffix("CLV20_EUR_HAB")
-            ),
-            (Some("欧元/人（2020年不变价）"), Some("欧元/人"))
+            (unit_short("CLV_PCH_ANN"), unit_short("CLV10_MEUR")),
+            (None, None)
         );
         assert_eq!(
             (unit_short("CLV_I20"), unit_number_suffix("CLV_I20")),

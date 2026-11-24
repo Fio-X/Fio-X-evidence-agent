@@ -364,40 +364,29 @@ INTD_HAB	国际元/人（现价）	per_capita	no	国际元/人	reviewed	Internat
 INTD_K21_HAB	国际元/人（2021年不变价）	per_capita	no	国际元/人	reviewed	International dollars (PPP) per capita, constant 2021 prices	
 UG_M3	微克/立方米	density	no	微克/立方米	reviewed	Micrograms per cubic metre	
 KG_HA	千克/公顷	density	no	千克/公顷	reviewed	Kilograms per hectare	
-CLV05_MEUR	百万欧元（2005年不变价）	amount	no	百万欧元	reviewed	Chain linked volumes (2005), million euro	
-CLV10_MEUR	百万欧元（2010年不变价）	amount	no	百万欧元	reviewed	Chain linked volumes (2010), million euro	
-CLV15_MEUR	百万欧元（2015年不变价）	amount	no	百万欧元	reviewed	Chain linked volumes (2015), million euro	
-CLV20_MEUR	百万欧元（2020年不变价）	amount	no	百万欧元	reviewed	Chain linked volumes (2020), million euro	
-CLV05_MNAC	百万本币（2005年不变价）	amount_own_currency	no	百万本币	reviewed	Chain linked volumes (2005), million units of national currency	
-CLV10_MNAC	百万本币（2010年不变价）	amount_own_currency	no	百万本币	reviewed	Chain linked volumes (2010), million units of national currency	
-CLV15_MNAC	百万本币（2015年不变价）	amount_own_currency	no	百万本币	reviewed	Chain linked volumes (2015), million units of national currency	
-CLV20_MNAC	百万本币（2020年不变价）	amount_own_currency	no	百万本币	reviewed	Chain linked volumes (2020), million units of national currency	
-CP_MNAC	百万本币（现价）	amount_own_currency	no	百万本币	reviewed	Current prices, million units of national currency	
-PYP_MEUR	百万欧元（上年价格）	amount	no	百万欧元	reviewed	Previous year prices, million euro	
-PYP_MNAC	百万本币（上年价格）	amount_own_currency	no	百万本币	reviewed	Previous year prices, million units of national currency	
-CLV10_EUR_HAB	欧元/人（2010年不变价）	per_capita	no	欧元/人	reviewed	Chain linked volumes (2010), euro per capita	
-CLV15_EUR_HAB	欧元/人（2015年不变价）	per_capita	no	欧元/人	reviewed	Chain linked volumes (2015), euro per capita	
-CLV20_EUR_HAB	欧元/人（2020年不变价）	per_capita	no	欧元/人	reviewed	Chain linked volumes (2020), euro per capita	
-CP_NAC_HAB	本币/人（现价）	amount_own_currency	no	本币/人	reviewed	Current prices, units of national currency per capita	
-CLV_I10_HAB	指数(2010=100)	index_base	no		reviewed	Chain linked volumes, Index 2010=100, per capita	
-CLV_I15_HAB	指数(2015=100)	index_base	no		reviewed	Chain linked volumes, Index 2015=100, per capita	
-CLV_I20_HAB	指数(2020=100)	index_base	no		reviewed	Chain linked volumes, Index 2020=100, per capita	
-PD05_EUR	指数(2005=100)	index_base	no		reviewed	Price index (implicit deflator), 2005=100, euro	
-PD10_EUR	指数(2010=100)	index_base	no		reviewed	Price index (implicit deflator), 2010=100, euro	
-PD15_EUR	指数(2015=100)	index_base	no		reviewed	Price index (implicit deflator), 2015=100, euro	
-PD20_EUR	指数(2020=100)	index_base	no		reviewed	Price index (implicit deflator), 2020=100, euro	
-PD05_NAC	指数(2005=100)	index_base	no		reviewed	Price index (implicit deflator), 2005=100, national currency	
-PD10_NAC	指数(2010=100)	index_base	no		reviewed	Price index (implicit deflator), 2010=100, national currency	
-PD15_NAC	指数(2015=100)	index_base	no		reviewed	Price index (implicit deflator), 2015=100, national currency	
-PD20_NAC	指数(2020=100)	index_base	no		reviewed	Price index (implicit deflator), 2020=100, national currency	
-PD_PCH_PRE_EUR	%	pct_change	no	%	reviewed	Price index (implicit deflator), percentage change on previous period, euro	%（较上期）
-PD_PCH_PRE_NAC	%	pct_change	no	%	reviewed	Price index (implicit deflator), percentage change on previous period, national currency	%（较上期）
-CON_PPCH_PRE	百分点	pct_change	no	百分点	reviewed	Contribution to GDP growth, percentage point change on previous period	百分点（较上期）
-PPCH_3Y	百分点	pct_change	no	百分点	reviewed	Percentage point change (t-(t-3))	百分点（较三年前）
-NR_HTHAB	每十万人	per_population	no	每十万人	reviewed	Number per hundred thousand persons	
-KJ_M3_GCV	千焦/立方米（总热值）	density	no	千焦/立方米	reviewed	Kilojoule per cubic metre (gross calorific value - GCV)	
-KJ_M3_NCV	千焦/立方米（净热值）	density	no	千焦/立方米	reviewed	Kilojoule per cubic metre (net calorific value - NCV)	
-MJ_T_GCV	兆焦/吨（总热值）	density	no	兆焦/吨	reviewed	Megajoule per tonne (gross calorific value - GCV)	
-MJ_T_NCV	兆焦/吨（净热值）	density	no	兆焦/吨	reviewed	Megajoule per tonne (net calorific value - NCV)	
-TJ_TM3_NCV	太焦/千立方米（净热值）	density	no	太焦/千立方米	reviewed	Terajoule per thousand cubic metres (net calorific value - NCV)	
-TJ_GCV	太焦（总热值）	energy	yes	太焦	reviewed	Terajoule (gross calorific value - GCV)	
+CP_MNAC	百万本币（现价）	amount_own_currency	no	百万本币	generated	Current prices, million units of national currency	
+PYP_MEUR	百万欧元（上年价格）	amount	no	百万欧元	generated	Previous year prices, million euro	
+PYP_MNAC	百万本币（上年价格）	amount_own_currency	no	百万本币	generated	Previous year prices, million units of national currency	
+CP_NAC_HAB	本币/人（现价）	amount_own_currency	no	本币/人	generated	Current prices, units of national currency per capita	
+CLV_I10_HAB	指数(2010=100)	index_base	no		generated	Chain linked volumes, Index 2010=100, per capita	
+CLV_I15_HAB	指数(2015=100)	index_base	no		generated	Chain linked volumes, Index 2015=100, per capita	
+CLV_I20_HAB	指数(2020=100)	index_base	no		generated	Chain linked volumes, Index 2020=100, per capita	
+PD05_EUR	指数(2005=100)	index_base	no		generated	Price index (implicit deflator), 2005=100, euro	
+PD10_EUR	指数(2010=100)	index_base	no		generated	Price index (implicit deflator), 2010=100, euro	
+PD15_EUR	指数(2015=100)	index_base	no		generated	Price index (implicit deflator), 2015=100, euro	
+PD20_EUR	指数(2020=100)	index_base	no		generated	Price index (implicit deflator), 2020=100, euro	
+PD05_NAC	指数(2005=100)	index_base	no		generated	Price index (implicit deflator), 2005=100, national currency	
+PD10_NAC	指数(2010=100)	index_base	no		generated	Price index (implicit deflator), 2010=100, national currency	
+PD15_NAC	指数(2015=100)	index_base	no		generated	Price index (implicit deflator), 2015=100, national currency	
+PD20_NAC	指数(2020=100)	index_base	no		generated	Price index (implicit deflator), 2020=100, national currency	
+PD_PCH_PRE_EUR	%	pct_change	no	%	generated	Price index (implicit deflator), percentage change on previous period, euro	%（较上期）
+PD_PCH_PRE_NAC	%	pct_change	no	%	generated	Price index (implicit deflator), percentage change on previous period, national currency	%（较上期）
+CON_PPCH_PRE	百分点	pct_change	no	百分点	generated	Contribution to GDP growth, percentage point change on previous period	百分点（较上期）
+PPCH_3Y	百分点	pct_change	no	百分点	generated	Percentage point change (t-(t-3))	百分点（较三年前）
+NR_HTHAB	每十万人	per_population	no	每十万人	generated	Number per hundred thousand persons	
+KJ_M3_GCV	千焦/立方米（总热值）	density	no	千焦/立方米	generated	Kilojoule per cubic metre (gross calorific value - GCV)	
+KJ_M3_NCV	千焦/立方米（净热值）	density	no	千焦/立方米	generated	Kilojoule per cubic metre (net calorific value - NCV)	
+MJ_T_GCV	兆焦/吨（总热值）	density	no	兆焦/吨	generated	Megajoule per tonne (gross calorific value - GCV)	
+MJ_T_NCV	兆焦/吨（净热值）	density	no	兆焦/吨	generated	Megajoule per tonne (net calorific value - NCV)	
+TJ_TM3_NCV	太焦/千立方米（净热值）	density	no	太焦/千立方米	generated	Terajoule per thousand cubic metres (net calorific value - NCV)	
+TJ_GCV	太焦（总热值）	energy	yes	太焦	generated	Terajoule (gross calorific value - GCV)	
