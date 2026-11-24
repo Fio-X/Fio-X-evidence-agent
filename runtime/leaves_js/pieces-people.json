@@ -16,14 +16,9 @@
   "SP.POP.65UP.TO",
   "SP.URB.TOTL.IN.ZS",
   "tipslm80",
-  "tipsun30",
-  "ei_lmhr_m",
   "tesem120",
   "tesem140",
-  "tepsr_wc170",
-  "teilm020",
-  "teilm021",
-  "teilm022"
+  "tepsr_wc170"
  ],
  "pieces": [
   {
@@ -159,14 +154,9 @@
    "SP.POP.65UP.TO": [],
    "SP.URB.TOTL.IN.ZS": [],
    "tipslm80": [],
-   "tipsun30": [],
-   "ei_lmhr_m": [],
    "tesem120": [],
    "tesem140": [],
-   "tepsr_wc170": [],
-   "teilm020": [],
-   "teilm021": [],
-   "teilm022": []
+   "tepsr_wc170": []
   },
   "hero": "figures",
   "ground": "warm",
