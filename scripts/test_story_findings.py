@@ -429,6 +429,34 @@ class Findings(unittest.TestCase):
         self.assertTrue(all(facts[f"g_{c.lower()}"]["v"] <= 0 for c in WB))
         self.assertEqual(composed["leaves"]["rankbar"]["share_head"], FN.ST("story.rank.gap_top_head"))
 
+    def _note_words(self, cand):
+        """Each short note's words as one string (the placeholders left as they stand)."""
+        return ["".join(seg.get("w", "") if "w" in seg else "{" + str(seg) + "}" for seg in n["text"]) for n in cand["anns"]]
+
+    def test_the_rank_notes_say_how_many_times_the_whole_or_the_highest_on_two_shapes(self):
+        req, _ = eu_request()
+        _, cands, _ = FN.candidates(req)
+        rank = next(c for c in cands if c["id"] == "rank")
+        f = rank["facts"]
+        self.assertEqual((f["t_hi"]["op"], f["t_hi"]["a"], f["t_hi"]["b"]), ("times", f"r_{rank['about'][0].lower()}", "r_eu27_2020"))
+        self.assertEqual(f["t_lo"]["b"], "r_eu27_2020")
+        self.assertTrue(all("倍" in w for w in self._note_words(rank)), self._note_words(rank))
+        req, _ = wb_request()
+        _, cands, _ = FN.candidates(req)
+        rank = next(c for c in cands if c["id"] == "rank")
+        hi, lo = rank["about"]
+        self.assertEqual((rank["facts"]["t_lo"]["a"], rank["facts"]["t_lo"]["b"]), (f"r_{lo.lower()}", f"r_{hi.lower()}"))
+        self.assertNotIn("t_hi", rank["facts"])
+        self.assertIn("倍", self._note_words(rank)[0])
+
+    def test_a_note_with_no_plain_ratio_keeps_its_old_words(self):
+        f = {}
+        q = type("Q", (), {"fmts": {"times": "n1"}})()
+        self.assertTrue(FN.ratio(q, f, "x", "a", "b", 6.0, 2.0)); self.assertEqual(f["x"]["op"], "times")
+        for va, vb in ((6.0, 0.0), (6.0, -1.0), (-1.0, 2.0)):
+            g = {}
+            self.assertFalse(FN.ratio(q, g, "x", "a", "b", va, vb)); self.assertEqual(g, {})
+
     # ---------------------------------------------------------------- the header: three big numbers above the thesis
 
     def _page(self, req, names, picks, style=None, edit=None, refused=False):

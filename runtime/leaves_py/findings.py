@@ -311,6 +311,14 @@ def note(key, word, **bind):
     return {"num": f"fact:{key}", "text": ST(word, **bind)}
 
 
+def ratio(q, f, name, a, b, va, vb):
+    """The short note's comparison: `a` as a multiple of `b` (op times), only where it is a plain ratio (a >= 0, b > 0); True when written."""
+    if vb > 0 and va >= 0:
+        f[name] = {"op": "times", "a": a, "b": b, "fmt": q.fmts["times"]}
+        return True
+    return False
+
+
 def clamp(x):
     return max(0.0, min(1.0, x))
 
@@ -802,10 +810,18 @@ def angle_rank(q):
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "share_head": head, "name_kind": "place", "rows": rows,
             "highlight": q.whole if q.wseries else hi,   # the code of the row the page draws in the accent (story.rank_style reads it)
             "omit": ST("story.rank.omit")}   # a long rank folds to its ends and the highlighted row (the leaf's fold_over), this line where rows are left out
+    if q.wseries:   # each end as a multiple of the whole, where the end is on the side its words say
+        w0 = q.wseries[y][0]
+        hx = at[hi] > w0 and ratio(q, f, "t_hi", key(hi), key(q.whole), at[hi], w0)
+        lx = at[lo] < w0 and ratio(q, f, "t_lo", key(lo), key(q.whole), at[lo], w0)
+        anns = [note(f"g_{hi.lower()}", "story.note.rank.hi" + "_x" * hx, hi=hi, w=q.whole, rw=key(q.whole), tx="t_hi"),
+                note(f"g_{lo.lower()}", "story.note.rank.lo" + "_x" * lx, lo=lo, w=q.whole, rw=key(q.whole), tx="t_lo")]
+    else:
+        lx = ratio(q, f, "t_lo", key(lo), key(hi), at[lo], at[hi])
+        anns = [note(f"g_{lo.lower()}", "story.note.rank.lo_top" + "_x" * lx, lo=lo, hi=hi, rhi=key(hi), tx="t_lo")]
     return with_part({"angle": "rank", "shows": [q.shows(y, "rank")], "about": [hi, lo], "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": claim, "notes": [], "members": True, "last": key(hi),
-            "anns": ([note(f"g_{hi.lower()}", "story.note.rank.hi", hi=hi, w=q.whole, rw=key(q.whole)), note(f"g_{lo.lower()}", "story.note.rank.lo", lo=lo, w=q.whole, rw=key(q.whole))]
-                     if q.wseries else [note(f"g_{lo.lower()}", "story.note.rank.lo_top", lo=lo, hi=hi, rhi=key(hi))]),
+            "anns": anns,
             "score": round(size * surprise * sturdy, 4), "why": why, "summary": why_line}, grid_part(q, y, sorted(members))), None
 
 
@@ -895,6 +911,7 @@ def angle_map(q):
     called = ranked[:MAP_CALL] + ranked[-MAP_CALL:]
     f = {key(c): q.value(c, y) for c in called}
     f["mrange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
+    mx = ratio(q, f, "mx", key(hi), key(lo), at[hi], at[lo])
     second = ranked[1]
     tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain")
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
@@ -911,7 +928,7 @@ def angle_map(q):
     return {"angle": "map", "shows": [q.shows(y, "map")], "about": [hi, lo], "layer": "member_map", "big": big_items, "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
             "text": T("story.map.text", y1=key(hi)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key(hi)}", "head": T("story.map.claim")}, "notes": [], "members": True, "last": key(hi),
-            "anns": [note("mrange", "story.note.map.range", hi=hi, lo=lo), note(key(second), "story.note.map.second", c=second)],
+            "anns": [note("mrange", "story.note.map.range" + "_x" * mx, hi=hi, lo=lo, mx="mx"), note(key(second), "story.note.map.second", c=second)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "gradient": round(gradient, 3), "higher": best[1]},
             "summary": "the members' values on a map, filled by value: where the high ones lie"}, None
@@ -1064,7 +1081,8 @@ def angle_tiles(q):
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
             "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}
-    anns = [note("trange", "story.note.tl.range", hi=hi, lo=lo)]
+    tx = ratio(q, f, "tx", key(hi), key(lo), at[hi], at[lo])
+    anns = [note("trange", "story.note.tl.range" + "_x" * tx, hi=hi, lo=lo, tx="tx")]
     if q.whole and y in q.wseries:
         f["tl_whole"] = q.value(q.whole, y)
         anns.append(note("tl_whole", "story.note.tl.whole", w=q.whole))
