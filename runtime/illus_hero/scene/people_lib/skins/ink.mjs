@@ -45,7 +45,10 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
   // it is no louder than the other people's yellow / blue washes
   const mixHex = (a, b, t) => { if (!/^#/.test(String(a)) || !/^#/.test(String(b))) return a; const A = hexRgb(a), B = hexRgb(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
   const hlOn = c => !!(fig.highlight && palette.accent && c === palette.accent);
-  const washOf = c => hlOn(c) ? mixHex(c, paper, 0.33) : c;
+  // v1.5.2: the highlighted person must be found at a glance: a deeper vermilion (accent mixed only 2% toward
+  // the paper and laid at 0.9), on the top and on the trousers / skirt; measured on the page ≈ 0.45–0.5 HSV
+  const washOf = c => hlOn(c) ? mixHex(c, paper, 0.02) : c;
+  const hlOp = op => fig.highlight ? 0.9 : op;
 
   const parts = {};
   const part = k => (parts[k] ||= { occ: [], wash: [], ink: [] });
@@ -179,7 +182,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
       pen(k, [hA, kA], cw * 0.8, { breaks: false, noStart: true }); pen(k, [hB, kB], cw * 0.8, { breaks: false, noStart: true });
       pen(k, down, cw * 0.8, { breaks: false, over: 1 }); pen(k, up, dw * 1.3, { breaks: false, over: 0 });
       pen(k, o.L.slice(ji), cw * 0.8, { noStart: true }); pen(k, o.R.slice(ji), cw * 0.8, { noStart: true });
-      sweep(k, [hp, kp], [hw * 0.9, rx * 0.9], bc, 0.7, { t0: 0.05, t1: 0.9 }); sweep(k, o.centre.slice(ji), o.widths.slice(ji), bc, 0.7);
+      sweep(k, [hp, kp], [hw * 0.9, rx * 0.9], washOf(bc), hlOp(0.7), { t0: 0.05, t1: 0.9 }); sweep(k, o.centre.slice(ji), o.widths.slice(ji), washOf(bc), hlOp(0.7));
       // the single knee fold: a short pull from the knee back along the thigh
       fold(k, [kp[0] - sd[0] * ry * 1.1 + pe[0] * rx * 0.3, kp[1] - sd[1] * ry * 1.1 + pe[1] * rx * 0.3], [hp[0] * 0.4 + kp[0] * 0.6 - pe[0] * rx * 0.1, hp[1] * 0.4 + kp[1] * 0.6 - pe[1] * rx * 0.1]);
     }
@@ -190,7 +193,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     const lp = legProfile(J, s, T, S, px);
     const bare = of.len === 'short' ? 0.55 : of.skirt && of.len === 'knee' ? 0.62 : 1;
     const o = limbOutline(lp.pts, lp.ws, 11), ji = jointIdx(lp.pts, 11), i0 = after ? 2 : 0;
-    const bc = colour('bottom');
+    const bc = fig.highlight && palette.accent ? palette.accent : colour('bottom');   // highlight: the lower garment takes the accent wash too
     // a thigh pointing at the viewer (seated, seen from the front) is drawn in perspective: a knee
     // ellipse nearest the eye and two side lines narrowing back to the hip, then the shin as usual
     const kp0 = S(kn), hp0 = S(hip), fsK = Math.hypot(kp0[0] - hp0[0], kp0[1] - hp0[1]) / ((V.len(V.sub(kn, hip)) * px) || 1);
@@ -203,7 +206,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
       const jt = ji <= n ? [ji] : [];
       pen(k, o.L.slice(0, n + 1), cw * 0.8, { joints: jt, noStart: true }); pen(k, o.R.slice(0, n + 1), cw * 0.8, { joints: jt, noStart: true });
       if (bare < 1) { const jb = ji > n ? [ji - n] : []; pen(k, o.L.slice(n), dw * 1.3, { over: 1, joints: jb }); pen(k, o.R.slice(n), dw * 1.3, { over: 1, joints: jb }); const h0 = o.L[n], h1 = o.R[n]; pen(k, [h0, [(h0[0] + h1[0]) / 2, (h0[1] + h1[1]) / 2 + 1], h1], dw, { breaks: false }); }
-      sweep(k, o.centre.slice(0, n + 1), o.widths.slice(0, n + 1), isMass(bc) ? palette.shade : bc, 0.7);
+      sweep(k, o.centre.slice(0, n + 1), o.widths.slice(0, n + 1), isMass(bc) ? palette.shade : washOf(bc), hlOp(0.7));
       if (bare < 1) sweep(k, o.centre.slice(n), o.widths.slice(n), palette.skin, 0.6, { t0: 0.05, t1: 0.8 });
       // folds follow the knee: the compressed back of the knee gets a crease, the stretched top of the
       // thigh gets one or two pulls toward the hip once the knee flexes (a seated lap gets two)
@@ -246,7 +249,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
     else {
       const jt = ji <= nS ? [ji] : [];
       pen(k, o.L.slice(0, nS + 1), cw * 0.8, { joints: jt, noStart: true }); pen(k, o.R.slice(0, nS + 1), cw * 0.8, { joints: jt, noStart: true });
-      sweep(k, o.centre.slice(0, nS + 1), o.widths.slice(0, nS + 1), washOf(sleeveC), 0.72);
+      sweep(k, o.centre.slice(0, nS + 1), o.widths.slice(0, nS + 1), washOf(sleeveC), hlOn(sleeveC) ? 0.9 : 0.72);
       // sleeve folds bunch on the inside of the elbow, more of them the more it bends
       if (!short && flex > 15) {
         const e = S(el), uA = V.norm(V.sub(S(sh).concat(0), e.concat(0))), uB = V.norm(V.sub(S(wr).concat(0), e.concat(0))), bis = V.norm(V.add(uA, uB)), wE = T.upperArm * px * 0.7;
@@ -359,7 +362,7 @@ export function drawFigure(fig, { x = 0, y = 0, px = 40, palette = {}, seed, tur
       const hem0 = Lc[Lc.length - 1], hem1 = Rc[Rc.length - 1];
       pen(k, [hem0, [(hem0[0] + hem1[0]) / 2, (hem0[1] + hem1[1]) / 2 + px * 0.05], hem1], dw * 1.5, { breaks: false });
       // highlight: one broad sweep down the garment covering most of it (same brush, paler accent)
-      if (hlOn(topC)) sweep(k, tC, tH, washOf(topC), 0.72, { t0: 0.02 + r() * 0.04, t1: 0.9 + r() * 0.07, wk: 0.92, bow: 0.06 });
+      if (hlOn(topC)) sweep(k, tC, tH, washOf(topC), 0.9, { t0: 0.02 + r() * 0.04, t1: 0.9 + r() * 0.07, wk: 0.92, bow: 0.06 });
       // two or three slanted brush strokes down the garment, shoulder to hem, not one blob
       else { const nS = 2 + (r() < 0.5 ? 1 : 0), dir = r() < 0.5 ? 1 : -1, Le = to.L.length - 1, hw = tH.reduce((a, b) => a + b, 0) / tH.length;
         const lp = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];

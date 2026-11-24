@@ -7,7 +7,7 @@
 // sha256 349cfaefebdb1603cbc57cc406129376e3ccc3277fc9d056babb3d32adce6bd2  lib.js
 // sha256 934e02104c53e8d2b5a7e947eacf790e2191cb25e6998b4242acd6f67d40b31a  skins/common.js
 // sha256 8f49fad64726a5bfd77f54c0f01541a2556e26b2f1d01604424bd245ee2721ec  skins/geo.js
-// sha256 c4a63e7d0a0d4ae2aec2353a61c498e232667693aab0f1add6772b6805113b63  skins/ink.js
+// sha256 629a9a318db90665d3337f8dae7b440982713cbd9ef2f909e21b8dd061baaa88  skins/ink.js
 // sha256 280e626a7f323b22ef27674c1dab68c7aefcbfadeea6e6e9533f60d89cbba735  skins/iso.js
 // people-lib: parametric people (skeleton + poses). Pure ES module, no deps; runs in browser and node.
 // Units: one head height. y up, sole at y=0, x to screen right, z toward the viewer.
