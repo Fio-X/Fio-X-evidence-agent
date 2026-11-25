@@ -602,6 +602,33 @@ class Pack(unittest.TestCase):
                 self.assertIn(h, heroes, (n, k))
         self.assertGreater(len(seen), 1)                 # the seed spreads the hero over the list
 
+    def test_the_hero_list_is_the_build_scripts_and_every_rule_admitted_figure_was_judged(self):
+        """pack.json hero_ok is exactly the build script's HERO_OK; each of those figures is in the pack, red_ok, its clothing mask passes the
+        straight-edge and flat-top detectors at the largest tier; every figure the automatic rule admits (red_ok, solidity at least
+        hero_solidity) is on HERO_OK or on HERO_NO with a reason (judged by eye), and the two lists do not overlap."""
+        import ast
+        tree = ast.parse(text(os.path.join(ROOT, "scripts", "build_collage_pack.py")))
+        lists = {t.id: ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) for t in node.targets
+                 if isinstance(t, ast.Name) and t.id in ("HERO_OK", "HERO_NO")}
+        ok, no = lists["HERO_OK"], lists["HERO_NO"]
+        self.assertEqual(ok & set(no), set())
+        self.assertTrue(all(isinstance(v, str) and len(v) > 20 for v in no.values()), no)
+        figs = {f["id"][len("met_gam_"):]: f for f in self.index["figures"]}
+        self.assertEqual({i for i, f in figs.items() if f.get("hero_ok")}, ok)
+        admitted = {i for i, f in figs.items() if f["red_ok"] and f["solidity"] >= R.CR["hero_solidity"]}
+        self.assertEqual(admitted - ok - set(no), set())
+        self.assertLessEqual(ok, admitted)
+        by = {p["id"]: p for p in self.index["pieces"]}
+        piece = lambda k: png_bits(self.bin[by[k]["offset"]:by[k]["offset"] + by[k]["len"]])
+        for i in sorted(ok):
+            fid = "met_gam_" + i
+            for t in ("l", "m", "s"): self.assertIn(f"{fid}.{t}.cloth", by, i)
+            cloth = piece(fid + ".l.cloth")
+            self.assertLessEqual(longest_straight(cloth, piece(fid + ".l.sil")), STRAIGHT_PX, i)
+            h, w = len(cloth), len(cloth[0])
+            tops = [next(y for y in range(h) if cloth[y][x]) for x in range(w) if any(cloth[y][x] for y in range(h))]
+            self.assertFalse(flat_cut(tops, h), i)
+
     def test_no_accent_mask_edge_has_a_long_straight_cut(self):
         """Inside the figure, every red_ok clothing mask's edge follows the engraving: no straight run longer than STRAIGHT_PX px at the
         largest tier (480 px high), decoded from the pack with the standard library."""
