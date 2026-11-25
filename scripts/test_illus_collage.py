@@ -439,9 +439,9 @@ class Collage(unittest.TestCase):
         a = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.6}})
         self.assertEqual((a[5]["hero_h"], b[5]["hero_h"]), (0.5, 0.6)); self.assertNotEqual(a[0], b[0])
 
-    def test_colours_are_the_request_accent_else_the_topics(self):
+    def test_colours_are_the_request_accent_else_the_pages(self):
         svg = R.build_collage({k: v for k, v in top_req(10, 3).items() if k != "accent"})[0]
-        self.assertEqual(accent_figures(svg, R.TOPICS["scenes"]["labour"]["accent"]), (3, 10))
+        self.assertEqual(accent_figures(svg, R.page_accent()), (3, 10))
         svg = R.build_collage({**top_req(10, 3), "accent": "#123456"})[0]; self.assertEqual(accent_figures(svg, "#123456"), (3, 10))
         paper = json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"]; ck = R.REG["composition_knobs"]
         tone = lambda f: "#" + "".join(f"{round(int(paper[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))

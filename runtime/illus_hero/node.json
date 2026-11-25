@@ -2778,7 +2778,6 @@
     "unit": "turbine_unit",
     "renderer": "line",
     "style": "iso",
-    "accent": "#1a9a6c",
     "relief": 0.4,
     "filler": [],
     "objects": {
@@ -2828,7 +2827,6 @@
     "unit": "stack_unit",
     "renderer": "3d",
     "style": "iso",
-    "accent": "#c4572a",
     "relief": 0.4,
     "filler": [
      {
@@ -2898,7 +2896,6 @@
     "renderer": "scene",
     "renderer_else": "people",
     "style": "ink",
-    "accent": "#b8433a",
     "relief": 0.3,
     "filler": [],
     "figure_style": {
@@ -2915,7 +2912,6 @@
     "renderer": "collage",
     "renderer_else_topic": "people",
     "style": "ink",
-    "accent": "#c8102e",
     "relief": 0.3,
     "filler": [],
     "figure_style": {
@@ -2933,7 +2929,6 @@
     "renderer": "scene",
     "renderer_else": "3d",
     "style": "geo",
-    "accent": "#2b7fa6",
     "relief": 0.3,
     "filler": [
      {
@@ -2972,7 +2967,6 @@
     "unit": "waypoint_unit",
     "renderer": "3d",
     "style": "ink",
-    "accent": "#8e3f7a",
     "relief": 0.4,
     "filler": [
      {
@@ -3112,7 +3106,6 @@
     "renderer_else": "3d",
     "style": "iso",
     "strip_style": "geo",
-    "accent": "#2f7f86",
     "relief": 0.4,
     "filler": [],
     "doc": "no measure family maps here yet (topics.families): a tech topic's tally is the scene renderer's (isometric), its other layouts the neutral topic's 3D cairns (renderer_else), once families are mapped to it"
@@ -3121,7 +3114,6 @@
     "unit": "cairn_unit",
     "renderer": "3d",
     "style": "ink",
-    "accent": "#3c6e91",
     "relief": 0.4,
     "filler": []
    }
