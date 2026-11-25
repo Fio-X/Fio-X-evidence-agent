@@ -91,6 +91,29 @@ class OpeningCaption(unittest.TestCase):
             got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
             self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人按西班牙 10.5% 的比例画"], kick)
 
+    def test_the_layout_note_in_brackets_is_not_part_of_the_measure_name(self):
+        for kick, name in (("失业率（最近时点排名）", "失业率"), ("失业率 (latest)", "失业率"), ("失业率（最近一年）", "失业率")):
+            got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], [f"红色的人按西班牙 10.5% 的{name}画"], kick)
+        for kick in ("（最近时点排名）", "Unemployment（最近）"):
+            got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人按西班牙 10.5% 的比例画"], kick)
+
+    def test_the_charts_head_the_measure_in_chinese_where_the_table_has_only_an_english_title(self):
+        """The head of each chart was the English table title (the request's measure words); the page's Chinese name stands there."""
+        req = rate_request(10.5)
+        html = page(req, RATE_NAMES, ["rank", "ends"], kicker="失业率（最近时点排名）")[1]
+        heads = re.findall(r'<svg[^>]*>', html)
+        self.assertTrue(heads)
+        body = re.sub(r"<[^>]+>", "", html)
+        self.assertNotIn("Unemployment by sex", body)                       # no chart head, no row label in English (the page's source line here is "s")
+        self.assertIn("失业率", body)
+        # a Chinese measure name the findings child already had is left as it was
+        zh = {**req, "words": {"measure": "失业率", "unit": "百分比"}}
+        body_zh = re.sub(r"<[^>]+>", "", page(zh, RATE_NAMES, ["rank", "ends"], kicker="别的名字")[1])
+        self.assertEqual(body_zh.count("别的名字"), 1)                       # only the kicker: the heads keep the Chinese name the findings child had
+        self.assertGreaterEqual(body_zh.count("失业率"), 3)
+
     def test_no_line_with_another_picture_none_drawn_or_no_proportion(self):
         req = rate_request(10.5)
         _, plain = page(req, RATE_NAMES, ["rank", "ends"])                          # layer 1 passes no scene name (as today)

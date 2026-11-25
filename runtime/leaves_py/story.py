@@ -220,6 +220,40 @@ def headline_names(title):
     return sorted(set(NAMED.findall(title or "")))
 
 
+DOT_LEAD_MAX = 12   # the dot strip's own limit on its leaders (dot_strip.LEAD_MAX; a test keeps the two equal): a longer list stays as the findings gave it
+
+
+PAREN = re.compile(r"[（(][^）)]*[）)]")
+
+
+def measure_name(spec):
+    """The measure's Chinese name the page's kicker prints over the headline, without the layout note in brackets (the kicker may read
+    "<measure> (latest rank)"): None when what is left is empty or holds a digit or a Latin letter (no reviewed Chinese name)."""
+    kick = PAREN.sub("", str(spec.get("kicker") or "")).strip()
+    return kick if kick and not FX.digit(kick) and not re.search(r"[A-Za-z]", kick) else None
+
+
+def chinese_heads(spec, leaves):
+    """The leaves' data with the measure named in Chinese: where the findings child had only the English table title (the table has no
+    reviewed Chinese name) a leaf's head, and a row that is labelled by the measure (the two ends' row), carry that title as one literal word
+    with Latin letters; the page's own Chinese name of the measure (measure_name) stands there instead. Any other wording is left alone,
+    as is a page with no such name; the source line keeps the table's own title."""
+    name = measure_name(spec)
+    out = dict(leaves)
+    if not name: return out
+
+    def swap(x, english):
+        if isinstance(x, list) and len(x) == 1 and x[0] == {"w": english}: return [{"w": name}]
+        if isinstance(x, list): return [swap(v, english) for v in x]
+        if isinstance(x, dict): return {k: swap(v, english) for k, v in x.items()}
+        return x
+    for layer, d in leaves.items():
+        t = d.get("title") if isinstance(d, dict) else None
+        if isinstance(t, list) and len(t) == 1 and isinstance(t[0], dict) and set(t[0]) == {"w"} and re.search(r"[A-Za-z]", str(t[0]["w"])):
+            out[layer] = swap(d, t[0]["w"])
+    return out
+
+
 def accent_only(spec):
     """hero.leaves with each titled section's leaf narrowed to the codes its headline names: in ACCENT_DATA its "accent" list, in
     ACCENT_ONLY given "accent_only" (a copy; the spec is not changed)."""
@@ -227,7 +261,17 @@ def accent_only(spec):
     for _, _, layer, _, title, _ in sections(spec):
         d, named = leaves.get(layer), headline_names(title)
         if title is None or not isinstance(d, dict): continue
+        rows, nm = {r.get("code") for r in d.get("rows") or [] if isinstance(r, dict)}, set(named)
         if layer in ACCENT_DATA and isinstance(d.get("accent"), list): leaves[layer] = {**d, "accent": [c for c in d["accent"] if c in named]}
+        elif layer == "rankbar" and isinstance(d.get("highlight"), str):
+            # the rows its headline names are all in the accent (both ends of a "highest ... lowest" title), the whole's row as it was
+            leaves[layer] = {**d, "highlight": ",".join(dict.fromkeys([d["highlight"], *sorted(nm & rows)]))} if rows else d
+        elif layer == "rank_slope" and isinstance(d.get("accent"), list):
+            acc = list(dict.fromkeys([*sorted(nm & rows), *d["accent"]]))[:3]   # the named rows first, at most the leaf's three
+            leaves[layer] = {**d, "accent": acc, "accent_only": named}
+        elif layer == "dot_strip" and isinstance(d.get("lead"), list):
+            lead = list(dict.fromkeys([*d["lead"], *sorted(nm & rows)]))   # a named row of the strip is named on a leader and drawn in the accent
+            leaves[layer] = {**d, "lead": lead if len(lead) <= DOT_LEAD_MAX else d["lead"], "accent_only": named}
         elif layer in ACCENT_ONLY: leaves[layer] = {**d, "accent_only": named}
     return leaves
 
@@ -368,7 +412,7 @@ class Frame:
     """What a story page's layers read: the hero (leaves and styles), each leaf's data with the accent_only its section's headline
     gives (accent_only; a spec that is no story keeps its leaves, and story_page refuses it); the page itself has no picture of its own."""
     def __init__(f, c, spec):
-        try: h = {**spec["hero"], "leaves": accent_only(spec)}
+        try: h = {**spec["hero"], "leaves": chinese_heads(spec, accent_only(spec))}
         except FX.Refused: h = spec["hero"]
         f.c, f.spec, f.h, f.W, f.H = c, spec, h, PAGE_W, SECTION_MAX_H
 
@@ -459,8 +503,8 @@ def opening_caption(spec, drawn_as):
     if not isinstance(cap, list): raise FX.Refused("page: the opening picture's caption is no list of segments")
     # the measure's slot: the page's kicker, the measure's Chinese name the header prints over the headline; a kicker that holds a digit or a
     # Latin letter (no reviewed Chinese name) gives the plain word for a share instead
-    kick = str(spec.get("kicker") or "").strip()
-    fill = {"w": kick} if kick and not FX.digit(kick) and not re.search(r"[A-Za-z]", kick) else {"word": "story.opening.share"}
+    kick = measure_name(spec)
+    fill = {"w": kick} if kick else {"word": "story.opening.share"}
     cap = [fill if g == {"slot": "measure"} else g for g in cap]
     return f'<p class="opening-cap" data-cap="proportion">{seg_html(cap, "the opening picture caption")}</p>'
 

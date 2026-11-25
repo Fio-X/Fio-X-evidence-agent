@@ -1,12 +1,12 @@
 """rankbar layer: a single-colour rank bar per row: name, bar, the number at the bar's tail, a share column, a last other row, in
 column.py's layer style. The bar is drawn from the same series cell the printed number is the ledger text of.
 hero.data: {"title": segs, "unit": segs, "share_head": segs?, "name_kind": "place"|<kind>,
-  "rows": [{"code", "value": series src, "value_text": src, "share_text": src?}],
+  "rows": [{"code", "value": series src, "value_text": src, "share_text": src?, "share_none": true?}],   # share_none: no cell for the row the column is measured from
   "other_row": {"name": segs, "value": series src, "value_text": src, "share_text": src?}?,      # for rows merged past max_rows
   "omit": segs?}                  # the words of the line that stands where rows are left out (a long rank folds only when these are given)
 A rank of more than fold_over rows with `omit` given folds to fold_to rows: the highest fold_to - 6, the highlighted row, the lowest
 5, a line of the omit words where the rows are not next to each other (the rows kept are still the ledger's rows, in their order).
-Colours: --accent the highlighted row (or every bar when none is named, as before), --t-sec the others, --t-title ink.
+Colours: --accent the highlighted rows (highlight_row a comma list; or every bar when none is named, as before), --t-sec the others, --t-title ink.
 Refuses: no rows, a negative value, share_text missing while show_share is on, highlight_row not a row, rows merged and no other_row,
 other_row's series not the merged rows' sum (1e-6), a board too narrow (bar under 80 px), a missing name, a digit in a literal."""
 import os
@@ -28,6 +28,12 @@ REL = 1e-6
 FOLD_TAIL = 5  # the lowest rows a folded rank keeps
 
 
+def cell(r):
+    """The share column's cell of a row: its ledger entry, or none (a text with no ledger entry is no svg text) where the row is the one the
+    column is measured from (share_none)."""
+    return None if r.get("share_none") else K.ent(r["share_text"])
+
+
 class Frame:
     def __init__(f, h):
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
@@ -38,10 +44,9 @@ class Frame:
         share = k("show_share") == "on"
         for r in rows:
             r["_n"] = K.named(r["code"], kind); r["_v"] = K.val(r["value"]); K.ent(r["value_text"])
-            if share and not r.get("share_text"): raise Refused(f"rankbar: row {r['code']} has no share_text and show_share is on")
+            if share and not r.get("share_text") and not r.get("share_none"): raise Refused(f"rankbar: row {r['code']} has no share_text and show_share is on")
             if r["_v"] < 0: raise Refused(f"rankbar: row {r['code']} is negative; a bar cannot be drawn")
         f.hl = K.check_codes(NODE, k("highlight_row"), {r["code"] for r in rows}) if k("highlight_row") else set()
-        if len(f.hl) > 1: raise Refused("rankbar: highlight_row names one row")
         rows.sort(key=(lambda r: r["_n"][1]) if k("sort") == "name" else (lambda r: 0) if k("sort") == "given" else (lambda r: -r["_v"]))
         if k("max_rows") and len(rows) > k("max_rows"):
             rest, rows = rows[int(k("max_rows")):], rows[: int(k("max_rows"))]
@@ -62,7 +67,7 @@ class Frame:
         f.rows, f.share = rows, share
         f.name_w = max(tw(r["_n"][1], f.size) for r in rows) + 14
         tail_w = max(tw(K.ent(r["value_text"])[1], f.size) for r in rows) + 10
-        share_w = (max(tw(K.ent(r["share_text"])[1], f.size) for r in rows) + 12) if share else 0
+        share_w = (max(tw(cell(r)[1], f.size) for r in rows if cell(r)) + 12) if share else 0
         f.bar_w = f.W - f.name_w - tail_w - share_w - 20
         if f.bar_w < 80: raise Refused("rankbar: the board is too narrow for the bar and the columns")
         f.oh = round(f.rh * 0.75)
@@ -87,8 +92,8 @@ def cl_rankbar(f, occ):
         acc = r["code"] in f.hl or not f.hl
         o.append(f'<rect x="{f.name_w + 8:.1f}" y="{y0 + 5:.1f}" width="{bw:.1f}" height="{rh - 10}" fill="{"var(--accent)" if acc else "var(--t-sec)"}"/>')
         t = K.ent(r["value_text"]); o.append(K.txt(B, f.name_w + 8 + bw + 6, yc, size, "var(--t-title)", t[0], tw(t[1], size), tag=f"value {r['code']}"))
-        if f.share:
-            t = K.ent(r["share_text"]); o.append(K.txt(B, W - 8, yc, size, "var(--t-sec)", t[0], tw(t[1], size), anchor="end", tag=f"share {r['code']}"))
+        if f.share and cell(r):
+            t = cell(r); o.append(K.txt(B, W - 8, yc, size, "var(--t-sec)", t[0], tw(t[1], size), anchor="end", tag=f"share {r['code']}"))
     return "".join(o)
 
 
