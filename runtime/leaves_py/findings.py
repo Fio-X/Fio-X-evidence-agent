@@ -1945,13 +1945,19 @@ def compose(r):
     def times(num):   # a claim's number that is a ratio printed with no unit of its own: the times word goes after it
         d = facts.get(num[len("fact:"):]) if num.startswith("fact:") else None
         return isinstance(d, dict) and d.get("op") == "times" and not (q.defs.get(d.get("fmt"), {}).get("suffix") or "").strip()
-    def claim(num, head):   # a number whose unit is words prints alone, its unit once in brackets after the lead's words
+    def words_unit(num):   # the unit after a claim's number when it is words (no ratio, no percent sign, no digit), else ""
         d = facts.get(num[len("fact:"):]) if num.startswith("fact:") and "." not in num[len("fact:"):] else None
         u = (q.defs.get(d.get("fmt"), {}).get("suffix") or "").strip() if isinstance(d, dict) else ""
-        if u in ("", "%") or any(ch.isdigit() for ch in u): return {"num": num, "head": head}
-        return {"num": f"{num}.n", "head": head + [{"w": WD.WORDS["paren"].replace("{v}", u)}]}
+        return "" if u in ("", "%") or any(ch.isdigit() for ch in u) else u
+    units = {words_unit(c["claim"]["num"]) for c in chosen} - {""}
+    one = units.pop() if len(units) == 1 else None
+    def claim(num, head):   # a number whose unit is words prints alone: its unit once over the claims (one unit), else in brackets after its lead
+        u = words_unit(num)
+        if not u: return {"num": num, "head": head}
+        return {"num": f"{num}.n", "head": head if one else head + [{"w": WD.WORDS["paren"].replace("{v}", u)}]}
     leaves[THESIS] = {"claims": [{**claim(c["claim"]["num"], segs(c["claim"]["head"])), "section": segs(c["kicker"]),
-                                  **({"num_unit": ST("story.times")} if times(c["claim"]["num"]) else {})} for c in chosen]}
+                                  **({"num_unit": ST("story.times")} if times(c["claim"]["num"]) else {})} for c in chosen],
+                      **({"unit_line": [{"w": WD.WORDS["unit.line"].replace("{v}", one)}]} if one else {})}
     # the opening numbers follow the lead: its own three (its facts), else the page's header by the arc
     big = (({}, first["big"]) if first.get("big") and len(first["big"]) == 3 else header(q, arc if arc != "happened" or "chain" in picks else None))
     if big:  # the header's three numbers, a row over the thesis

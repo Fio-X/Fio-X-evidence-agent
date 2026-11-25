@@ -11,6 +11,7 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
               "head": segs,                         # its lead, bold, one line (two with knob head_lines)
               "body": segs?,                        # what it says, up to knob body_lines lines; its numbers ledger srcs
               "section": segs}],                    # the section it points to (a see-word and the section's kicker)
+  "unit_line": segs?,                               # one small line over the claims: the unit every claim's number of a unit is in
   "footnote": segs?}                                # a line under the claims
 segs: as wbkit.segs reads them; ledger src: a row {"src", "text"}.
 needs I4 facts: each claim's number is a fact of its own (in the sample: the electricity share's rise, the yearly pace of
@@ -44,7 +45,8 @@ class Frame:
     def __init__(f, h):
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
         f.d, f.k, f.size, f.W = d, k, k("size"), k("width")
-        if d.get("answer"): K.segs(d["answer"], "answer")   # a page whose headline is its answer (the story) gives none
+        if d.get("answer"): K.segs(d["answer"], "answer")
+        if d.get("unit_line"): K.segs(d["unit_line"], "unit_line")   # a page whose headline is its answer (the story) gives none
         claims = d.get("claims")
         if not isinstance(claims, list) or not 2 <= len(claims) <= 4:
             raise Refused(f"thesis_claims: {len(claims) if isinstance(claims, list) else claims!r} claims; two to four are drawn")
@@ -80,6 +82,9 @@ def cl_thesis_claims(f, occ):
     else:
         y = 0
     pad, nsz, ssz = f.k("pad"), f.k("num_size"), f.k("section_size")
+    if d.get("unit_line"):   # the claims' one unit, small, over them
+        o.append(K.words(B, d["unit_line"], "unit_line", 8, y + ssz, ssz, "var(--t-sec)", max_w=W - 16)[0])
+        y += ssz * 1.6
     for i, c in enumerate(f.claims):
         top = y + pad
         o.append(K.line(8, top, W - 8, top, stroke="var(--t-sec)", w=0.6, op=0.5))
