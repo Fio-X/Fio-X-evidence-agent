@@ -7,6 +7,7 @@ entry printed with FX.entry; every word comes in the request as segs (the leaf h
 hero.data (the data shape this leaf eats; on a column frame page, the hero's leaves.thesis_claims, run.py leaf): {
   "answer": segs?,                                  # the page's answer, one or two lines (knob answer_lines); none when the page's headline says it
   "claims": [{"num": ledger src,                    # the claim's number, printed big (layer 1's fact)
+              "num_unit": segs?,                    # the words after the number (a times word after a ratio), no digit
               "head": segs,                         # its lead, bold, one line (two with knob head_lines)
               "body": segs?,                        # what it says, up to knob body_lines lines; its numbers ledger srcs
               "section": segs}],                    # the section it points to (a see-word and the section's kicker)
@@ -55,6 +56,10 @@ class Frame:
             num = K.ent(c["num"])
             if not FX.digit(num[1]): raise Refused(f"thesis_claims: claim {i + 1}'s number {num[1]!r} ({c['num']}) holds no digit")
             for key in ("head", "section") + (("body",) if c.get("body") else ()): K.segs(c[key], f"claim {i + 1} {key}")
+            if c.get("num_unit"):  # a ratio's times word after its number, in the number's size and ink
+                unit = K.plain(c["num_unit"], f"claim {i + 1} num_unit")
+                if FX.digit(unit): raise Refused(f"thesis_claims: claim {i + 1}'s num_unit holds a digit")
+                num = (num[0] + esc(unit), num[1] + unit)
             f.claims.append(dict(num=num, head=c["head"], body=c.get("body"), section=c["section"]))
         f.num_w = max(tw(c["num"][1], k("num_size")) for c in f.claims) + 16
         f.x1 = 8 + f.num_w

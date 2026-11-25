@@ -1942,8 +1942,11 @@ def compose(r):
             style[leaf] = {**style[leaf], "lead_set": "given", "levels": 8}   # the named ones may stand close: every tier the knob allows
     # the page's headline is the lead finding's conclusion and its dek the lead's text, each printed once: the thesis block holds
     # the claims alone, and the lead's own section is headed by its claim (the words, then its number) with no text of its own
-    leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
-                                 for c in chosen]}
+    def times(num):   # a claim's number that is a ratio printed with no unit of its own: the times word goes after it
+        d = facts.get(num[len("fact:"):]) if num.startswith("fact:") else None
+        return isinstance(d, dict) and d.get("op") == "times" and not (q.defs.get(d.get("fmt"), {}).get("suffix") or "").strip()
+    leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"]),
+                                  **({"num_unit": ST("story.times")} if times(c["claim"]["num"]) else {})} for c in chosen]}
     # the opening numbers follow the lead: its own three (its facts), else the page's header by the arc
     big = (({}, first["big"]) if first.get("big") and len(first["big"]) == 3 else header(q, arc if arc != "happened" or "chain" in picks else None))
     if big:  # the header's three numbers, a row over the thesis
@@ -1957,7 +1960,7 @@ def compose(r):
         if c is first:
             num = c["claim"]["num"]
             if not num.startswith("fact:"): raise Refused(f"findings: the lead finding's claim number {num!r} is no fact")
-            lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
+            lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])] + ([("w", WD.WORDS["story.times"])] if times(num) else [])
             # the lead's own rows, for the opening picture: the angle's own subject, and beside it a rate its claim reads off one member as a share of figures
             subject, prop = q.illus.get(c["id"]), illus_proportion(q, c)
             picture = {"subject": subject} if subject else {}

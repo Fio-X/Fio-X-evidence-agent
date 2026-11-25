@@ -435,6 +435,14 @@ def bignum_fit(text, cell, K):
     return size, True
 
 
+def times_word(c, k):
+    """The words after a big number that is a ratio (its fact's op times) printed with no unit of its own: the word table's times
+    word ("N times", as the notes say it); nothing after any other number."""
+    q = (c.spec.get("facts") or {}).get(k)
+    if not isinstance(q, dict) or q.get("op") != "times" or "fmt" not in q or FX.unit(c.spec, q).strip(): return ""
+    return html.escape(word("story.times"))
+
+
 def cl_bignums(f, occ):
     """The big numbers beside the title: each a fact the request names (hero.data.bignums, else hi, lo, gap, times), printed from its
     ledger entry, in a box `width` px wide with `cols` cells a row; each number at the largest size up to `size` that keeps it in its
@@ -447,7 +455,7 @@ def cl_bignums(f, occ):
     st = f' style="width:{K("width")}px;grid-template-columns:repeat({cols},1fr);text-align:{K("align")}"'
     out = []
     for n, (k, lab) in enumerate(cells):
-        v = c.t("{" + k + "}"); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
+        v = c.t("{" + k + "}") + times_word(c, k); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
         out.append(f'<div class="bn"{" data-hot" if n < K("accent_n") else ""}><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
     return f'<div class="bns"{st}>' + "".join(out) + "</div>"
 
