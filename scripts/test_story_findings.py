@@ -1767,8 +1767,9 @@ def percent(mk):
 
 class LowestOfGroupAndMoversHeadline(unittest.TestCase):
     """The groups section's note on the widest group's lowest member sets it against that group's own simple mean (the gap in points
-    on a percent measure, the mean as a multiple of it on any other unit), a fact recomputed from the rows. A Eurostat percent shape
-    and a World Bank value shape each."""
+    on a percent measure, the mean as a multiple of it on any other unit), a fact recomputed from the rows; the movers' headline says
+    with its verb which way the biggest mover went (rose to ..., rose most / fell to ..., fell most). A Eurostat percent shape and a
+    World Bank value shape each."""
 
     def test_the_lowest_of_the_widest_group_is_set_against_its_mean(self):
         seen = set()
@@ -1788,6 +1789,21 @@ class LowestOfGroupAndMoversHeadline(unittest.TestCase):
             self.assertEqual(composed["facts"][d]["op"], "minus" if kind == "pp" else "times", kind)
             seen.add(kind)
         self.assertEqual(seen, {"pp", "x"})
+
+    def test_the_movers_headline_says_which_way_with_its_verb(self):
+        seen = set()
+        for mk in (percent(eu27_request), wb12_request):
+            req, names = mk()
+            composed, facts, _ = draw_all(self, req, names, ["movers", "overtake"])
+            title = json.dumps(composed["title"], ensure_ascii=False)   # the lead section's headline is the page's
+            big = composed["leaves"]["change_dots"]["accent"][0]
+            up = facts["mv_dbig"]["v"] > 0
+            self.assertIn("升到" if up else "降到", title, mk)
+            self.assertIn("升得最多" if up else "降得最多", title, mk)
+            self.assertNotIn("变到", title, mk)
+            self.assertIn(big, title, mk)
+            seen.add(up)
+        self.assertEqual(seen, {True, False})   # one shape's biggest mover rose, the other's fell
 
 
 

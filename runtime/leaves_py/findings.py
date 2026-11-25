@@ -1118,7 +1118,8 @@ def angle_movers(q):
                  {"fact": key1(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key1(big)}.t.y"}}},
                  {"fact": "mv_dbig", "label": {"word": "story.big.moved", "name": big}}]
     return with_part({"angle": "movers", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [big, other], "layer": "change_dots", "big": big_items, "kicker": T("story.mv.kicker"),
-            "title": T("story.mv.title", big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
+            # the headline's verb says which way the biggest mover went ("rose to ..., rose most"); the plain "moved" only for no change
+            "title": T("story.mv.title" + ("_up" if ch[big] > 0 else "_down" if ch[big] < 0 else ""), big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
             "text": T("story.mv.text_ref" if whole else "story.mv.text", w=whole, y0=key0(big), y1=key1(big)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key1(big)}", "head": T("story.mv.claim", big=big)}, "notes": [], "members": True, "last": key1(big),
             "anns": anns, "score": round(size * surprise * sturdy, 4),
