@@ -2132,6 +2132,41 @@ class NotesStandAgainstAReference(unittest.TestCase):
                 self.assertTrue(gaps, mk.__name__)
                 self.assertEqual({v["fmt"] for v in gaps.values()}, {want}, mk.__name__)
 
+    def test_the_rank_column_of_a_percent_gap_is_the_number_alone_under_a_head_in_points(self):
+        import rankbar
+        for mk, picks in ((wb12_request, ["overtake", "rank"]), (eu_request, ["path", "rank"])):
+            req, names = mk()
+            for r, pct in ((self.pct(req), True), (req, False)):
+                composed = FN.compose({**req, **r, "picks": picks})
+                data = composed["leaves"]["rankbar"]
+                head = "".join(x.get("w", "") for x in data["share_head"])
+                self.assertEqual(head.endswith("（个百分点）"), pct, (mk.__name__, head))
+                cells = {x["code"]: x for x in data["rows"]}
+                self.assertEqual({x["share_text"].endswith(".n") for x in cells.values()}, {pct})
+                self.assertEqual([c for c, x in cells.items() if x.get("share_none")], [data["highlight"]])   # the row the column is measured from has no cell
+                rows_, _ = ledger({**req, **r}, composed, names)
+                K.setup(rows_, names, run.tables)
+                svg = rankbar.draw({"data": data, "style": {"rankbar": {"highlight_row": data["highlight"]}}})
+                svg = svg[0] if isinstance(svg, tuple) else svg
+                shares = re.findall(r'data-src="fact:g_([a-z0-9_]+?)(?:\.n)?"', svg)
+                self.assertEqual(len(shares), len(cells) - 1)
+                self.assertNotIn(f"g_{data['highlight'].lower()}", shares)
+
+    def test_the_overtake_notes_name_the_ranks_it_started_and_ended_on(self):
+        req, names = eu27_request()
+        composed, facts, notes = self.notes(req, ["movers", "overtake", "tiles"], "overtake", names)
+        got = {n["num"]: n for n in notes}
+        for num, verb in (("fact:ot_fall", "掉到"), ("fact:ot_rise", "升到")):
+            n = got[num]
+            srcs = [x["src"] for x in n["text"] if "src" in x]
+            words = self.words(n)
+            self.assertIn(f"从第 ", words); self.assertIn(verb, words)
+            a, b = (composed["facts"][x[5:]] for x in srcs)
+            self.assertEqual((a["op"], b["op"]), ("position", "position"))          # the ranks are the position facts the rows print
+            self.assertEqual(sorted({a["time"], b["time"]}), sorted({composed["facts"][srcs[0][5:]]["time"], composed["facts"][srcs[1][5:]]["time"]}))
+            diff = facts[num[5:]]["v"]
+            self.assertEqual(abs(facts[srcs[0][5:]]["v"] - facts[srcs[1][5:]]["v"]), abs(diff))   # the note's own number is the gap of the two ranks it names
+
     def test_a_gap_that_prints_as_nothing_keeps_the_plain_note(self):
         req, _ = eu_request()
         req = self.pct(req)

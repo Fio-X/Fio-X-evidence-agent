@@ -841,13 +841,14 @@ def angle_rank(q):
     key = lambda c: f"r_{c.lower()}"
     ref_code = q.whole if q.wseries else hi          # the row the share column is measured from
     f, rows = {}, []
+    pct = (q.defs.get(q.fmts["value"]) or {}).get("suffix", "").strip() == "%"
     codes = sorted(members) + ([q.whole] if q.wseries else [])
     for c in codes:
         f[key(c)] = q.value(c, y)
     for c in codes:
         f[f"g_{c.lower()}"] = {"op": "minus", "a": key(c), "b": key(ref_code), "fmt": q.change}
         rows.append({"code": c, "value": (q.wseries[y] if c == q.whole else members[c][y])[1], "value_text": f"fact:{key(c)}",
-                     "share_text": f"fact:g_{c.lower()}"})
+                     "share_text": f"fact:g_{c.lower()}{'.n' if pct else ''}", **({"share_none": True} if c == ref_code else {})})   # a gap of a percent: the number alone (the head says points); no cell for the row it is measured from (its gap is 0)
     sturdy = clamp(len(members) / 20)
     size = clamp((at[hi] - at[lo]) / at[hi])
     g = q.goal()
@@ -859,14 +860,14 @@ def angle_rank(q):
         title = T("story.rank.title", w=q.whole, hi=hi, lo=lo, y=key(hi), pos="pos")
         text = T("story.rank.text_goal" if g else "story.rank.text", w=q.whole, hi=hi, lo=lo, y=key(hi), rhi=key(hi), rlo=key(lo), rw=key(q.whole), pos="pos")
         claim = {"num": "fact:pos", "head": T("story.rank.claim", w=q.whole)}
-        head, why_line = ST("story.rank.gap_head"), "every member's value at the last year, highest first, and where the whole stands"
+        head, why_line = ST("story.rank.gap_head" + "_pp" * pct), "every member's value at the last year, highest first, and where the whole stands"
         why = {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "above_whole": n_above}
     else:
         surprise = 0.5
         title = T("story.rank.title_top", hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
         text = T("story.rank.text_top", hi=hi, lo=lo, y=key(hi))
         claim = {"num": f"fact:{key(hi)}", "head": T("story.rank.claim_top", hi=hi)}
-        head, why_line = ST("story.rank.gap_top_head"), "every member's value at the last year, highest first"
+        head, why_line = ST("story.rank.gap_top_head" + "_pp" * pct), "every member's value at the last year, highest first"
         why = {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)}
     if g: f["goal"] = g[2]
     ill = illus_pair(q, at)   # the members' values at the page's year (the whole is a row of the leaf, not a member of the ranking)
@@ -1125,7 +1126,7 @@ def angle_overtake(q):
             "title": T("story.ot.title", up=up, over=over, y0="ot_y0", y1="ot_y1", u0=ka(up), u1=kb(up)),
             "text": T("story.ot.text_ref" if q.wseries else "story.ot.text", w=q.whole, y0="ot_y0", y1="ot_y1"), "facts": f, "data": data,
             "claim": {"num": "fact:ot_rise", "head": T("story.ot.claim", up=up)}, "notes": [], "members": True, "last": "ot_y1",
-            "anns": [note("ot_fall", "story.note.ot.fall", c=dn), note("ot_rise", "story.note.ot.rise", c=up)],
+            "anns": [note("ot_fall", "story.note.ot.fall", c=dn, a=ka(dn), b=kb(dn)), note("ot_rise", "story.note.ot.rise", c=up, a=ka(up), b=kb(up))],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "crossings": cross, "pairs": int(pairs),
                     "riser": up, "rose": jump[up], "faller": dn, "fell": -jump[dn]},
