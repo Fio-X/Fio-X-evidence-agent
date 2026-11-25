@@ -439,7 +439,24 @@ class Collage(unittest.TestCase):
             if m.group(1) == "clg-ch": self.assertIsNone(m.group(2))                                                  # the hero's accent at full strength
             else: self.assertLess(float(m.group(3)), 1.0)                                                             # the queue's lighter
 
-    def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
+    def test_the_far_crowd_is_scaled_to_n_and_absent_for_a_short_queue(self):
+        """Drawn people = the N counted figures + the far crowd; the far crowd is at most per_figure x N, none below ramp[0] figures, and it
+        grows with N without a jump (the ramp), so a short queue is not lost in an uncounted crowd."""
+        F = R.CR["far"]; c = F["per_figure"]; prev = None
+        for n in (10, 14, 15, 16, 20, 24, 30):
+            for width in (1440, 1140):
+                svg, w, h, secs, scene, comp = R.build_collage(top_req(n, min(3, n - 1), width=width))
+                drawn = (1 if comp["hero"] else 0) + comp["queue"] + comp["far"]
+                self.assertEqual((1 if comp["hero"] else 0) + comp["queue"], n)
+                self.assertLessEqual(drawn, c * n + n, (n, width)); self.assertLessEqual(comp["far"], sum(comp["far_layers"]) if comp["far_layers"] else 0)
+                if n <= F["ramp"][0]: self.assertEqual(comp["far"], 0, (n, width)); self.assertNotIn('id="clg-f', svg)
+                self.assertEqual(svg, R.build_collage(top_req(n, min(3, n - 1), width=width))[0])          # same bytes twice
+            want = round(c * n * max(0.0, min(1.0, (n - F["ramp"][0]) / (F["ramp"][1] - F["ramp"][0]))))
+            self.assertLessEqual(comp["far"], want); self.assertGreaterEqual(comp["far"], want - 6, n)         # a few end places fade out entirely
+            if prev is not None: self.assertLessEqual(want - prev[1], c * (n - prev[0]) * (1 + n / (F["ramp"][1] - F["ramp"][0])) + 1, n)   # no jump: at most the ramp's slope
+            prev = (n, want)
+
+
         ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
         self.assertEqual(set(mine), {"hero_h", "hero_x", "hero_foot", "queue_gap", "queue_far_h", "queue_far_x", "queue_far_foot", "queue_ink", "queue_fill"})
         for name in mine:
