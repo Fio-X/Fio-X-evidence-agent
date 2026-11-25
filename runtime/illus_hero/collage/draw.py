@@ -195,9 +195,10 @@ def draw(codes, k, n, width, accent, cfg, kn):
     by_id = {p["id"]: p for p in index["pieces"]}
     scale = width / float(CW); tiers = sorted(index["tiers"].items(), key=lambda t: t[1])
     hero = None
-    if k >= 1:     # the hero: the first red_ok figure whose clothing reads as one strong block, else the first red_ok one
-        ok = [f for f in order if figs[f]["red_ok"]]
-        hero = next((f for f in ok if figs[f]["solidity"] >= cfg["hero_solidity"]), ok[0])
+    if k >= 1:     # the hero: the first figure on the pack's hero list (pack.json hero_ok: its mask checked by eye) whose clothing reads as one strong block
+        ok = [f for f in order if figs[f]["red_ok"] and figs[f].get("hero_ok") and figs[f]["solidity"] >= cfg["hero_solidity"]]
+        if not ok: raise PackError("collage: the pack has no hero figure (no red_ok figure with hero_ok and solidity at least hero_solidity)")
+        hero = ok[0]
         order.remove(hero)
     q = n - (1 if hero else 0)
     sl = queue_slots(q, kn, cfg)

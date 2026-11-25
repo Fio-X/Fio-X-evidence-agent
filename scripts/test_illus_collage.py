@@ -589,6 +589,19 @@ class Pack(unittest.TestCase):
         for f in reds:
             for t in ("l", "m", "s"): self.assertIn(f"{f}.{t}.cloth", ids)
 
+    def test_the_hero_is_always_a_figure_on_the_hero_list(self):
+        figs = {f["id"]: f for f in self.index["figures"]}
+        heroes = [i for i, f in figs.items() if f.get("hero_ok")]
+        self.assertGreater(len(heroes), 0)
+        for i in heroes: self.assertTrue(figs[i]["red_ok"] and figs[i]["solidity"] >= R.CR["hero_solidity"], i)
+        seen = set()
+        for n in range(3, 31):
+            for k in range(1, n + 1):                   # K below N by the top rule, K = N by a rule every member passes
+                req = top_req(n, k) if k < n else {**top_req(n, 1), "subject": {**top_req(n, 1)["subject"], "rule": {"op": "gt", "ref": -1}, "declared": {"count": n, "total": n}}}
+                h = R.build_collage(req)[5]["hero"]; seen.add(h)
+                self.assertIn(h, heroes, (n, k))
+        self.assertGreater(len(seen), 1)                 # the seed spreads the hero over the list
+
     def test_no_accent_mask_edge_has_a_long_straight_cut(self):
         """Inside the figure, every red_ok clothing mask's edge follows the engraving: no straight run longer than STRAIGHT_PX px at the
         largest tier (480 px high), decoded from the pack with the standard library."""
