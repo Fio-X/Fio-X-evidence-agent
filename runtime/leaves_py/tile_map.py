@@ -148,7 +148,7 @@ class Frame:
 def cl_tile_map(f, occ):
     d, size, W = f.d, f.size, f.W
     B = K.Boxes(W, 10 ** 6); o = [K.head(B, d["title"], d["unit"], size + 1, f.k("title_size"))]
-    ramp = [f"color-mix(in srgb, var(--accent) {p}%, #eeeeec)" for p in (10, 28, 46, 64)] + ["var(--accent)"]
+    ramp, hot = K.map_fills(NODE, d, [c["code"] for c in f.cells], [f"color-mix(in srgb, var(--accent) {p}%, #eeeeec)" for p in (10, 28, 46, 64)] + ["var(--accent)"])
     span = f.hi_v - f.lo_v
     step = lambda v: max(0, min(BINS - 1, int((v - f.lo_v) / span * BINS)))
     ly = 22 + size * 1.9
@@ -158,13 +158,18 @@ def cl_tile_map(f, occ):
     sx = lx + tw(lo_t[1], size) + 8
     for b in range(BINS): o.append(f'<rect x="{sx + b * sw:.1f}" y="{ly - 2:.1f}" width="{sw}" height="{size}" fill="{ramp[b]}" data-part="legend"/>')
     o.append(K.txt(B, sx + BINS * sw + 8, ly + size * 0.8, size, "var(--t-sec)", hi_t[0], tw(hi_t[1], size), tag="legend high"))
-    top = ly + size * 2.2
+    # on a story page, the red's line: beside the steps when it fits the picture, else under them (the tiles move down a line)
+    nx = sx + BINS * sw + 8 + tw(hi_t[1], size) + 18
+    fits = nx + size + 6 + tw(K.plain([{"word": "map.legend.named"}], "map legend"), size) <= W - 8
+    o.append(K.map_named_key(B, nx if fits else lx, ly + size * (0.8 if fits else 2.3), size, hot)[0])
+    top = ly + size * (2.2 if fits or not hot else 3.7)
     gap = f.k("gap")
     for c, (col, row) in zip(f.cells, f.at):
         s = step(c["_v"])
         x, y = f.ox + col * (f.tw + gap), top + row * (f.th + gap)
-        o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{f.tw:.1f}" height="{f.th}" rx="2" fill="{ramp[s]}" data-code="{esc(c["code"])}" data-step="{s}"/>')
-        ink = "var(--bg)" if s == BINS - 1 else "var(--t-dark)"
+        lit = c["code"] in hot
+        o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{f.tw:.1f}" height="{f.th}" rx="2" fill="{"var(--accent)" if lit else ramp[s]}" data-code="{esc(c["code"])}" data-step="{s}"/>')
+        ink = "var(--bg)" if lit or s >= (K.GREY_LIGHT_INK if ramp is K.GREY_RAMP else BINS - 1) else "var(--t-dark)"
         t_svg, t_txt = K.ent(c["text"])
         cx = x + f.tw / 2
         o.append(K.txt(B, cx, y + f.th * 0.42, size, ink, c["_n"][0], tw(c["_n"][1], size), anchor="middle", weight=700, tag=f"tile {c['code']} name"))

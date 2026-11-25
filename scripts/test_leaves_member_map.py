@@ -133,6 +133,23 @@ class Rules(unittest.TestCase):
         with self.assertRaisesRegex(Refused, want):
             member_map.draw({"data": data, "style": {"member_map": style}})
 
+    def test_with_accent_only_the_steps_are_one_grey_and_only_the_listed_members_red(self):
+        """A story page gives accent_only (the members the section's headline names): the members fill by GREY_RAMP's steps, the listed
+        ones in the accent, the legend's steps grey with one accent swatch; none listed, no red at all; the texts are the same."""
+        for n, (rows, data, names) in {"eu": eu(), "wb": wb()}.items():
+            first = sorted(c["code"] for c in data["cells"])[0]
+            for only in ([first], []):
+                svg = draw((rows, {**data, "accent_only": only}, names))[0]
+                fills = {m[1]: m[0] for m in re.findall(r'<(?:path|rect) [^>]*?fill="([^"]+)"[^>]*data-code="([A-Z0-9]+)"', svg)}
+                self.assertEqual({c for c, f in fills.items() if "--accent" in f}, set(only), (n, only))
+                self.assertLessEqual({f for c, f in fills.items() if c not in only}, set(K.GREY_RAMP), (n, only))
+                self.assertEqual(re.findall(r'<rect [^>]*fill="([^"]+)" data-part="legend"/>', svg), K.GREY_RAMP, (n, only))
+                self.assertEqual(len(re.findall(r'fill="var\(--accent\)" data-part="legend named"', svg)), len(only), (n, only))
+                self.assertEqual(check_svg(svg), [], (n, only))
+                plain = draw((rows, data, names))[0]
+                self.assertEqual([t for t in re.findall(r"<tspan[^>]*>([^<]*)</tspan>", svg) if t != K.plain([{"word": "map.legend.named"}], "k")],
+                                 re.findall(r"<tspan[^>]*>([^<]*)</tspan>", plain), (n, only))
+
     def test_its_refusals(self):
         self.refuse("fewer than 4 cells", lambda d, r: d.__setitem__("cells", d["cells"][:3]))
         self.refuse("come twice", lambda d, r: d["cells"].append(dict(d["cells"][0])))

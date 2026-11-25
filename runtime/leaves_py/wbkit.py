@@ -410,6 +410,30 @@ def accent_only(node, d, marked):
     return set(marked) & set(only)
 
 
+# The map leaves' (member_map, tile_map) steps on a story page, where a section's red is the members its headline names: five
+# steps of one grey (the ink mixed into the light ground), so a value's step is read by its darkness and only the named members
+# stand out, filled in the accent (accent_only). The lightest step stays darker than the land of no member (--empty). From
+# GREY_LIGHT_INK on, a text on a step is white. Without accent_only (no story page) a map keeps the accent's own five steps.
+GREY_RAMP = [f"color-mix(in srgb, var(--t-title) {p}%, #eeeeec)" for p in (16, 30, 44, 58, 72)]
+GREY_LIGHT_INK = 3
+
+
+def map_fills(node, d, codes, accent_ramp):
+    """(the five step fills, the codes filled in the accent over their step) of a map leaf: the accent's ramp and none apart, or,
+    when the data gives accent_only (story.accent_only), GREY_RAMP and the codes of `codes` it lists (accent_only)."""
+    if d.get("accent_only") is None: return accent_ramp, set()
+    return GREY_RAMP, accent_only(node, d, codes)
+
+
+def map_named_key(B, x, y, size, hot):
+    """The map legend's second line on a story page: an accent swatch and the words saying it marks the members the section's
+    headline names (words map.legend.named); nothing when no member is in the accent. Returns (svg, right edge)."""
+    if not hot: return "", x
+    sw = f'<rect x="{x:.1f}" y="{y - size * 0.8:.1f}" width="{size}" height="{size}" fill="var(--accent)" data-part="legend named"/>'
+    t, box, _ = words(B, [{"word": "map.legend.named"}], "map legend", x + size + 6, y, size, "var(--t-sec)")
+    return sw + t, (box[2] if box else x + size)
+
+
 # The time axis of the line leaves (line.py, stacked_area.py): periods, the query form of a series, labels spread.
 # A period as a number of years: 2024, 2024-03 / 2024M03 (a month), 2024-Q2 / 2024Q2 (a quarter).
 _YEAR = re.compile(r"(\d{4})")

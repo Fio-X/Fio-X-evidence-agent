@@ -130,7 +130,7 @@ class Frame:
 def cl_member_map(f, occ):
     d, size, W = f.d, f.size, f.W
     B = K.Boxes(W, 10 ** 6); o = [K.head(B, d["title"], d["unit"], size + 1, f.k("title_size"))]
-    ramp = [f"color-mix(in srgb, var(--accent) {p}%, #eeeeec)" for p in (10, 30, 52, 76)] + ["var(--accent)"]
+    ramp, hot = K.map_fills(NODE, d, [c["code"] for c in f.cells], [f"color-mix(in srgb, var(--accent) {p}%, #eeeeec)" for p in (10, 30, 52, 76)] + ["var(--accent)"])
     span = (f.hi_v - f.lo_v) or 1.0
     step = lambda v: max(0, min(BINS - 1, int((v - f.lo_v) / span * BINS)))
     by = {c["_i"]: c for c in f.cells}
@@ -153,7 +153,8 @@ def cl_member_map(f, occ):
              f'<path d="{"".join(land)}" fill="var(--empty)" stroke="var(--bg)" stroke-width="0.5" data-part="land"/>')
     for i, dpath in filled:
         c = by[i]
-        o.append(f'<path d="{dpath}" fill="{ramp[step(c["_v"])]}" stroke="var(--bg)" stroke-width="0.6" data-code="{esc(c["code"])}" data-step="{step(c["_v"])}"/>')
+        fill = "var(--accent)" if c["code"] in hot else ramp[step(c["_v"])]
+        o.append(f'<path d="{dpath}" fill="{fill}" stroke="var(--bg)" stroke-width="0.6" data-code="{esc(c["code"])}" data-step="{step(c["_v"])}"/>')
     o.append("</g>")
     # the legend: five steps, the lowest value at the left end and the highest at the right, over the map's top-left
     ly = 22 + size * 1.9
@@ -163,6 +164,10 @@ def cl_member_map(f, occ):
     sx = lx + tw(lo_t[1], size) + 8
     for b in range(BINS): o.append(f'<rect x="{sx + b * sw:.1f}" y="{ly - 2:.1f}" width="{sw}" height="{size}" fill="{ramp[b]}" data-part="legend"/>')
     o.append(K.txt(B, sx + BINS * sw + 8, ly + size * 0.8, size, "var(--t-sec)", hi_t[0], tw(hi_t[1], size), tag="legend high"))
+    # on a story page, the red's line: beside the steps when it fits the picture, else under them (above the map's top)
+    nx = sx + BINS * sw + 8 + tw(hi_t[1], size) + 18
+    fits = nx + size + 6 + tw(K.plain([{"word": "map.legend.named"}], "map legend"), size) <= W - 8
+    o.append(K.map_named_key(B, nx if fits else lx, ly + size * (0.8 if fits else 2.3), size, hot)[0])
     # the call-outs: each side's labels in the order of their points' heights, spread so none overlaps; a leader from the dot
     gap = f.k("line_h")
     for side in ("L", "R"):
@@ -179,7 +184,10 @@ def cl_member_map(f, occ):
             tx = f.ox - 10 if side == "L" else f.ox + f.dw + 10   # the columns stand against the map's own edges
             ex = tx + 4 if side == "L" else tx - 4
             o.append(f'<path d="M{px:.1f},{py:.1f} L{ex:.1f},{ty:.1f}" stroke="var(--t-title)" stroke-width="0.8" fill="none" stroke-opacity="0.7" data-part="leader"/>'
-                     f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3" fill="var(--t-title)" data-code="{esc(c["code"])}"/>')
+                     # a member in the accent (story page: the headline names it) has its dot in the accent, ringed so it shows on its own red
+                     # fill and on a country too small to see its fill (a city state)
+                     + (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.5" fill="var(--accent)" stroke="var(--bg)" stroke-width="1.2" data-code="{esc(c["code"])}"/>' if c["code"] in hot else
+                        f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3" fill="var(--t-title)" data-code="{esc(c["code"])}"/>'))
             t = K.ent(c["text"])
             nm_w, v_w = tw(c["_n"][1], size), tw(t[1], size + 1)
             anchor = "end" if side == "L" else "start"

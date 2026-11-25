@@ -210,9 +210,10 @@ def legend_rows(layers, leaves=None):
 # accent colour (change_dots: a row's colours and its name's weight; small_multiples: a cell's colours), so it is narrowed here.
 # ACCENT_ONLY: the marked list does more (rank_slope's accent keeps a row's label in a dense chart and draws it over the others,
 # dot_strip's lead names the rows on leaders, unit_grid's lit glyphs are the rule's, recomputed and counted), so it stays and the
-# leaf is given "accent_only" (wbkit.accent_only), the colour alone.
+# leaf is given "accent_only" (wbkit.accent_only), the colour alone. The map leaves (member_map, tile_map) fill every member by its
+# value: given "accent_only" they fill by steps of one grey and only the named members in the accent (wbkit.map_fills).
 ACCENT_DATA = ("change_dots", "small_multiples")
-ACCENT_ONLY = ("rank_slope", "dot_strip", "unit_grid")
+ACCENT_ONLY = ("rank_slope", "dot_strip", "unit_grid", "member_map", "tile_map")
 NAMED = re.compile(r"\{name\.([A-Za-z0-9_]+)\}")
 
 
@@ -649,5 +650,5 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
        ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
        ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}.story .sw.ink{background:var(--t-title)}"
-       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}"
+       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--t-title) 16%,#eeeeec),color-mix(in srgb,var(--t-title) 72%,#eeeeec))}"
        ".story .sw.area{width:14px;height:14px;border-radius:50%;background:var(--bar)}")
