@@ -610,11 +610,11 @@ def angle_path(q):
     s = q.wseries
     tk = ticks(top, q.defs.get(q.fmts["value"], {}))
     data = {"title": SW(q.words["measure"]), "unit": q.unit,
-            "series": {"code": q.whole, "points": [s[y][1] for y in ys], "start_text": "fact:first", "end_text": "fact:now"},
-            "target": {"year": "fact:goal.t.y", "text": "fact:goal", "label": ST("story.target")},
-            "runs": [{"text": "fact:p_best", "label": ST("story.run.best")},
-                     {"text": "fact:p_recent", "label": ST("story.run.recent")},
-                     {"text": "fact:p_past", "label": ST("story.run.past")}],
+            "series": {"code": q.whole, "points": [s[y][1] for y in ys], "start_text": lab(q, f, "first"), "end_text": lab(q, f, "now")},
+            "target": {"year": "fact:goal.t.y", "text": lab(q, f, "goal"), "label": ST("story.target")},
+            "runs": [{"text": lab(q, f, "p_best"), "label": ST("story.run.best")},
+                     {"text": lab(q, f, "p_recent"), "label": ST("story.run.recent")},
+                     {"text": lab(q, f, "p_past"), "label": ST("story.run.past")}],
             "axis": {"ticks": [f"fact:path_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1))},
             "periods": [f"period:{q.table}:{y}" for y in ys],
             "footnote": ST("story.path.foot")}
@@ -662,9 +662,9 @@ def angle_need(q):
     tk = ticks(gv, q.defs.get(q.fmts["value"], {}))
     data = {"title": SW(q.words["measure"]), "unit": q.unit,
             "axis": {"ticks": [f"fact:need_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), "from_zero": True},
-            "now": {"text": "fact:now", "at": q.wseries[last][1], "label": ST("story.now")},
-            "marks": [{"text": "fact:p_past", "label": ST("story.run.past")}],
-            "target": {"text": "fact:goal", "label": ST("story.target_year")},
+            "now": {"text": lab(q, f, "now"), "at": q.wseries[last][1], "label": ST("story.now")},
+            "marks": [{"text": lab(q, f, "p_past"), "label": ST("story.run.past")}],
+            "target": {"text": lab(q, f, "goal"), "label": ST("story.target_year")},
             }
     if now + past * (int(gy) - int(last)) < gv:  # the leaf takes a gap's words only when no mark reaches the target
         data["gap_label"] = ST("story.gap", g="gap_now")
@@ -762,7 +762,7 @@ def angle_ends(q):
     title, text = T("story.ends.title", a=hi, b=lo), T("story.ends.text", a=hi, b=lo)
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "places": [hi, lo], "place_kind": "place",
             "rows": [{"code": "main", "label": SW(q.words["measure"]), "a": q.panel[hi][y1][1], "b": q.panel[lo][y1][1],
-                      "a_text": "fact:hi", "b_text": "fact:lo", "ratio": "fact:hi_lo"}],
+                      "a_text": lab(q, f, "hi"), "b_text": lab(q, f, "lo"), "ratio": "fact:hi_lo"}],
             "ratio_unit": ST("story.times")}
     size = clamp(math.log(ratio) / math.log(5))
     surprise = 0.5
@@ -847,7 +847,7 @@ def angle_chain(q):
         big = max(pstep, key=lambda y: (pstep[y], -int(y))) if ranges[i] else None
         moved += big is not None and int(band) <= int(big) <= int(band) + 1
         p = {"code": code, "title": SW(it["words"]["measure"]), "unit": SW(it["words"]["unit"]), "kind": kind, "zero": zero,
-             "points": [s[y][1] for y in ys], "first_text": f"fact:{code}_first", "last_text": f"fact:{code}_last",
+             "points": [s[y][1] for y in ys], "first_text": lab(q, f, f"{code}_first"), "last_text": lab(q, f, f"{code}_last"),
              "periods": [f"period:{it['table']}:{first}", f"period:{it['table']}:{last}"]}
         if i < len(items) - 1: p["link"] = ST("story.chain.link")
         panels.append(p)
@@ -892,8 +892,8 @@ def angle_rank(q):
         f[key(c)] = q.value(c, y)
     for c in codes:
         f[f"g_{c.lower()}"] = {"op": "minus", "a": key(c), "b": key(ref_code), "fmt": q.change}
-        rows.append({"code": c, "value": (q.wseries[y] if c == q.whole else members[c][y])[1], "value_text": f"fact:{key(c)}",
-                     "share_text": f"fact:g_{c.lower()}{'.n' if pct else ''}", **({"share_none": True} if c == ref_code else {})})   # a gap of a percent: the number alone (the head says points); no cell for the row it is measured from (its gap is 0)
+        rows.append({"code": c, "value": (q.wseries[y] if c == q.whole else members[c][y])[1], "value_text": lab(q, f, key(c)),
+                     "share_text": f"fact:g_{c.lower()}.n" if pct else lab(q, f, f"g_{c.lower()}"), **({"share_none": True} if c == ref_code else {})})   # a gap of a percent: the number alone (the head says points); no cell for the row it is measured from (its gap is 0)
     sturdy = clamp(len(members) / 20)
     size = clamp((at[hi] - at[lo]) / at[hi])
     g = q.goal()
@@ -984,9 +984,9 @@ def angle_members(q):
     target = None
     if g and 0 < g[0] <= 1.5 * max(allv):
         f["goal"] = g[2]
-        target = {"text": "fact:goal", "scale": float(q.defs[q.fmts["value"]].get("scale", 1)), "label": ST("story.sm.target")}
+        target = {"text": lab(q, f, "goal"), "scale": float(q.defs[q.fmts["value"]].get("scale", 1)), "label": ST("story.sm.target")}
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
-            "cells": [{"code": c, "points": [members[c][y][1] for y in ys], "last_text": f"fact:{key(c)}"} for c in sorted(members)],
+            "cells": [{"code": c, "points": [members[c][y][1] for y in ys], "last_text": lab(q, f, key(c))} for c in sorted(members)],
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [hi, lo], "footnote": ST("story.sm.foot")}
     if ref: data["ref"] = ref
     if target: data["target"] = target
@@ -1034,8 +1034,8 @@ def angle_map(q):
     second = ranked[1]
     tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
-            "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": f"fact:{key(c)}"} if c in called else {})) for c in sorted(members)],
-            "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.map.foot")}
+            "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": lab(q, f, key(c))} if c in called else {})) for c in sorted(members)],
+            "ends": {"lo": lab(q, f, key(lo)), "hi": lab(q, f, key(hi))}, "footnote": ST("story.map.foot")}
     size = clamp(rng / max(abs(at[hi]), 1e-9))
     surprise = clamp(0.3 + 0.7 * gradient)
     sturdy = clamp(len(members) / 20)
@@ -1084,7 +1084,7 @@ def angle_movers(q):
     for c in kept + ([whole] if whole else []):
         s_ = q.wseries if c == whole else q.panel[c]
         f[key0(c)], f[key1(c)] = q.value(c, y0), q.value(c, y1)
-        rows.append({"code": c, "a": s_[y0][1], "b": s_[y1][1], "a_text": f"fact:{key0(c)}", "b_text": f"fact:{key1(c)}"})
+        rows.append({"code": c, "a": s_[y0][1], "b": s_[y1][1], "a_text": lab(q, f, key0(c)), "b_text": lab(q, f, key1(c))})
         vals += [s_[y0][0], s_[y1][0]]
     span = max(vals) - min(vals)
     if span <= 0: return None, "every value is the same"
@@ -1242,8 +1242,8 @@ def angle_tiles(q):
     f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
     tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
-            "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
-            "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}
+            "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": lab(q, f, key(c))} for c in sorted(members)],
+            "ends": {"lo": lab(q, f, key(lo)), "hi": lab(q, f, key(hi))}, "footnote": ST("story.tl.foot")}
     tx = ratio(q, f, "tx", key(hi), key(lo), at[hi], at[lo])
     anns = [note("trange", "story.note.tl.range" + "_x" * tx, hi=hi, lo=lo, tx="tx")]
     if q.whole and y in q.wseries:
@@ -1343,6 +1343,14 @@ def cell_src(q, key, fmt):
     unit (a pace's unit word) stay in the sentences and the change cell, which print the fact in its own format."""
     suffix = (q.defs.get(fmt, {}).get("suffix") or "").strip()
     return f"fact:{key}" if suffix in ("", "%") else f"fact:{key}.n"
+
+
+def lab(q, f, key):
+    """The ledger entry a label next to a mark inside a chart prints: the number alone (cell_src) when the fact's format puts a unit
+    after it, since the chart's head states the unit once (the leaf's "unit"); a percent sign stays. The fact's format is its
+    declaration's in f, else the page's value format."""
+    d = f.get(key) if isinstance(f, dict) else None
+    return cell_src(q, key, (d.get("fmt") if isinstance(d, dict) else None) or q.fmts["value"])
 
 
 def pace_split(q, ys, m):
