@@ -1655,6 +1655,7 @@ def candidates(r):
 ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
           "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging",
           "pace": "happened", "groups": "lagging", "below": "lagging"}
+RANK_ANGLES = ("rank", "overtake")   # the findings whose section prints ranks (the closing line of the lagging arc speaks of them)
 ARC_ORDER = {"happened": ["chain", "pace", "spread", "rank", "members", "ends", "movers", "overtake", "groups", "below", "map", "tiles", "path", "need"],
              "in_time": ["need", "path", "pace", "below", "rank", "spread", "groups", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
              "lagging": ["below", "groups", "spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "pace", "chain", "need", "path"]}
@@ -1741,8 +1742,9 @@ def plan_arc(picks, cands):
     return arc, [out[0]] + sorted(out[1:], key=order.index), why
 
 
-def closing(arc, facts):
-    """The page's closing line (spec.end) as a wording: each arc ends differently, a number only from a fact the page declares."""
+def closing(arc, facts, ranked=True):
+    """The page's closing line (spec.end) as a wording: each arc ends differently, a number only from a fact the page declares. The lagging
+    arc's line speaks of ranks: a page with no section of ranks (`ranked` false) says the same of the levels."""
     have = lambda *ks: all(k in facts for k in ks)
     if arc == "happened":
         return wording(T("story.end.happened")) if have("p_past", "goal", "first", "now") else wording(T("story.end.happened_plain"))
@@ -1750,7 +1752,7 @@ def closing(arc, facts):
         if have("need", "past"): return wording(T("story.end.in_time"))
         if have("p_best", "best", "goal"): return wording(T("story.end.in_time_path"))
         return wording(T("story.end.in_time_plain"))
-    return wording(T("story.end.lagging"))
+    return wording(T("story.end.lagging" if ranked else "story.end.lagging_level"))
 
 
 # ---------------------------------------------------------------- compose the picked ones into the page
@@ -1835,7 +1837,7 @@ def compose(r):
     leaves[NOTES] = {"title": ST("story.notes.title"), "items": items}
     sections.append({"id": "notes", "layer": NOTES})
     return {"facts": facts, "sections": sections, "leaves": leaves, "style": style, "title": wording(first["title"]), "dek": wording(first["text"]),
-            "end": closing(arc, facts), "arc": {"id": arc, "picks": picks, "why": arc_why}}
+            "end": closing(arc, facts, any(c["id"] in RANK_ANGLES for c in chosen)), "arc": {"id": arc, "picks": picks, "why": arc_why}}
 
 
 def as_fill(page):

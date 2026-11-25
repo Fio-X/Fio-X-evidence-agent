@@ -157,8 +157,15 @@ class Picture(unittest.TestCase):
     def test_names_under_every_glyph_when_they_fit_else_only_the_lit(self):
         eu_names = re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', self.out["eu_cell"][0])
         self.assertEqual(sorted(eu_names), sorted(EU))
+        # long names: the gap grows to the widest name, so every glyph is named (a question that asks which ones is answered by the grey names too)
         wb_names = re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', self.out["wb"][0])
-        self.assertEqual(set(wb_names), WB_LOW5)
+        self.assertEqual(sorted(wb_names), sorted(WB))
+        # a board too narrow for the widened grid at any row length: only the lit ones are named, as before
+        rows, data, names = wb(); data.pop("lead", None)
+        narrow = re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', draw((rows, data, names), width=300, cell=40, cols=5)[0])
+        self.assertEqual(set(narrow), WB_LOW5)
+        # show_names "lit" is still the lit ones, and "all" still refuses a name wider than its column
+        self.assertEqual(set(re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', draw(wb(), show_names="lit")[0])), WB_LOW5)
         lit_only = re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', draw(eu(), show_names="lit")[0])
         self.assertEqual(set(lit_only), EU_LIT)
 

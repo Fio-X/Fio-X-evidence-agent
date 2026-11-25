@@ -600,7 +600,8 @@ class Findings(unittest.TestCase):
                     self.assertTrue(composed[k].strip(), k)
                     self.assertNotRegex(composed[k], r"\{\s*\}", k)
                 end = re.sub(r"<[^>]+>", "", re.search(r"<p class=end>(.*?)</p>", page_html, re.S)[1]).strip()
-                self.assertEqual(end, FN.WD.WORDS["story.end.happened_plain" if arc == "happened" else "story.end.lagging"])
+                ranked = any(s_["layer"] in ("rankbar", "rank_slope") for s_ in composed["sections"])   # the lagging line speaks of ranks only with a section of ranks
+                self.assertEqual(end, FN.WD.WORDS["story.end.happened_plain" if arc == "happened" else "story.end.lagging" if ranked else "story.end.lagging_level"])
                 big = [i["fact"] for i in composed["leaves"]["bignums"]["bignums"]]
                 self.assertEqual(big, ["b_now", "m_step"] if arc == "happened" else ["b_hi", "b_lo", "b_ratio"])
                 notes = composed["leaves"]["risk_notes"]["items"]
@@ -2199,6 +2200,25 @@ class NotesStandAgainstAReference(unittest.TestCase):
         req, names = eu27_request()
         self.stands_against_the_lowest(req, names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", False)
         self.stands_against_the_lowest(self.pct(req), names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", True)
+
+
+class ClosingSpeaksOfRanksOnlyWithRanks(unittest.TestCase):
+    """The lagging arc's closing line says "ranks only tell this year's place": a page with no section of ranks (the rank bar, the
+    overtake slope) says the same of the levels; a page with one keeps the line about ranks. On two data shapes."""
+
+    def end(self, mk, picks):
+        req, names = mk()
+        return FN.compose({**req, "picks": picks})
+
+    def test_the_closing_line_follows_the_sections(self):
+        for mk in (eu27_plain, wb24_request):
+            for picks, ranked in ((["below", "ends", "movers"], False), (["ends", "groups", "movers"], False), (["rank", "ends", "movers"], True),
+                                  (["ends", "overtake", "movers"], True)):
+                composed = self.end(mk, picks)
+                self.assertEqual(composed["arc"]["id"], "lagging", (mk.__name__, picks))
+                want = FN.WD.WORDS["story.end.lagging" if ranked else "story.end.lagging_level"]
+                self.assertEqual(re.sub(r"\{[^}]*\}", "", composed["end"]), want, (mk.__name__, picks))
+                self.assertEqual("名次" in composed["end"], ranked, (mk.__name__, picks))
 
 
 class UnitNameHoldsADigit(unittest.TestCase):

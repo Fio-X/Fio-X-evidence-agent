@@ -164,6 +164,7 @@
 "story.end.in_time_path": "年年都像 {y:best}那样涨（{f:best}），{y:goal}到 {f:p_best}，目标是 {f:goal}。",
 "story.end.in_time_plain": "目标看的是接下来每一年的实际数。",
 "story.end.lagging": "名次只说明这一年的位置：起点不同，不能直接比谁更努力。",
+"story.end.lagging_level": "高低只说明这一年的位置：起点不同，不能直接比谁更努力。",
 "story.big.now": "{year} 年{name}的值",
 "story.big.gap": "离 {year} 年的目标还差",
 "story.big.best": "照最快一年的速度，{year} 年能到",
