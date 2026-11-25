@@ -126,6 +126,23 @@ class OpeningCaption(unittest.TestCase):
         self.assertNotIn("Unemployment by sex", body)
         self.assertGreaterEqual(body.count("人均GDP"), 3)
 
+    def test_a_later_findings_note_that_only_says_its_titles_numbers_again_goes_and_the_page_stands(self):
+        """The "under the line" finding led the page: its section is headed by its claim and its note prints the line. Picked after another
+        finding its section prints its full title (the line in it), so that note only said it again and the page refused. Now the note goes
+        and the page stands, on the shape with the whole's value as the line, the one with the members' mean, and the one with a target."""
+        from test_story_findings import eu27_plain, eu_request
+        for mk in (eu27_plain, lambda: eu27_plain(whole=True), lambda: eu_request()):
+            for picks in (["ends", "below", "movers"], ["movers", "below", "ends"], ["below", "ends", "movers"]):
+                req, names = mk()
+                try: FN.compose({**req, "picks": picks})
+                except FN.Refused: continue
+                composed, html = page(req, names, picks, hero=False, kicker="人均GDP")
+                self.assertIn("unit_grid", [x["layer"] for x in composed["sections"]], picks)
+                notes = (composed["leaves"]["unit_grid"].get("notes") or [])
+                if picks[0] != "below":
+                    shown = {f"fact:{v}" for x in composed["sections"] if x["layer"] == "unit_grid" for k, v in re.findall(r"\{([a-z]):([a-z_0-9.]+)\}", x["title"] + x.get("text", ""))}
+                    for n in notes: self.assertFalse({n["num"]} <= shown, (picks, n["num"]))
+
     def test_what_stands_in_brackets_goes_with_the_brackets_nested_or_not(self):
         import story
         for given, want in (("a(b)c", "ac"), ("a(b(c)d)e", "ae"), ("x(y", "x"), ("no brackets", "no brackets"), ("p)q", "pq")):

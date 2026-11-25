@@ -1692,6 +1692,16 @@ def spaced(q, rows, about):
     return out
 
 
+def unsaid(anns, *parts):
+    """The notes that add something to a section whose title and text are `parts` (segment lists): a note whose numbers (its own and the
+    ledger entries in its words) are all facts the title or text already prints is dropped (the page refuses a section that says again,
+    story.repeats), the same fact whatever its part (.n and .r are one). A finding that heads the page prints its claim instead of its
+    title and a later one prints its title: the same note stands in one place and goes in the other."""
+    base = lambda src: re.sub(r"\.(n|r)$", "", src)
+    have = {base(f"fact:{v}" if kind == "f" else f"fact:{v}.t.y") for part in parts for kind, v in (part or []) if kind in ("f", "y")}
+    return [n for n in anns or [] if not ({base(n["num"])} | {base(x["src"]) for x in n["text"] if "src" in x}) <= have]
+
+
 def place_leaves(picks, by_id, cands):
     """(picks, {id: (main part, [extra parts])}, why): a leaf stands once on a page, a question is answered once, and a page holds
     MAX_BLOCKS data blocks at most. Each pick in order takes its own leaf, else its fallback leaf, else it goes (the why names it):
@@ -1781,10 +1791,13 @@ def compose(r):
         main, extra = placed[c["id"]]
         # the lead's section is headed by its claim's number: a note of that number would only say it again, so it goes
         anns = [n for n in (main.get("anns") or []) if c is not chosen[0] or n["num"] != c["claim"]["num"]]
+        if c is not chosen[0]: anns = unsaid(anns, c["title"], c["text"])   # a later finding's section prints its title and text
         leaves[main["layer"]] = {**main["data"], "notes": anns} if anns else main["data"]  # the notes are the story's (story.py reads them; the leaf ignores them)
         for m in [main, *extra]:
             for leaf, kv in (m.get("style") or {}).items(): style[leaf] = {**style.get(leaf, {}), **kv}
-        for m in extra: leaves[m["layer"]] = {**m["data"], "notes": m["anns"]} if m.get("anns") else m["data"]
+        for m in extra:
+            ann = unsaid(m.get("anns"), m["title"], m["text"])
+            leaves[m["layer"]] = {**m["data"], "notes": ann} if ann else m["data"]
     first = chosen[0]
     # a strip of more than LABEL_ALL_MAX points names only the members the lead finding is about (its "about"), the rest unlabelled:
     # any leaf whose knobs take a lead set (the strip's lead_set) and whose rows are that many
