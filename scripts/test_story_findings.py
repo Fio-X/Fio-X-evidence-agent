@@ -2079,6 +2079,7 @@ class NotesStandAgainstAReference(unittest.TestCase):
     def test_the_members_notes_say_the_gap_in_points_on_a_percent_measure(self):
         req, _ = eu_request()
         composed, facts, notes = self.notes(self.pct(req), ["path", "members"], "members")
+        self.assertEqual(composed["facts"]["sm_w"].get("op", "value"), "value")   # a whole row: the reference is the whole, not the mean
         self.assertEqual(len(notes), 2)
         for n, who in zip(notes, ("sm_se", "sm_mt")):
             self.assertEqual(n["num"], f"fact:{who}")
@@ -2105,12 +2106,31 @@ class NotesStandAgainstAReference(unittest.TestCase):
             # the larger is the one the sentence starts from: the member itself, else the reference ("... is it N times")
             self.assertEqual(facts[who]["v"] > facts["sm_w"]["v"], "是它的" not in self.words(n))
 
-    def test_no_reference_row_keeps_the_plain_notes(self):
+    def test_with_no_whole_the_notes_stand_against_the_members_simple_mean(self):
         req, _ = wb_request()
-        composed, _, notes = self.notes(req, ["members", "spread"], "members", WB_NAMES)
-        self.assertNotIn("sm_w", composed["facts"])
-        self.assertEqual([self.words(n) for n in notes], ["走势最好的，末年的值", "走势最差的，末年的值"])
-        self.assertFalse([k for k in composed["facts"] if k.startswith("vs_")])
+        for r, op in ((req, "times"), (self.pct(req), "minus")):
+            composed, facts, notes = self.notes(r, ["members", "spread"], "members", WB_NAMES)
+            ref = composed["facts"]["sm_w"]
+            self.assertEqual(ref["op"], "mean")
+            codes = ref["filter"]["country"]
+            self.assertGreaterEqual(len(codes), 3)
+            self.assertEqual(len(notes), 2)
+            for n in notes:
+                self.assertEqual(self.words(n).count("各国平均（不加权"), 1, self.words(n))     # named for what it is, never the whole or the EU
+                self.assertFalse({"欧盟", "整体"} & {x.get("name") for x in n["text"]} | ({"欧盟", "整体"} if "整体" in self.words(n) else set()))
+                srcs = [x["src"] for x in n["text"] if "src" in x]
+                self.assertEqual(srcs[0], "fact:sm_w")
+                self.assertEqual(composed["facts"][srcs[1][5:]]["op"], op)
+                self.assertEqual(composed["facts"][srcs[1][5:]]["b" if op == "minus" else "b"] in ("sm_w",) or composed["facts"][srcs[1][5:]]["a"] == "sm_w", True)
+
+    def test_a_gap_between_two_percentages_is_in_points_on_the_rank(self):
+        for mk, picks in ((wb12_request, ["overtake", "rank"]), (eu_request, ["path", "rank"])):
+            req, names = mk()
+            for r, want in ((self.pct(req), "pp"), (req, req["fmts"]["value"])):
+                composed = FN.compose({**req, **r, "picks": picks})
+                gaps = {k: v for k, v in composed["facts"].items() if k.startswith("g_")}
+                self.assertTrue(gaps, mk.__name__)
+                self.assertEqual({v["fmt"] for v in gaps.values()}, {want}, mk.__name__)
 
     def test_a_gap_that_prints_as_nothing_keeps_the_plain_note(self):
         req, _ = eu_request()

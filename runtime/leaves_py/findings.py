@@ -339,13 +339,13 @@ def versus(q, f, tag, a, b, va, vb, only_up=False):
     return ("x", up, name) if ratio(q, f, name, a, b, va, vb, flip=not up) else None
 
 
-def compared(q, f, tag, base, num, a, b, va, vb, only_up=False, **bind):
+def compared(q, f, tag, base, num, a, b, va, vb, only_up=False, mean=False, **bind):
     """A short note that says where its number stands against a reference: the plain note `base` (its words say what the number is) becomes
     "<what it is>, <higher/lower by N points | N times the reference>" when versus() finds a number; else it stays as it was."""
     v = versus(q, f, tag, a, b, va, vb, only_up)
     if not v: return note(num, base, **bind)
     kind, up, name = v
-    return note(num, f"{base}_{kind}_{'up' if up else 'dn'}", rv=b, d=name, **bind)
+    return note(num, f"{base}{'_m' if mean else ''}_{kind}_{'up' if up else 'dn'}", rv=b, d=name, **bind)
 
 
 def clamp(x):
@@ -845,7 +845,7 @@ def angle_rank(q):
     for c in codes:
         f[key(c)] = q.value(c, y)
     for c in codes:
-        f[f"g_{c.lower()}"] = {"op": "minus", "a": key(c), "b": key(ref_code), "fmt": q.fmts["value"]}
+        f[f"g_{c.lower()}"] = {"op": "minus", "a": key(c), "b": key(ref_code), "fmt": q.change}
         rows.append({"code": c, "value": (q.wseries[y] if c == q.whole else members[c][y])[1], "value_text": f"fact:{key(c)}",
                      "share_text": f"fact:g_{c.lower()}"})
     sturdy = clamp(len(members) / 20)
@@ -922,8 +922,14 @@ def angle_members(q):
     elif ch[lo] > 0: tk = "story.sm.title_up"
     else: tk = "story.sm.title_down"
     hot = key(hi)
-    whole_at = q.wseries[y1][0] if q.whole and q.wseries and y1 in q.wseries else None
-    if whole_at is not None: f["sm_w"] = q.value(q.whole, y1)   # the whole's last value: what the two notes stand against
+    # what the two notes stand against: the whole's last value, else the members' simple mean at the last year (the page's own word for it)
+    whole_at, by_mean = (q.wseries[y1][0], False) if q.whole and q.wseries and y1 in q.wseries else (None, False)
+    if whole_at is not None: f["sm_w"] = q.value(q.whole, y1)
+    else:
+        pool = sorted(c for c, s_ in q.panel.items() if y1 in s_)
+        if len(pool) >= 3:
+            f["sm_w"] = q.mean(pool, y1)
+            whole_at, by_mean = sum(q.panel[c][y1][0] for c in pool) / len(pool), True
     bind = dict(hi=hi, lo=lo, y0=f"sm0_{hi.lower()}", y1=hot)
     ref = None
     if q.wseries and all(y in q.wseries for y in ys):
@@ -952,8 +958,8 @@ def angle_members(q):
     return {"angle": "members", "shows": [q.shows(f"{y0}-{y1}", "series")], "about": [hi, lo], "layer": "small_multiples", "big": big_items, "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
             "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
             "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
-            "anns": [compared(q, f, "hi", "story.note.members.last", hot, hot, "sm_w", members[hi][y1][0], whole_at, r=q.whole, hi=hi) if whole_at is not None else note(hot, "story.note.members.last", hi=hi),
-                     compared(q, f, "lo", "story.note.members.last_lo", key(lo), key(lo), "sm_w", members[lo][y1][0], whole_at, r=q.whole, lo=lo) if whole_at is not None else note(key(lo), "story.note.members.last_lo", lo=lo)],
+            "anns": [compared(q, f, "hi", "story.note.members.last", hot, hot, "sm_w", members[hi][y1][0], whole_at, mean=by_mean, r=q.whole, hi=hi) if whole_at is not None else note(hot, "story.note.members.last", hi=hi),
+                     compared(q, f, "lo", "story.note.members.last_lo", key(lo), key(lo), "sm_w", members[lo][y1][0], whole_at, mean=by_mean, r=q.whole, lo=lo) if whole_at is not None else note(key(lo), "story.note.members.last_lo", lo=lo)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "rising": ups, "falling": downs},
             "summary": "one small chart a member on a shared axis: the member that moved most each way"}, None
@@ -1563,7 +1569,7 @@ def header(q, arc=None):
             best = paces(q.wseries)[3]
         if best > 0:
             f["goal"] = g[2]
-            f["b_gap"] = {"op": "minus", "a": "goal", "b": "b_now", "fmt": q.fmts["value"]}
+            f["b_gap"] = {"op": "minus", "a": "goal", "b": "b_now", "fmt": q.change}
             f["b_best"] = {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.fmts["value"]}
             f["b_end"] = {"op": "line_at", "start": "b_now", "rate": "b_best", "at": g[1], "fmt": q.fmts["value"]}
             items.append({"fact": "b_gap", "label": {"word": "story.big.gap", "year": when("goal")}})
@@ -1571,7 +1577,7 @@ def header(q, arc=None):
         else:
             f["b_first"] = q.value(q.whole, first)
             up = now >= before
-            f["b_change"] = {"op": "minus", "a": "b_now" if up else "b_first", "b": "b_first" if up else "b_now", "fmt": q.fmts["value"]}
+            f["b_change"] = {"op": "minus", "a": "b_now" if up else "b_first", "b": "b_first" if up else "b_now", "fmt": q.change}
             items.append({"fact": "b_change", "label": {"word": "story.big.rose" if up else "story.big.fell",
                                                         "year": when("b_first"), "to": when("b_now")}})
     ends = common_ends(q)
