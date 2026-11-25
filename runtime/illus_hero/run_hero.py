@@ -11,6 +11,8 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
         A subject may also carry a proportion ({..., "proportion": {"share", "figures", "declared": {"count", "total"}}}, beside its own form): N figures,
         K = N x share half to even recomputed here. On a topic whose renderer is the scene renderer (topics.scene_renderer, the node child scene/scene.mjs;
         build_scene) the proportion is drawn; on any other topic it is ignored and the subject's own form is drawn as without it.
+        A topic whose renderer is the collage (topics.collage_renderer, collage/draw.py; build_collage) draws its tally as engraving cut-outs, K of N
+        in the accent, and requires the subject's declared count and total; its other requests are routed as its renderer_else_topic's (routed_scene).
   out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
         "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
@@ -479,11 +481,20 @@ def build(inp, work):
     return out, float(width), h, secs, scene["scene"], scene.get("composition")
 
 
+def routed_scene(topic):
+    """The scene block whose renderer a request of this topic is routed by when the collage does not draw it: the topic's own, or for a topic
+    whose renderer is the collage (labour) its renderer_else_topic's (people), so its proportion, rank and pair go to the scene renderer and its
+    path, series and groups to the people drawing, as that topic's do. The drawing itself still takes the request's own topic (unit, style, accent)."""
+    sc = TOPICS["scenes"][topic]
+    return TOPICS["scenes"][sc["renderer_else_topic"]] if sc["renderer"] == "collage" else sc
+
+
 def takes_proportion(inp):
-    """Whether the request draws its subject's proportion: the subject carries one and the topic's renderer is the scene renderer (people, trade, tech);
-    on a topic of another renderer the key is ignored and the subject's own form is drawn as without it."""
+    """Whether the request draws its subject's proportion: the subject carries one and the topic's renderer is the scene renderer (people, trade, tech;
+    labour through its renderer_else_topic: the collage draws no proportion); on a topic of another renderer the key is ignored and the subject's own
+    form is drawn as without it."""
     sub = inp.get("subject")
-    return isinstance(sub, dict) and "proportion" in sub and TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"] == "scene"
+    return isinstance(sub, dict) and "proportion" in sub and routed_scene(topic_of(inp.get("family")))["renderer"] == "scene"
 
 
 def without_ignored_proportion(inp):
@@ -501,14 +512,17 @@ def without_ignored_proportion(inp):
 
 
 def renderer_of(inp):
-    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people or scene); a request without a subject
+    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people, scene or collage; a collage
+    topic's tally is the collage's, its other requests routed as its renderer_else_topic's: routed_scene); a request without a subject
     (the tags-and-hero scene) is the 3D path's own. A topic whose renderer is scene draws the layouts topics.scene_renderer.kinds lists with it and
     the others with its renderer_else; on such a topic a subject carrying a proportion is drawn by the scene renderer as that proportion (takes_proportion),
     on any other topic the proportion is ignored."""
     sub = inp.get("subject")
     if sub is None: return "3d"
     if takes_proportion(inp): return "scene"
-    sc = TOPICS["scenes"][topic_of(inp.get("family"))]
+    topic = topic_of(inp.get("family"))
+    if TOPICS["scenes"][topic]["renderer"] == "collage" and kind_of(inp) in CR["kinds"]: return "collage"
+    sc = routed_scene(topic)
     if sc["renderer"] == "scene" and kind_of(inp) not in TOPICS["scene_renderer"]["kinds"]: return sc["renderer_else"]
     return sc["renderer"]
 
@@ -561,6 +575,43 @@ def build_people(inp):
     d = PD.draw(resolved, page_colours(["--accent", "--bar", "--t-title"]), primary)
     k = width / float(PD.CW); h = round(d["h"] * k, 2)
     return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+
+
+# ---------------------------------------------------------------- the collage (topics.collage_renderer: runtime/illus_hero/collage/draw.py)
+CR = TOPICS["collage_renderer"]
+
+
+def build_collage(inp):
+    """The same reply the other paths give, drawn by runtime/illus_hero/collage (engraving cut-outs in a perspective queue, K of N in the accent).
+    Only a tally of N members on collage_renderer.figures: any other layout or N is `unavailable` (the page's strip stands in). The subject's declared
+    count and total are required here (the picture is read by counting its accent figures) and, as for every renderer, must be the members the rule
+    holds for and the members given (lit_codes, by compose_subject's check of the request), or the request is refused. The pack missing or damaged
+    is `unavailable`; a reply over max_svg_bytes is `unavailable`. Colours: hex only (the page's check): the request's accent, else the topic's."""
+    t0 = time.time(); width = inp.get("width")
+    if isinstance(width, float) and width.is_integer(): width = int(width)
+    if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
+    sub = inp.get("subject"); topic = topic_of(inp.get("family"))
+    if not isinstance(sub, dict): refuse("subject: an object required")
+    kind = kind_of(inp)
+    if kind not in CR["kinds"]: raise Unavailable(f"collage: the {kind!r} layout is not drawn by the collage")      # the page's strip stands in
+    ms = sub.get("members"); lo, hi = CR["figures"]
+    if isinstance(ms, list) and not lo <= len(ms) <= hi: raise Unavailable(f"collage: {len(ms)} members, the collage draws {lo} to {hi} figures")
+    dec = sub.get("declared")
+    if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.declared: the collage needs the declared count and total (its accent figures are counted)")
+    _, _, acc, _ = compose_subject(inp, renderer="collage")      # the request's own check: knobs, ground, accent, and the recount (lit_codes) against declared
+    ms = members_of(sub); lit = lit_codes(sub)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collage_draw", os.path.join(HERE, "collage", "draw.py"))
+    CD = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(CD)
+        d = CD.draw([m["code"] for m in ms], len(lit), len(ms), width, acc.lower(), CR)
+    except getattr(CD, "PackError", ()) as e: raise Unavailable(str(e))
+    k = width / float(CD.CW); h = round(CD.CH * k, 2)
+    svg = f'<g transform="scale({k:.5f})">{d["inner"]}</g>'
+    if len(svg) > CR["max_svg_bytes"]: raise Unavailable(f"collage: {len(svg)} bytes, over the {CR['max_svg_bytes']} the collage may reply")
+    comp = dict(scene=f"{topic}.{kind}", renderer="collage", **d["composition"])
+    return svg, float(width), h, {"collage": round(time.time() - t0, 2), "total": round(time.time() - t0, 2)}, f"{topic}.{kind}", comp
 
 
 # ---------------------------------------------------------------- the scene renderer (topics.scene_renderer: runtime/illus_hero/scene/scene.mjs)
@@ -722,6 +773,7 @@ def serve():
         if drawer == "line": svg, w, h, secs, name, comp = build_line(inp)
         elif drawer == "people": svg, w, h, secs, name, comp = build_people(inp)
         elif drawer == "scene": svg, w, h, secs, name, comp = build_scene(inp)
+        elif drawer == "collage": svg, w, h, secs, name, comp = build_collage(inp)
         else:
             with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
                 svg, w, h, secs, name, comp = build(inp, work)

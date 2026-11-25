@@ -2470,7 +2470,7 @@
    "pop65": "people",
    "population": "people",
    "urban_share": "people",
-   "unemployment": "people",
+   "unemployment": "labour",
    "gdp": "trade",
    "gdp_pc": "trade",
    "energy_imports": "trade",
@@ -2500,7 +2500,7 @@
    "series": "happened",
    "groups": "lagging"
   },
-  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people. scene = the scene renderer (scene_renderer below): the people topic takes it (11-24) for the layouts it draws (scene_renderer.kinds) and keeps people (its renderer_else) for the others; trade takes it too (11-25), its renderer_else the 3D path, and so does tech, a topic no family maps to yet; the other topics stay line or 3d. scenes.<topic>.style is the look a topic gets from the scene renderer (people, migration, neutral: ink; energy, emissions, tech: iso; trade: geo), recorded for the topics not yet switched.",
+  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people. scene = the scene renderer (scene_renderer below): the people topic takes it (11-24) for the layouts it draws (scene_renderer.kinds) and keeps people (its renderer_else) for the others; trade takes it too (11-25), its renderer_else the 3D path, and so does tech, a topic no family maps to yet; the other topics stay line or 3d. collage = runtime/illus_hero/collage (collage_renderer below: engraving cut-outs in a perspective queue, K of N in the accent): the labour topic (11-25, the unemployment family) takes it for a tally and routes every other request as its renderer_else_topic (people) does, so its proportion, rank and pair stay the scene renderer's and its path, series and groups the people drawing's. scenes.<topic>.style is the look a topic gets from the scene renderer (people, migration, neutral: ink; energy, emissions, tech: iso; trade: geo), recorded for the topics not yet switched.",
   "scene_renderer": {
    "doc": "scene = runtime/illus_hero/scene/scene.mjs (node; one JSON line in: {scene, style, seed, figures: [{lit}], box: {w, h}, palette: {ink, paper, accent} as hex}, one line out: {svg, w, h, lit, total, dropped} | {refused}). run_hero.py starts it (build_scene) with the node on PATH, as next_leaf Runner::node does, and the deadline below; it decides who is lit, never the node: the node draws the flags it is given and reports its own count, which must be the recomputed one. Two subject forms: a rule (members, rule, declared: the tally's own recount, one figure per member, the lit first) and a proportion the subject carries beside its own form ({..., proportion: {share, figures, declared: {count, total}}}: count = figures x share rounded half to even on the decimal value as written, refused when it is not the declared count; drawn only on a topic whose renderer is scene, ignored on the others). The palette is the page's ink (--t-title) and paper (--bg) and the request's accent (the topic's when none is given). `kinds`: the layouts it draws (tally from a rule; rank and pair, the rank and ends/spread leads, from the members' values: the figures stand highest first in the given order (request order: given), rank lights the highest, pair the highest and the lowest; more members than fold's head + tail keep the head and the tail and the middle is one gap marker, `omitted` the members folded); a topic whose renderer is scene draws the other layouts (groups, path, series) with its renderer_else. On a topic whose renderer is scene a subject carrying a proportion draws the proportion (whatever its own layout); on other topics the proportion is ignored.",
    "script": "scene/scene.mjs",
@@ -2567,6 +2567,74 @@
     "h": 560
    },
    "deadline": 20.0
+  },
+  "collage_renderer": {
+   "doc": "collage = runtime/illus_hero/collage/draw.py (run_hero.py build_collage; standard library only, no pixel work): N single full-length engraving figures (Miguel Gamborino's street-cries series, The Metropolitan Museum of Art, CC0; collage/LICENSES.tsv) from one pack (collage/pack.bin, indexed by collage/pack.json, built once by scripts/build_collage_pack.py), standing in a queue that recedes in perspective over grey paper, K of them with their clothing in the accent under the engraving lines. Only the tally (kinds); one figure per member, N on `figures` (any other layout or N is `unavailable`, the page's strip stands in), K the members the rule holds for (lit_codes), and the subject's declared count and total are required and must be K and N. The picture is layered SVG of PNG and JPEG data URLs (paper, then per figure farthest first: foot shadow, a paper block cut to the outline, the accent block cut to the clothing, the lines; then the grain); no text, no number. Same request, same bytes (the seed: sha256 of the sorted member codes, K, N, the width and the pack's sha256). queue: the reference picture's layout (feet on the line from..to, height = height_k x (foot y - horizon_y), the spacing factor bisected on fac so the last centre is at fit_x); foreground: one figure per `per` members in the group at the right (at most len(at)); accent places: spread over the queue's clear places (not its first and last figure, at least red_min_h high, not behind the foreground group); an accent figure is the first of the red_ok figures (seeded order) whose clothing is at least red_visible in view of the figures in front (cover_cell px cells), else the one most in view. far_light: the lines' opacity, a + b x min(1, height / c). max_svg_bytes: a reply larger is `unavailable`.",
+   "kinds": [
+    "tally"
+   ],
+   "figures": [
+    3,
+    30
+   ],
+   "horizon_y": 205,
+   "height_k": 1.3,
+   "queue": {
+    "from": [
+     60,
+     505
+    ],
+    "to": [
+     1000,
+     236
+    ],
+    "aspect": 0.42,
+    "probe": 80,
+    "fit_x": 990,
+    "fac": [
+     0.3,
+     1.5
+    ]
+   },
+   "foreground": {
+    "per": 6,
+    "at": [
+     [
+      1075,
+      470
+     ],
+     [
+      1160,
+      497
+     ],
+     [
+      1245,
+      525
+     ],
+     [
+      1320,
+      551
+     ],
+     [
+      1395,
+      551
+     ]
+    ]
+   },
+   "shadow": {
+    "w": 1.0,
+    "h": 0.035,
+    "min_h": 3
+   },
+   "far_light": [
+    0.55,
+    0.45,
+    250
+   ],
+   "red_visible": 0.6,
+  "red_min_h": 40,
+   "cover_cell": 4,
+   "max_svg_bytes": 3145728
   },
   "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
   "layout": {
@@ -2789,6 +2857,24 @@
      ],
      "doc": "How the crowd is painted (line is the main look, flat is kept for comparison). flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
     }
+   },
+   "labour": {
+    "unit": "figure_unit",
+    "renderer": "collage",
+    "renderer_else_topic": "people",
+    "style": "ink",
+    "accent": "#c8102e",
+    "relief": 0.3,
+    "filler": [],
+    "figure_style": {
+     "default": "line",
+     "values": [
+      "flat",
+      "line"
+     ],
+     "doc": "As the people topic's: its renderer_else_topic draws the layouts the collage does not, with the people topic's figures."
+    },
+    "doc": "The unemployment family (11-25): a tally is the collage (topics.collage_renderer); every other request is routed as the people topic's (renderer_else_topic), drawn with this topic's own unit, style and accent. It shares the people figure unit for those layouts, as tech shares the neutral cairn."
    },
    "trade": {
     "unit": "container_unit",

@@ -3005,12 +3005,20 @@ mod tests {
                 json!({"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}),
                 json!({"proportion": {"share": 0.284, "figures": 8, "declared": {"count": 2, "total": 8}}}),
             ] {
-                let ask = json!({"family": "unemployment", "lead": "members", "width": 1140.0, "accent": "#b8433a",
+                let ask = json!({"family": "pop65", "lead": "members", "width": 1140.0, "accent": "#b8433a",
                                  "subject": subject, "composition": {"style": style}});
                 let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {subject}: {e:?}"));
                 assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{style}");
                 assert_eq!(got.w, 1140.0);
             }
+        }
+        // the labour topic's tally (the unemployment family): the collage, image data URLs under masks
+        {
+            let ask = json!({"family": "unemployment", "lead": "members", "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("collage: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "collage");
+            assert_eq!(got.scene, "labour.tally");
         }
         // the economy topic's tally in its own style (geo), with its piece set's accent
         {
