@@ -480,8 +480,8 @@ def column_shell(f, bars, unit, pic="", main="bars"):
 
 
 def strip_shell(svg, w, h):
-    """The illustration strip under the hero: layer 1's strip (line art in the page's ink and accent, no text) in its own
-    svg, as wide as the hero, hidden from a screen reader (it says nothing the page does not)."""
+    """The illustration strip under the hero: layer 1's strip (line art and flat shapes in the page's colours, no text) in
+    its own svg, as wide as the hero, hidden from a screen reader (it says nothing the page does not)."""
     return (f'<div class="illus-strip" aria-hidden="true"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}">'
             f'<g data-layer="illus_strip">{svg}</g></svg></div>')
 

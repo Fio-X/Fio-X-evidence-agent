@@ -66,7 +66,8 @@ BASIS = [
 SAME_MONTH = r"same month in (\d{4})"
 # A price basis a national-accounts label starts with ("Current prices, euro per capita"): current prices leave an amount
 # as the amount it is; chain linked volumes (a real, not a nominal, measure) are read only for a rate of change, whose
-# comparison basis the rest of the label states, since a chain-linked level does not add up and has its own reference year.
+# comparison basis the rest of the label states, since a chain-linked level does not add up and has its own reference year
+# (the levels are reviewed rows, additive no, owner decision 11-25: kept as they are, never made from a label here).
 CURRENT_PRICES = "current prices, "
 CHAIN_LINKED = "chain linked volumes, "
 CHANGE = r"(percentage change|growth rate|annual average rate of change|rate of change)\b"
@@ -104,7 +105,7 @@ def read_label(label):
         if re.match(CHANGE, rest):
             return "%", "pct_change", "no", "%"
         # a chain-linked volume index ("Chain linked volumes, index 2020=100") is an index of its base year, written as
-        # I90 is (owner 11-20 17:3x: the recommended form); a chain-linked amount still gets no row
+        # I90 is (owner 11-20 17:3x: the recommended form); a chain-linked amount gets no generated row (its reviewed row holds it)
         m = re.fullmatch(r"index,? \(?(\d{4})=100\)?" + QUALIFIER, rest)
         return (f"指数({m.group(1)}=100)", "index_base", "no", "") if m else None
     low = low.removeprefix(CURRENT_PRICES)

@@ -2973,6 +2973,7 @@
     "renderer": "scene",
     "renderer_else": "3d",
     "style": "iso",
+    "strip_style": "geo",
     "accent": "#2f7f86",
     "relief": 0.4,
     "filler": [],

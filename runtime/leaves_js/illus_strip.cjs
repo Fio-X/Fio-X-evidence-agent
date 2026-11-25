@@ -7,11 +7,13 @@
 //         "kept": {piece: "kept/all"}} or {"refused": [why, ...]}.
 // The strip prints no number and no word: the cells' numbers are drawn with strokes. Every stroke is the ink or the accent
 // the request names, so the page's palette colours it; the strip has no ground of its own.
-// A set whose topic the scene renderer draws in the ink style (its pieces are one topic's list in the module's strip_topics,
-// and that topic's ../illus_hero/node.json topics.scenes entry has renderer "scene" and style "ink": the people topic) is
-// drawn instead as a row of people by the ink skin (../illus_hero/scene/people_lib, the skin the opening picture uses), nobody
-// lit, as decoration only: the skin's fills become line art (outlines and hatching, hidden lines removed), so the strip keeps
-// the same two pens and no fill; each figure is its own group, at least GAP_MIN px from the next, nothing under the ground.
+// A set whose topic the scene renderer draws (its pieces are one topic's list in the module's strip_topics, and that topic's
+// ../illus_hero/node.json topics.scenes entry has renderer "scene": people in the ink style, trade in geo, tech in iso) is
+// drawn instead as a row of people by that style's skin (../illus_hero/scene/people_lib, the skins the opening picture uses),
+// nobody lit, as decoration only. The ink skin's fills become line art (outlines and hatching, hidden lines removed): the two
+// pens and no fill. The flat skins (geo, iso) keep their shapes, each filled with one of the page's theme colours by name
+// (FILLS, the list src/next_leaf.rs STRIP_FILLS allows) and outlined in a pen. Each figure is its own group, at least GAP_MIN
+// px from the next, nothing under the ground.
 const path = require('path');
 const readline = require('readline');
 const rough = require('./roughjs-4.6.6.cjs.js');
@@ -19,6 +21,10 @@ const rough = require('./roughjs-4.6.6.cjs.js');
 const gen = rough.generator();
 const WIDTH = [600, 2000];
 const COLOUR = /^var\(--[a-z0-9-]+\)$/;
+// The page theme colours a flat-skin figure is filled with, by name (src/next_leaf.rs STRIP_FILLS, the same four): the paper,
+// the light grey, the second pen's grey, the ink. No other fill is written: FILL is the only way a fill reaches the svg.
+const FILLS = ['--bg', '--bar', '--t-sec', '--t-title'];
+const FILL = (c) => typeof c === 'string' && FILLS.some((t) => c === `var(${t})`);
 const MODULE = /^pieces-[a-z_]+\.cjs$/;
 // the pen per element class: its stroke knob, roughness factor and whether rough.js doubles the stroke
 const CLASS = { main: { knob: 'stroke_main', k: 1.0, multi: true }, mid: { knob: 'stroke_mid', k: 0.8, multi: false },
@@ -82,15 +88,14 @@ function people() {
     try {
       PEOPLE = { L: require(path.join(SCENE_DIR, 'people_lib/lib.mjs')), C: require(path.join(SCENE_DIR, 'people_lib/skins/common.mjs')),
         N: require(path.join(SCENE_DIR, 'normalize.mjs')),
-        ink: require(path.join(SCENE_DIR, 'people_lib/skins/ink.mjs')) };
+        skins: Object.fromEntries(['ink', 'iso', 'geo'].map((k) => [k, require(path.join(SCENE_DIR, `people_lib/skins/${k}.mjs`))])) };
     } catch (e) { PEOPLE = false; }
   }
   return PEOPLE || null;
 }
 
 // The scene style of a set's topic, or none: the topic is the module's strip_topics list holding exactly the set's pieces, its
-// look the hero registry's topics.scenes.<topic> (style, when its renderer is the scene renderer). Nothing new is mapped here.
-// Only the ink style draws a people strip; a topic of another style keeps its pieces.
+// look the hero registry's topics.scenes.<topic> (strip_style else style, when its renderer is the scene renderer). Nothing new is mapped here.
 function sceneStyle(set) {
   try {
     const T = set.strip_topics || JSON.parse(require('fs').readFileSync(path.join(__dirname, set.module.replace(/\.cjs$/, '.json')), 'utf8')).strip_topics;
@@ -99,7 +104,10 @@ function sceneStyle(set) {
     const own = names(set.pieces), topic = Object.keys(T.pieces).find((t) => names(T.pieces[t]) === own);
     if (!topic) return null;
     const sc = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'illus_hero', 'node.json'), 'utf8')).topics.scenes[topic];
-    return sc && sc.renderer === 'scene' && sc.style === 'ink' ? { topic, style: sc.style } : null;
+    // a topic may draw its page-bottom strip in another skin than its opening picture (strip_style: tech's iso feet float at
+    // the strip's size, so its strip is geo; the iso strip drawing stays for a topic that names it)
+    const style = sc && (sc.strip_style || sc.style);
+    return sc && sc.renderer === 'scene' && ['ink', 'iso', 'geo'].includes(style) ? { topic, style } : null;
   } catch (e) { return null; }
 }
 
@@ -183,15 +191,102 @@ function hatch(subs, th, sp, off) {
   return out;
 }
 
+// The flat skins' colours read back as the page's theme colours: each figure is dressed in the four tones (the tokens.css
+// values of FILLS, as the skins compute in hex), and every colour the skin derives from them (its shades) is taken as the
+// nearest tone by lightness, then written by name: dark the ink pen, mid the second pen, light --bar, paper --bg.
+const FLAT = { dark: '#292928', mid: '#707070', light: '#d4d4d4', paper: '#ffffff' };
+const FLAT_LUM = Object.entries(FLAT).map(([k, h]) => [k, lum(h)]);
+const flatTone = (h) => FLAT_LUM.reduce((a, b) => (Math.abs(b[1] - lum(h)) < Math.abs(a[1] - lum(h)) ? b : a))[0];
+function flatLooks(style, r) {
+  const T = FLAT;
+  if (style === 'geo') return { ink: T.dark, paper: T.paper, detail: T.paper, hair: T.dark, grey: T.mid };
+  const top = pick(r, [T.mid, T.light, T.paper, T.dark, T.mid]);
+  return { ink: T.dark, paper: T.paper, skin: T.light, hair: pick(r, [T.dark, T.dark, T.mid]), top, outer: top, bottom: pick(r, [T.dark, T.mid, T.dark]), shoe: T.dark, prop: T.mid };
+}
+
+// The iso skin's shoe is a low sole drawn along the heel and toe joints (from 0.05 head above the heel), while its leg stops at
+// the ankle (a trouser hem 0.12 head above it): with the ankle some 0.25 head over the heel nothing joins the two, so a foot that
+// is lifted (a stride, a step) or set back in depth (the iso view draws it higher) shows a shoe hanging apart from its leg. For
+// the strip each foot is moved, heel and toe together (its length and its angle kept), so that the shoe's line starts SEAT head above
+// the ankle: the shoe (0.13 head round its line) then covers the leg's end and the hem. The figure is set on the ground after.
+const SEAT = 0.02; // head units the shoe's line starts above the ankle (the skin starts it 0.05 above the heel)
+const SHOE_FROM = 0.05, HEM = 0.12; // the iso skin's shoe start above the heel and trouser hem above the ankle
+function seatFeet(fig) {
+  const out = { ...fig, joints: { ...fig.joints } };
+  for (const s of ['L', 'R']) {
+    const an = fig.joints['an' + s], heel = fig.joints['heel' + s], toe = fig.joints['toe' + s];
+    if (!an || !heel || !toe) continue;
+    const d = [0, 1, 2].map((k) => an[k] - heel[k] + (k === 1 ? SEAT - SHOE_FROM : 0));
+    out.joints['heel' + s] = heel.map((v, k) => v + d[k]);
+    out.joints['toe' + s] = toe.map((v, k) => v + d[k]);
+  }
+  return out;
+}
+// The poses that lean on or stand on a thing of the scene (a pose's needs other than a partner: the wall): the strip draws no
+// wall, so such a figure would lean on nothing with a foot up in the air; the iso strip leaves them out of the row.
+const leansOnNothing = (L, fig) => { const p = L.getPose(fig.pose); return !!(p && p.needs && p.needs !== 'partner'); };
+
+// One flat-skin figure as filled shapes: {shapes: [{subs, fill, stroke, sw}, ...] in the skin's order, feet} or none. The shapes
+// are set with their lowest drawn point on the ground and fitted under the top margin, then cut at the ground line; a fill is a
+// FILLS name outlined thinly in a pen (the light ones in the second pen, so a pale shirt keeps its edge on the paper), a pen line
+// of the skin is the ink or the second pen; anything lighter than that, or seen through, is left out. With feet (iso, a test's
+// measure), feet lists each foot as {side, hem, shoe}: the leg's end (the trouser hem's centre, HEM head above the ankle) and the
+// shoe's outline (the skin drawn again with a marker shoe colour), both placed as the shapes are, before the cut.
+const SHOE_MARK = '#0a0b0c';
+function flatFigure(M, style, fig, fr, seed, YG, FH, turn, fills, feet = false) {
+  const { N, C } = M, skin = M.skins[style];
+  if (style === 'iso') fig = seatFeet(fig);
+  const px = (FH / fig.height) * (fig.scale || 1), pal = flatLooks(style, fr);
+  const draw = (palette) => N.normalizeFragment(skin.drawFigure(fig, { x: 0, y: YG, px, palette, seed: fig.seed, turn, ...(style === 'iso' ? { dark: 0.45 } : {}) }),
+    { px, seed: (fig.seed ^ seed) >>> 0, palette }).filter((e) => e.op >= 0.9 && !e.wash);
+  let items = draw(pal);
+  if (!items.length) return null;
+  const subsOf = (e) => N.flatten(e.d).filter((u) => u.pts.length >= 2);
+  const moves = [];
+  const move = (f) => { moves.push(f); items = items.map((e) => ({ ...e, d: N.writeD(subsOf(e).map((u) => ({ closed: u.closed, pts: u.pts.map(f) }))) })); };
+  const drawn = (e) => (e.fill !== 'none' && flatTone(e.fill) !== 'paper') || (e.stroke !== 'none' && e.sw > 0 && ['dark', 'mid'].includes(flatTone(e.stroke)));
+  const low = bbox(items.filter(drawn).flatMap(subsOf))[3];
+  if (low !== YG) move(([x, y]) => [x, y + YG - low]); // up or down: the iso view sets the near foot lower than the far one
+  const top = bbox(items.flatMap(subsOf))[1], fit = Math.min(1, (YG - 4) / Math.max(1, YG - top));
+  if (fit < 1) move(([x, y]) => [x * fit, YG + (y - YG) * fit]);
+  let foot = null;
+  if (feet && style === 'iso') {
+    const at = (p) => moves.reduce((q, f) => f(q), p), J = C.posedJoints(fig, turn), C30 = Math.cos(Math.PI / 6);
+    const S = (p) => at([(p[0] - p[2]) * C30 * px, YG + (p[0] + p[2]) * 0.5 * px - p[1] * px]); // the skin's projection
+    const shoes = draw({ ...pal, shoe: SHOE_MARK }).filter((e) => String(e.fill).toLowerCase() === SHOE_MARK).map((e) => subsOf(e).map((u) => u.pts.map(at)).flat());
+    foot = ['L', 'R'].map((s) => {
+      const toe = S(J['toe' + s]), near = (pts) => Math.min(...pts.map(([x, y]) => Math.hypot(x - toe[0], y - toe[1])));
+      return { side: s, hem: S([J['an' + s][0], J['an' + s][1] + HEM, J['an' + s][2]]), shoe: shoes.length ? shoes.reduce((a, b) => (near(b) < near(a) ? b : a)) : null };
+    });
+  }
+  const shapes = [];
+  for (const e of N.cutBelow(items, YG)) {
+    const subs = subsOf(e);
+    if (!subs.length) continue;
+    if (e.fill !== 'none') {
+      const tone = flatTone(e.fill);
+      shapes.push({ subs: subs.map((u) => ({ pts: u.pts, closed: true })), fill: fills[tone], stroke: tone === 'dark' ? fills.dark : fills.mid, sw: tone === 'dark' || tone === 'mid' ? 0.5 : 0.6 });
+    }
+    if (e.stroke !== 'none' && e.sw > 0) {
+      const tone = flatTone(e.stroke);
+      if (tone === 'dark' || tone === 'mid') shapes.push({ subs, fill: 'none', stroke: tone === 'dark' ? fills.dark : fills.mid, sw: e.sw });
+    }
+  }
+  return shapes.length ? { shapes, feet: foot } : null;
+}
+
 // A row of people across the strip: the people library's street crowd (nobody lit: the strip has no subject), each figure drawn
-// by the ink skin on its own, its tones redrawn as line art in the two pens, cut at the ground line, then the figures set side
-// by side by their boxes, GAP_MIN apart at least: one that does not fit is left out, never squeezed; the room left widens
-// the gaps so the row spans the strip.
+// by the style's skin on its own (the ink skin's tones redrawn as line art in the two pens, a flat skin's shapes filled with the
+// page's theme colours), cut at the ground line, then the figures set side by side by their boxes, GAP_MIN apart at least: one
+// that does not fit is left out, never squeezed; the room left widens the gaps so the row spans the strip. A flat style whose
+// pens are no FILLS names is not drawn (the caller keeps the pieces).
 const GAP_MIN = 8; // px between two figures' boxes (stroke points), the 6 asked and a pen's width
-function sceneStrip(W, H, YG, seed, pens) {
+function sceneStrip(style, W, H, YG, seed, pens, { feet = false } = {}) { // feet: each placed iso figure's feet (a test's measure)
   const M = people();
   if (!M) return null;
-  const { L, C, N } = M, skin = M.ink;
+  const fills = { dark: pens.ink, mid: pens.second, light: 'var(--bar)', paper: 'var(--bg)' };
+  if (style !== 'ink' && !Object.values(fills).every(FILL)) return null;
+  const { L, C, N } = M, skin = M.skins[style];
   const FH = (YG - TOP) * 0.96, slot = FH * 0.44, n = Math.max(3, Math.ceil(W / slot));
   const r = rng(Math.imul(seed, 2654435761) >>> 0);
   const crowd = L.makeCrowd({ n, seed, scene: 'street', highlightK: 0, layout: { type: 'queue', w: W, h: FH } });
@@ -199,11 +294,18 @@ function sceneStrip(W, H, YG, seed, pens) {
   const figs = [];
   crowd.items.forEach((it, i) => {
     let fig = it.figure; fig.highlight = false;
-    if (fig.height < skin.info.headRatio) fig = L.resampleHeight(fig, skin.info.headRatio);
+    if (style === 'iso') fig = L.resampleHeight(fig, skin.info.headRatio); else if (fig.height < skin.info.headRatio) fig = L.resampleHeight(fig, skin.info.headRatio);
     const fr = rng((fig.seed ^ (i * 7919)) >>> 0), pi = fig.partner;
     let target = (fr() < 0.5 ? -1 : 1) * (40 + fr() * 50);
     if (pi !== null && pi !== undefined && pi < n) target = (pi > i ? 1 : -1) * (60 + fr() * 20);
-    const turn = C.turnToFace(fig, target), px = (FH / fig.height) * (fig.scale || 1), pal = looks(fr);
+    const turn = C.turnToFace(fig, target);
+    if (style !== 'ink') {
+      if (style === 'iso' && leansOnNothing(L, fig)) return;
+      const f = flatFigure(M, style, fig, fr, seed, YG, FH, turn, fills, feet);
+      if (f) figs.push({ shapes: f.shapes, feet: f.feet, pose: fig.pose, x: bbox(f.shapes.flatMap((q) => q.subs)) });
+      return;
+    }
+    const px = (FH / fig.height) * (fig.scale || 1), pal = looks(fr);
     const items = [];
     for (const e of N.normalizeFragment(skin.drawFigure(fig, { x: 0, y: YG, px, palette: pal, seed: fig.seed, turn }), { px, seed: (fig.seed ^ seed) >>> 0, palette: pal })) {
       const subs = N.flatten(e.d).filter((u) => u.pts.length >= 2);
@@ -248,10 +350,16 @@ function sceneStrip(W, H, YG, seed, pens) {
   const used = figs.slice(0, k), extra = gaps.slice(0, Math.max(0, k - 1)), weight = extra.reduce((a, g) => a + g, 0) || 1;
   const spare = room - need(k);
   let x = side + (k === 1 ? spare / 2 : 0), body = '';
+  const placed = [];
   used.forEach((f, i) => {
     const dx = x - f.x[0];
+    if (f.feet) placed.push({ pose: f.pose, feet: f.feet.map((t) => ({ side: t.side, hem: [t.hem[0] + dx, t.hem[1]], shoe: t.shoe && t.shoe.map(([px, py]) => [px + dx, py]) })) });
     let g = '';
-    for (const [key, runs] of f.lines) {
+    if (f.shapes) for (const q of f.shapes) { // a flat figure: its shapes in the skin's order, each fill a FILLS name
+      const d = N.writeD(q.subs.map((u) => ({ pts: u.pts.map(([px, py]) => [px + dx, py]), closed: u.closed })));
+      if (d && (q.fill === 'none' || FILL(q.fill))) g += `<path d="${d}" stroke="${q.stroke}" stroke-width="${q.sw}" fill="${q.fill}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    else for (const [key, runs] of f.lines) {
       const cut = key.lastIndexOf('|'), d = N.writeD(runs.map((p) => ({ pts: p.map(([px, py]) => [px + dx, py]), closed: false })));
       if (d) g += `<path d="${d}" stroke="${key.slice(0, cut)}" stroke-width="${+key.slice(cut + 1)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
@@ -260,10 +368,10 @@ function sceneStrip(W, H, YG, seed, pens) {
   });
   const gl = []; for (let gx = 4; gx <= W - 4; gx += 8) gl.push([gx, YG + 1 + Math.sin(gx * 0.05 + seed) * 0.6]);
   body += `<path d="${N.writeD([{ pts: gl, closed: false }])}" stroke="${pens.ink}" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-  return { svg: `<g>${body}</g>`, figures: k, lit: 0 };
+  return { svg: `<g>${body}</g>`, figures: k, lit: 0, ...(feet ? { feet: placed } : {}) };
 }
 
-function strip(req) {
+function strip(req, { scene = true } = {}) { // scene false: the pieces even for a scene topic (a test's byte check)
   const off = [], set = req.set || {};
   if (typeof set.module !== 'string' || !MODULE.test(set.module)) return { refused: [`set: ${JSON.stringify(set.module)} is no piece module; e.g. pieces-energy.cjs`] };
   if (!Array.isArray(set.pieces) || !set.pieces.length || !Array.isArray(set.knobs)) return { refused: ['set: no pieces or no knobs'] };
@@ -281,7 +389,10 @@ function strip(req) {
   const H = K.height, YG = K.baseline, R = K.roughness, PAD = K.margin;
   // a set of a scene-renderer topic, asked with no family and no count (the page's own request): its people, if they load
   const look = req.family === undefined && req.count === undefined ? sceneStyle(set) : null;
-  const crowd = look && sceneStrip(W, H, YG, K.seed, { ink: req.ink, second: req.accent });
+  const crowd = look && scene && sceneStrip(look.style, W, H, YG, K.seed, { ink: req.ink, second: req.accent });
+  // the strip's own check of its fills before it leaves: none, or a FILLS name; any other colour refuses the strip
+  const foreign = crowd ? [...new Set([...crowd.svg.matchAll(/ fill="([^"]*)"/g)].map((m) => m[1]).filter((c) => c !== 'none' && !FILL(c)))] : [];
+  if (foreign.length) return { refused: foreign.map((c) => `fill: ${JSON.stringify(c)} is no page theme colour; e.g. var(${FILLS[0]})`) };
   if (crowd) return { svg: crowd.svg, w: W, h: H, dropped: [], kept: {}, topic: look.topic, style: look.style, figures: crowd.figures, lit: crowd.lit };
   const free = W - (PIECES.length - 1) * K.gap, weight = PIECES.reduce((a, p) => a + p.cell, 0);
   const pen = (e, seed, s) => {
@@ -322,4 +433,4 @@ if (require.main === module) readline.createInterface({ input: process.stdin }).
   process.stdout.write(JSON.stringify(reply) + '\n');
 });
 
-module.exports = { strip, sceneStyle, sceneStrip };
+module.exports = { strip, sceneStyle, sceneStrip, FILLS };

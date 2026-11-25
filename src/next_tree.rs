@@ -13949,6 +13949,19 @@ mod tests {
             [false, false],
             "a share, a rate"
         );
+        // a chain-linked level is read (owner decision 11-25) but its row says it does not add up: no share of its sum
+        assert_eq!(
+            [
+                adds(&[Some("CLV10_MEUR"), Some("CLV10_MEUR")]),
+                adds(&[Some("CLV20_EUR_HAB"), Some("CLV20_EUR_HAB")])
+            ],
+            [false, false],
+            "a chain-linked level"
+        );
+        assert_eq!(
+            (unit_additive("CLV10_MEUR"), unit_additive("CLV20_EUR_HAB")),
+            (Ok(false), Ok(false))
+        );
         assert_eq!(
             [
                 adds(&[None, None]),
