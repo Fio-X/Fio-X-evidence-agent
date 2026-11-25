@@ -219,9 +219,10 @@ def ledger(req, composed, names):
     return rows, facts
 
 
-def draw_all(test, req, names, picks):
+def draw_all(test, req, names, picks, extra=()):
     composed = FN.compose({**req, "picks": picks})
     rows, facts = ledger(req, composed, names)
+    rows += list(extra)   # more ledger entries the page's request holds (a unit's name entry)
     K.setup(rows, names, run.tables)
     drawn = {}
     for layer, data in composed["leaves"].items():
@@ -2198,6 +2199,50 @@ class NotesStandAgainstAReference(unittest.TestCase):
         req, names = eu27_request()
         self.stands_against_the_lowest(req, names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", False)
         self.stands_against_the_lowest(self.pct(req), names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", True)
+
+
+class UnitNameHoldsADigit(unittest.TestCase):
+    """A unit whose short name holds a digit (a chain-linked volume's base year) comes to the child as the unit table's name entry
+    (words.unit_src), never as typed words: every leaf that prints the unit prints that entry, marked with its src, and no digit is
+    left in a word. A digit in the unit words with no such entry is still refused."""
+
+    SRC = "name:unit_short_zh:CLV20_EUR_HAB"
+    NAME = "欧元/人（2020年不变价）"
+
+    def req(self):
+        req, names = eu27_plain(whole=True)
+        return {**req, "words": {"measure": "人均国内生产总值", "unit": self.NAME, "unit_src": self.SRC}}, names
+
+    def test_a_digit_in_the_unit_words_alone_is_refused(self):
+        req, _ = self.req()
+        with self.assertRaisesRegex(FN.Refused, "digit"):
+            FN.candidates({**req, "words": {"measure": "人均国内生产总值", "unit": self.NAME}})
+        with self.assertRaisesRegex(FN.Refused, "digit"):
+            FN.candidates({**req, "words": {"measure": "前20国", "unit": "欧元/人", "unit_src": self.SRC}})
+        with self.assertRaisesRegex(FN.Refused, "name:unit_short_zh"):
+            FN.candidates({**req, "words": {"measure": "人均国内生产总值", "unit": "欧元/人", "unit_src": "fact:a.n"}})
+
+    def test_every_leaf_prints_the_unit_as_the_name_entry(self):
+        req, names = self.req()
+        seen = 0
+        for picks in (["rank", "movers", "ends"], ["ends", "rank", "overtake"], ["path", "members", "below"]):
+            try:
+                composed, _, drawn = draw_all(self, req, names, picks, extra=[{"src": self.SRC, "text": self.NAME}])
+            except FN.Refused:
+                continue
+            for layer, data in composed["leaves"].items():
+                if isinstance(data, dict) and "unit" in data:
+                    self.assertEqual(data["unit"], [{"src": self.SRC}], layer)
+                    self.assertIn(f'data-src="{self.SRC}"', str(drawn[layer]), layer)
+                    seen += 1
+        self.assertGreater(seen, 3)
+
+    def test_a_unit_with_no_digit_still_goes_as_words(self):
+        req, names = eu27_plain(whole=True)
+        composed, _, _ = draw_all(self, req, names, ["rank", "movers", "ends"])
+        units = [d["unit"] for d in composed["leaves"].values() if isinstance(d, dict) and "unit" in d]
+        self.assertTrue(units and all(u == [{"w": req["words"]["unit"]}] for u in units), units)
+
 
 if __name__ == "__main__":
     unittest.main()
