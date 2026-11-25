@@ -448,7 +448,19 @@ def chart(body, layer, size, sid, label, desc, over="", pos="", origin=(0.0, 0.0
             f'{over}<p id="desc-{sid}" hidden>{desc}</p></div>')
 
 
-def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None):
+def opening_caption(spec, drawn_as):
+    """The line under the opening picture when it is drawn as a share of figures (drawn_as.illus_hero, the picture child's scene name, ends in
+    ".proportion"): the lead section's picture.caption (findings.py: the member, the claim's own fact, the measure's name) as html; "" otherwise.
+    The page does not know the topic's renderer: only the child's reply says whether the share was drawn (layer 1 passes its scene name on)."""
+    if not str((drawn_as or {}).get("illus_hero") or "").endswith(".proportion"): return ""
+    lead = next((s for s in spec.get("sections") or [] if isinstance(s, dict) and s.get("title") is not None), None)
+    cap = ((lead or {}).get("picture") or {}).get("caption")
+    if not cap: return ""
+    if not isinstance(cap, list): raise FX.Refused("page: the opening picture's caption is no list of segments")
+    return f'<p class="opening-cap" data-cap="proportion">{seg_html(cap, "the opening picture caption")}</p>'
+
+
+def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None, drawn_as=None):
     """The page around the layers the panel drew (`got`, layer -> svg), as the module docstring says; {"html"} or {"refused": [...]}."""
     c, spec, f = panel.c, panel.spec, panel.f
     secs = sections(spec)
@@ -515,6 +527,8 @@ def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None):
     for how, ids in rows:
         for i in ids: body.append(sec(i, "pair" if how == "pair" else how))
         if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], accent_only(spec)))
+    note = opening_caption(spec, drawn_as) if "illus_hero" in got else ""
+    marks += printed(note)
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)
@@ -531,8 +545,10 @@ def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None):
         w, h = sizes["illus_hero"]
         # a picture that leaves members out (a ranking draws its head and tail) says so in words, with no number
         cap = f'<p class="opening-cap">{word("story.hero.left_out")}</p>' if (left_out or {}).get("illus_hero") else ""
-        opening = (f'<div class="opening" aria-hidden="true"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}">'
-                   f'<g data-layer="illus_hero">{got["illus_hero"]}</g></svg>{cap}</div>')
+        svg = f'<svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}"><g data-layer="illus_hero">{got["illus_hero"]}</g></svg>'
+        # the picture is hidden from a screen reader; a line under it with a number is read (the picture alone, as before, hides the block)
+        hidden = svg.replace("<svg ", '<svg aria-hidden="true" ', 1)
+        opening = f'<div class="opening">{hidden}{cap}{note}</div>' if note else f'<div class="opening" aria-hidden="true">{svg}{cap}</div>'
     strip = ""
     if "illus_strip" in got:
         import column

@@ -116,7 +116,19 @@ for (const [svg, bad] of [
 
 // ---------- the node ----------
 function ask(req, raw = null) {
-  const out = execFileSync(process.execPath, [SCENE], { input: (raw ?? JSON.stringify(req)) + '\n', timeout: 30000 }).toString();
+  // a child that dies of the machine (timeout, killed, broken pipe under load) is started once more; anything else is a finding,
+  // reported with the reason (the first test-diff pass once failed here with no reason on a loaded machine)
+  const input = (raw ?? JSON.stringify(req)) + '\n';
+  let out;
+  for (let attempt = 1; ; attempt++) {
+    try { out = execFileSync(process.execPath, [SCENE], { input, timeout: 120000 }).toString(); break; }
+    catch (e) {
+      const infra = e.code === 'ETIMEDOUT' || e.code === 'EPIPE' || e.signal === 'SIGKILL' || e.signal === 'SIGTERM';
+      const why = `scene child failed (attempt ${attempt}): code=${e.code} signal=${e.signal} status=${e.status} stderr=${String(e.stderr || '').slice(0, 300)}`;
+      if (infra && attempt < 2) { console.error(why + ' -- trying once more'); continue; }
+      fail(why); return { reply: { refused: 'child failed' }, bytes: 0 };
+    }
+  }
   const lines = out.split('\n').filter((l) => l.length);
   if (lines.length !== 1 || !out.endsWith('\n')) fail(`scene wrote ${lines.length} lines, not one`);
   return { reply: JSON.parse(lines[0]), bytes: out.length };

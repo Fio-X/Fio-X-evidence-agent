@@ -1518,6 +1518,9 @@ fn drawn(
             if !left_out.is_empty() {
                 request["left_out"] = Value::Object(left_out);
             }
+            if let Some(drawn) = drawn_as(given) {
+                request["drawn_as"] = drawn;
+            }
         }
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
@@ -1741,6 +1744,20 @@ pub struct Strip {
     /// 0 for a strip and for a picture that draws them all. The page's caption says only that the middle is left out, with
     /// no number (a number would be a page number, owed a fact).
     pub omitted: u64,
+    /// The scene the opening picture's child says it drew (its reply's `scene`, e.g. "people.proportion"); empty for a strip
+    /// and for a reply that names none. The page is told it (drawn_as) and decides from it what it prints.
+    pub scene: String,
+}
+
+/// What each given piece was drawn as, by its layer name (the child's scene name, passed on as it is: the page decides what it
+/// prints from it); none when no piece names a scene.
+fn drawn_as(given: &[(&str, &Strip)]) -> Option<Value> {
+    let drawn: serde_json::Map<String, Value> = given
+        .iter()
+        .filter(|(_, s)| !s.scene.is_empty())
+        .map(|(name, s)| (name.to_string(), json!(s.scene)))
+        .collect();
+    (!drawn.is_empty()).then_some(Value::Object(drawn))
 }
 
 /// The strip one request draws, through one child started by `runner`: taken only when it is as wide as asked and
@@ -1780,6 +1797,7 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
         dropped: strs(&reply, "dropped"),
         ms: started.elapsed().as_millis(),
         omitted: 0,
+        scene: String::new(),
     })
 }
 
@@ -1958,6 +1976,7 @@ pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
         dropped: strs(&reply, "dropped"),
         ms: started.elapsed().as_millis(),
         omitted: reply["omitted"].as_u64().unwrap_or(0),
+        scene: reply["scene"].as_str().unwrap_or_default().to_string(),
     })
 }
 
@@ -2835,6 +2854,15 @@ mod tests {
         let drawn = format!(r#"{{"svg": "{svg}", "w": 1140.0, "h": 443.33, "dropped": []}}"#);
         let got = hero(&child(&drawn), &ask).unwrap();
         assert_eq!((got.w, got.h), (1140.0, 443.33));
+        assert_eq!(got.scene, "");
+        let named = drawn.replace(
+            r#""dropped": []"#,
+            r#""dropped": [], "scene": "people.proportion""#,
+        );
+        assert_eq!(
+            hero(&child(&named), &ask).unwrap().scene,
+            "people.proportion"
+        );
         assert_eq!(
             hero(
                 &child(r#"{"unavailable": "Blender is not installed"}"#),
@@ -2860,6 +2888,41 @@ mod tests {
         };
         assert!(
             matches!(hero(&missing, &ask), Err(HeroMiss::Unavailable(w)) if w.contains("did not start"))
+        );
+    }
+
+    /// The page is told what each given piece was drawn as, by its layer name: the child's scene name passed on as it is
+    /// (a proportion's and a ranking's alike; story.py decides what prints), nothing for a piece that names no scene (a strip),
+    /// and none at all when no piece names one; the left-out flag is its own and unchanged.
+    #[test]
+    fn the_page_is_told_the_scene_each_given_piece_was_drawn_as() {
+        let piece = |scene: &str, omitted: u64| Strip {
+            svg: "<g></g>".into(),
+            w: 1140.0,
+            h: 400.0,
+            dropped: vec![],
+            ms: 1,
+            omitted,
+            scene: scene.into(),
+        };
+        let (share, rank, strip) = (
+            piece("people.proportion", 0),
+            piece("energy.rank", 7),
+            piece("", 0),
+        );
+        assert_eq!(
+            drawn_as(&[("illus_hero", &share)]),
+            Some(json!({"illus_hero": "people.proportion"}))
+        );
+        assert_eq!(
+            drawn_as(&[("illus_hero", &rank)]),
+            Some(json!({"illus_hero": "energy.rank"}))
+        );
+        assert_eq!(drawn_as(&[("illus_strip", &strip)]), None);
+        assert_eq!(drawn_as(&[]), None);
+        assert_eq!(
+            drawn_as(&[("illus_hero", &share), ("illus_strip", &strip)]),
+            Some(json!({"illus_hero": "people.proportion"}))
         );
     }
 

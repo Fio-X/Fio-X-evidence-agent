@@ -1768,9 +1768,12 @@ def compose(r):
             lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
             # the lead's own rows, for the opening picture: the angle's own subject, and beside it a rate its claim reads off one member as a share of figures
             subject, prop = q.illus.get(c["id"]), illus_proportion(q, c)
-            if prop: subject = {**(subject or {}), "proportion": prop}
+            picture = {"subject": subject} if subject else {}
+            if prop:   # and the line under that picture, when it is drawn as the share: the member, the claim's own fact, the measure's name
+                picture = {"subject": {**(subject or {}), "proportion": prop},
+                           "caption": ST("story.opening.proportion", c=[v for kind, v in c["claim"]["head"] if kind == "n"][0], share=num[len("fact:"):], m=q.words["measure"])}
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead),
-                             **({"picture": {"subject": subject}} if subject else {})})
+                             **({"picture": picture} if picture else {})})
         else:
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
                              "text": wording(c["text"])})

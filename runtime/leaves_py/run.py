@@ -484,12 +484,12 @@ def drawn(svg):
 NOT_LEAF = ("top", "band", "strip", "row", "bignums")
 
 
-def page(panel, got, sizes=None, left_out=None):
+def page(panel, got, sizes=None, left_out=None, drawn_as=None):
     """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
     page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
     if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
-    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW, OVER, left_out or {})
+    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW, OVER, left_out or {}, drawn_as or {})
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     # the events layer only for a page with sourced events (a ring of a table's months alone has none to hang)
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin) and (n != "events" or spec.get("events"))]
@@ -758,7 +758,7 @@ def main():
             CLAIM_WORDS = req.get("claim_words")
             if off: out = {"refused": [f"page: {off}"]}
             else:
-                try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {}, req.get("left_out") or {})
+                try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {}, req.get("left_out") or {}, req.get("drawn_as") or {})
                 except FX.Refused as e: out = {"refused": [f"page: {e}"]}
         elif name not in layers: out = {"error": f"no {node} layer {name}"}
         elif off: out = {"refused": [f"{name}: {off}"]}
