@@ -10,7 +10,9 @@ image packages blocked: the run needs the standard library only) and another mem
 (a Python mirror of next_leaf.rs hero_faults: g, path, image, defs, mask, linearGradient, stop; hex colours; png/jpeg data URLs), holds no text,
 and its accent figures (accent blocks under a clothing mask) are the declared count, its figures (outline masks) the member count; the svg is at
 most 3 MB, the pack at most 6 MB and each piece at most 150 KB; every piece's sha256 is the pack's, every figure has a CC0/PDM licence row; at least 25 figures wear
-the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 32 px at the largest tier.
+the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 32 px at the largest tier. A short
+queue (10, 12, 14 figures; made-up and EU member codes) is seen close: at most 35% blank paper (40 px cells, on the drawn outlines), heads in the
+top third, people standing close, none cut by the edge; the 30-figure queue's geometry is pinned by its sha256.
 Run: python3 -I -B scripts/test_illus_collage.py"""
 import csv
 import hashlib
@@ -350,7 +352,8 @@ class Collage(unittest.TestCase):
             if not k:
                 self.assertEqual(accent_figures(svg, ACCENT), (0, comp["objects"])); self.assertNotIn("r", comp["queue_flags"]); continue
             self.assertIn(comp["hero"], comp["red"], name); self.assertIn('id="clg-ch"', svg, name)
-            self.assertTrue(lo <= comp["hero_h"] <= hi, name); self.assertAlmostEqual(comp["hero_box"][3] / 560, comp["hero_h"], places=3)
+            near = R.CR["close"]["shift"]["hero_h"] * comp["close"]          # a short queue is seen closer (close_knobs): the hero's knob moved by its shift
+            self.assertTrue(lo + near <= comp["hero_h"] <= hi + near, name); self.assertAlmostEqual(comp["hero_box"][3] / 560, comp["hero_h"], places=3)
             self.assertGreater(comp["hero_foot"], max(comp["queue_feet"]), name)              # in front of every queue figure
             self.assertGreater(comp["hero_box"][3], max(comp["queue_heights"]), name)         # and the largest
             self.assertLess(comp["hero_box"][0] + comp["hero_box"][2] / 2, 1440 / 3, name)   # in the left-front third
@@ -358,14 +361,14 @@ class Collage(unittest.TestCase):
             self.assertLess(svg.index('id="clg-sh"'), svg.index('id="clg-grain"')); self.assertGreater(svg.index('id="clg-sh"'), svg.rindex('id="clg-s', 0, svg.index('id="clg-sh"')))
             if comp["queue"] < 2: continue
             hb = comp["hero_box"]; hx = hb[0] + hb[2] / 2; qx, qy, qh = comp["queue_x"], comp["queue_feet"], comp["queue_heights"]
-            kn = {n: s["default"] for n, s in R.REG["composition_knobs"].items() if s.get("renderers") == ["collage"]}
-            self.assertAlmostEqual(qx[0] - hx, kn["queue_gap"] * hb[3], delta=0.6, msg=name)      # the queue's first figure right behind the hero
+            gap, (far_x, far_foot) = comp["queue_gap"], comp["queue_far"]          # the knobs the queue is drawn at (the defaults, moved by the close view)
+            self.assertAlmostEqual(qx[0] - hx, gap * hb[3], delta=0.6, msg=name)      # the queue's first figure right behind the hero
             self.assertLess(qx[0] - 0.5 * R.CR["queue"]["aspect"] * qh[0], hb[0] + hb[2], name)    # touching it: no gap between hero and queue
             self.assertGreater(qh[0], 0.8 * hb[3], name)                                            # the hero is the queue's front figure, enlarged
             self.assertTrue(all(a < b for a, b in zip(qx, qx[1:])) and all(a > b for a, b in zip(qh, qh[1:])) and all(a > b for a, b in zip(qy, qy[1:])), name)   # one sweep: right, smaller, higher
-            line = lambda x: comp["hero_foot"] + (kn["queue_far_foot"] * 560 - comp["hero_foot"]) * (x - hx) / (kn["queue_far_x"] * 1440 - hx)
+            line = lambda x: comp["hero_foot"] + (far_foot - comp["hero_foot"]) * (x - hx) / (far_x - hx)
             self.assertTrue(all(abs(y - line(x)) < 0.6 for x, y in zip(qx, qy)), name)               # every foot on the line from the hero's feet to the far end
-            self.assertLessEqual(qx[-1], kn["queue_far_x"] * 1440 + 0.6, name)
+            self.assertLessEqual(qx[-1], far_x + 0.6, name)
 
     def test_three_shapes_k3_k13_k29_counts_groups_and_hero(self):
         G = R.CR["group"]
@@ -468,7 +471,54 @@ class Collage(unittest.TestCase):
         with self.assertRaises(R.Refused): R.build_collage({**prop_req(0.105, count=3), "composition": {"queue_gap": 0.9}})
         with self.assertRaisesRegex(R.Refused, "only the collage"): R.build_scene({"family": "pop65", "lead": "members", "width": 1140, "subject": people_req()["subject"], "composition": {"hero_h": 0.55}})
         a = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.6}})
-        self.assertEqual((a[5]["hero_h"], b[5]["hero_h"]), (0.5, 0.6)); self.assertNotEqual(a[0], b[0])
+        near = R.CR["close"]["shift"]["hero_h"]          # 10 figures: seen fully close, the knob moved by its shift
+        self.assertEqual((a[5]["close"], a[5]["hero_h"], b[5]["hero_h"]), (1.0, round(0.5 + near, 4), round(0.6 + near, 4))); self.assertNotEqual(a[0], b[0])
+        a = R.build_collage({**top_req(30, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(30, 3), "composition": {"hero_h": 0.6}})
+        self.assertEqual((a[5]["close"], a[5]["hero_h"], b[5]["hero_h"]), (0.0, 0.5, 0.6)); self.assertNotEqual(a[0], b[0])          # 30 figures: the knob as it is
+
+    def test_a_short_queue_fills_the_sheet_and_thirty_keep_their_geometry(self):
+        """A short queue (N <= close.ramp[0]) is seen close: its blank paper is at most 35% of the picture at N = 10 (two member lists of
+        made-up codes and one of real EU codes) and at N = 12 and 14, its figures' heads reach into the top third, its spacing is tight (at most
+        close.fac_max x the mean width of two neighbours) and no figure is cut by the sheet's edge. Blank paper is counted on the drawn geometry:
+        every figure's 1-bit outline grid (pack.json grid.sil) painted at its drawn box onto 4 px cells, then the 40 px cells of the 1440 x 560
+        frame with at most 2% of their area painted (the faint far figures included, shadows and grain not). At N = 30 the queue's geometry
+        (hero box, queue x, feet and heights) is pinned by its sha256, at both widths and for a proportion: the close view is off from N = 24."""
+        def blank(svg, comp):
+            cov = CD.Cover(4); ids = {f"clg-s{j}": p for j, p in enumerate(comp["pieces"][:comp["queue"]])}
+            if comp["hero"]: ids["clg-sh"] = comp["pieces"][-1]
+            ids.update({f"clg-f{j}": p for j, p in enumerate(comp["far_pieces"])}); boxes = []
+            for m in re.finditer(r'<g transform="translate\(([-0-9.]+),([-0-9.]+)\)"><defs><mask id="(clg-[sf](?:\d+|h))"><image href="[^"]*" width="([0-9.]+)" height="([0-9.]+)"', svg):
+                g = FIGS[ids[m.group(3)].split(".")[0]]["grid"]; box = tuple(float(m.group(i)) for i in (1, 2, 4, 5))
+                cov.paint(box, CD.grid_bits(g["sil"], g["w"], g["h"]), g["w"], g["h"]); boxes.append((m.group(3), box))
+            self.assertEqual(len(boxes), len(ids))
+            tot = bl = 0
+            for cy in range(0, cov.rows, 10):
+                for cx in range(0, cov.cols, 10):
+                    sub = [cov.on[y * cov.cols + x] for y in range(cy, min(cov.rows, cy + 10)) for x in range(cx, min(cov.cols, cx + 10))]
+                    tot += 1; bl += sum(sub) <= 0.02 * len(sub)
+            return bl / tot, boxes
+        sys.path.insert(0, COLLAGE); import draw as CD
+        FIGS = {f["id"]: f for f in Pack.index_of()["figures"]}; C = R.CR["close"]; asp = R.CR["queue"]["aspect"]
+        eu = {"family": "unemployment", "lead": "members", "width": 1440, "accent": ACCENT,
+              "subject": {"members": [{"code": c, "value": v} for c, v in list(zip(CODES, RATES))[:10]], "rule": {"op": "gt", "ref": 6.0}, "declared": {"count": 4, "total": 10}}}
+        for name, req in (("n10 M", top_req(10, 3, width=1440)), ("n10 A", top_req(10, 4, width=1440, pre="A")), ("n10 EU", eu), ("n12", top_req(12, 5, width=1440)), ("n14", top_req(14, 5, width=1440))):
+            svg, w, h, secs, scene, comp = R.build_collage(req); inner = svg[svg.index(">") + 1:]
+            share, boxes = blank(inner, comp)
+            self.assertEqual(comp["close"], 1.0, name); self.assertLessEqual(share, 0.35, (name, round(share, 4)))
+            self.assertLess(min(b[1] for _, b in boxes), 560 / 3 - 60, name)                  # heads well into the top third
+            self.assertTrue(all(b[0] >= 0 and b[0] + b[2] <= 1440 for _, b in boxes), name)  # no figure cut by the left or right edge
+            qx, qh = comp["queue_x"], comp["queue_heights"]
+            self.assertTrue(all(b - a <= C["fac_max"] * 0.5 * asp * (h0 + h1) + 1 for a, b, h0, h1 in zip(qx, qx[1:], qh, qh[1:])), name)   # people standing close
+        before = R.build_collage(top_req(10, 3, width=1440, pre="A"))[5]
+        self.assertGreater(before["queue_heights"][-1], 0.4 * 560); self.assertLess(before["queue_x"][-1], 1440)
+        hs = [R.build_collage(top_req(n, 3))[5] for n in range(12, 27, 2)]          # no jump: the view steps back over the ramp
+        self.assertEqual([c["close"] for c in hs[:2]], [1.0, 1.0]); self.assertEqual([c["close"] for c in hs[-2:]], [0.0, 0.0])
+        self.assertTrue(all(a["hero_h"] >= b["hero_h"] and a["hero_h"] - b["hero_h"] <= 2 * C["shift"]["hero_h"] / (C["ramp"][1] - C["ramp"][0]) + 1e-6 for a, b in zip(hs, hs[1:])))
+        geo = lambda c: hashlib.sha256(json.dumps({k: c[k] for k in ("hero_box", "queue_x", "queue_feet", "queue_heights")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual(geo(self.out["n30k12"][5]), "4b1ef588fb7e68bd71776cfb4e5dfa4512e709a11113ab2441d690298ead2ff8")
+        self.assertEqual(geo(R.build_collage(top_req(30, 12, width=1440))[5]), "9454d4bed81a7b4d39220032eb7d6e46bfdb4211df9705d0ae8b8f25ce07a768")
+        self.assertEqual(geo(R.build_collage(prop_req(0.3, count=9))[5]), "16f12ed7d9d1c5c2505ea718a8bcad7f8ce90eab47b5c8ac1fb919251832a9f2")
+        self.assertEqual(self.out["n30k12"][5]["close"], 0.0)
 
     def test_colours_are_the_request_accent_else_the_pages(self):
         svg = R.build_collage({k: v for k, v in top_req(10, 3).items() if k != "accent"})[0]
