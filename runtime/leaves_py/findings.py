@@ -322,6 +322,32 @@ def ratio(q, f, name, a, b, va, vb, flip=False):
     return False
 
 
+def versus(q, f, tag, a, b, va, vb, only_up=False):
+    """How far the value of fact `a` stands from the value of fact `b`, as one more fact of the section: (kind, up, name) or None.
+    A percent measure: the gap in percentage points (op minus, the larger less the smaller, the page's change format); any other unit: the
+    larger as a multiple of the smaller (op times, only a plain ratio, the smaller above 0). `up` is whether a is the larger. None
+    where the two print alike (a gap that prints 0, a multiple that prints 1.0), where the multiple is no plain ratio, or (only_up) where a is
+    the smaller: the caller keeps its plain note, no number is made up."""
+    if va == vb or (only_up and va < vb): return None
+    up, name = va > vb, f"vs_{tag}"
+    if (q.defs.get(q.fmts["value"]) or {}).get("suffix", "").strip() == "%":
+        if printed(q, abs(va - vb), q.fmts.get("delta") or q.fmts["value"]) == 0: return None
+        f[name] = {"op": "minus", "a": a if up else b, "b": b if up else a, "fmt": q.change}
+        return "pp", up, name
+    big, small = max(va, vb), min(va, vb)
+    if small <= 0 or printed(q, big / small, q.fmts["times"]) <= 1: return None
+    return ("x", up, name) if ratio(q, f, name, a, b, va, vb, flip=not up) else None
+
+
+def compared(q, f, tag, base, num, a, b, va, vb, only_up=False, **bind):
+    """A short note that says where its number stands against a reference: the plain note `base` (its words say what the number is) becomes
+    "<what it is>, <higher/lower by N points | N times the reference>" when versus() finds a number; else it stays as it was."""
+    v = versus(q, f, tag, a, b, va, vb, only_up)
+    if not v: return note(num, base, **bind)
+    kind, up, name = v
+    return note(num, f"{base}_{kind}_{'up' if up else 'dn'}", rv=b, d=name, **bind)
+
+
 def clamp(x):
     return max(0.0, min(1.0, x))
 
@@ -896,6 +922,8 @@ def angle_members(q):
     elif ch[lo] > 0: tk = "story.sm.title_up"
     else: tk = "story.sm.title_down"
     hot = key(hi)
+    whole_at = q.wseries[y1][0] if q.whole and q.wseries and y1 in q.wseries else None
+    if whole_at is not None: f["sm_w"] = q.value(q.whole, y1)   # the whole's last value: what the two notes stand against
     bind = dict(hi=hi, lo=lo, y0=f"sm0_{hi.lower()}", y1=hot)
     ref = None
     if q.wseries and all(y in q.wseries for y in ys):
@@ -924,7 +952,8 @@ def angle_members(q):
     return {"angle": "members", "shows": [q.shows(f"{y0}-{y1}", "series")], "about": [hi, lo], "layer": "small_multiples", "big": big_items, "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
             "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
             "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
-            "anns": [note(hot, "story.note.members.last", hi=hi), note(key(lo), "story.note.members.last_lo", lo=lo)],
+            "anns": [compared(q, f, "hi", "story.note.members.last", hot, hot, "sm_w", members[hi][y1][0], whole_at, r=q.whole, hi=hi) if whole_at is not None else note(hot, "story.note.members.last", hi=hi),
+                     compared(q, f, "lo", "story.note.members.last_lo", key(lo), key(lo), "sm_w", members[lo][y1][0], whole_at, r=q.whole, lo=lo) if whole_at is not None else note(key(lo), "story.note.members.last_lo", lo=lo)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "rising": ups, "falling": downs},
             "summary": "one small chart a member on a shared axis: the member that moved most each way"}, None
@@ -966,7 +995,7 @@ def angle_map(q):
     return {"angle": "map", "shows": [q.shows(y, "map")], "about": [hi, lo], "layer": "member_map", "big": big_items, "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
             "text": T("story.map.text", y1=key(hi)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key(hi)}", "head": T("story.map.claim")}, "notes": [], "members": True, "last": key(hi),
-            "anns": [note("mrange", "story.note.map.range" + "_x" * mx, hi=hi, lo=lo, mx="mx"), note(key(second), "story.note.map.second", c=second)],
+            "anns": [note("mrange", "story.note.map.range" + "_x" * mx, hi=hi, lo=lo, mx="mx"), compared(q, f, "second", "story.note.map.second", key(second), key(second), key(lo), at[second], at[lo], only_up=True, r=lo, c=second)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "gradient": round(gradient, 3), "higher": best[1]},
             "summary": "the members' values on a map, filled by value: where the high ones lie"}, None
@@ -1123,7 +1152,7 @@ def angle_tiles(q):
     anns = [note("trange", "story.note.tl.range" + "_x" * tx, hi=hi, lo=lo, tx="tx")]
     if q.whole and y in q.wseries:
         f["tl_whole"] = q.value(q.whole, y)
-        anns.append(note("tl_whole", "story.note.tl.whole", w=q.whole))
+        anns.append(compared(q, f, "whole", "story.note.tl.whole", "tl_whole", "tl_whole", key(lo), q.wseries[y][0], at[lo], only_up=True, r=lo, w=q.whole))
     n = len(members)
     ill = illus_tally(q, at, y)
     if ill: q.illus["tiles"] = ill

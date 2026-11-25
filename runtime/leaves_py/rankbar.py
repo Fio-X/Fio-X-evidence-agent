@@ -6,7 +6,7 @@ hero.data: {"title": segs, "unit": segs, "share_head": segs?, "name_kind": "plac
   "omit": segs?}                  # the words of the line that stands where rows are left out (a long rank folds only when these are given)
 A rank of more than fold_over rows with `omit` given folds to fold_to rows: the highest fold_to - 6, the highlighted row, the lowest
 5, a line of the omit words where the rows are not next to each other (the rows kept are still the ledger's rows, in their order).
-Colours: --accent the highlighted row (or every bar when none is named, as before), --t-sec the others, --t-title ink.
+Colours: --accent the highlighted rows (highlight_row a comma list; or every bar when none is named, as before), --t-sec the others, --t-title ink.
 Refuses: no rows, a negative value, share_text missing while show_share is on, highlight_row not a row, rows merged and no other_row,
 other_row's series not the merged rows' sum (1e-6), a board too narrow (bar under 80 px), a missing name, a digit in a literal."""
 import os
@@ -41,7 +41,6 @@ class Frame:
             if share and not r.get("share_text"): raise Refused(f"rankbar: row {r['code']} has no share_text and show_share is on")
             if r["_v"] < 0: raise Refused(f"rankbar: row {r['code']} is negative; a bar cannot be drawn")
         f.hl = K.check_codes(NODE, k("highlight_row"), {r["code"] for r in rows}) if k("highlight_row") else set()
-        if len(f.hl) > 1: raise Refused("rankbar: highlight_row names one row")
         rows.sort(key=(lambda r: r["_n"][1]) if k("sort") == "name" else (lambda r: 0) if k("sort") == "given" else (lambda r: -r["_v"]))
         if k("max_rows") and len(rows) > k("max_rows"):
             rest, rows = rows[int(k("max_rows")):], rows[: int(k("max_rows"))]

@@ -1932,13 +1932,52 @@ class AccentIsWhatTheHeadlineNames(unittest.TestCase):
         req, names = eu27_request()
         sec, *_ = self.draw(req, names, ["movers", "overtake", "tiles"], "overtake")
         self.assertEqual(set(story.headline_names(sec["title"])), {"DK", "LV"})
-        old, new = self.narrowed(req, names, ["movers", "overtake", "tiles"], "overtake", {"DK", "PL"}, {"DK"})
+        sec, old, new, named = self.draw(req, names, ["movers", "overtake", "tiles"], "overtake")
+        self.assertEqual(accent_codes(old), {"DK", "PL"})
+        self.assertEqual(accent_codes(new), {"DK", "LV"})                    # the riser and the one it passed: both ends of the title's sentence
+        self.assertEqual(accent_codes(new), named)
         self.assertIn(">波兰<", old); self.assertIn(">波兰<", new)          # the faller is still named by its rows
 
     def test_the_strip_leads_the_title_does_not_name_lose_the_accent_and_keep_their_labels(self):
         req, names = wb24_request()
         _, new = self.narrowed(req, names, ["overtake", "ends"], "overtake_dot_strip", {"CHN", "CHE", "NLD"}, set())
         for c in ("CHN", "CHE", "NLD"): self.assertIn(f'data-leader="lead {c}"', new)
+
+    def test_a_rank_whose_title_names_both_ends_draws_both_in_the_accent(self):
+        """"Highest ... lowest" in one headline: both rows are red (before, only the highest or the whole)."""
+        for mk, picks in ((wb12_request, ["overtake", "rank"]), (wb24_request, ["overtake", "rank"]), (eu_request, ["path", "rank"])):
+            req, names = mk()
+            composed = FN.compose({**req, "picks": picks})
+            sec = next(x for x in composed["sections"] if x["layer"] == "rankbar")
+            named = set(story.headline_names(sec["title"]))
+            rows = {r["code"] for r in composed["leaves"]["rankbar"]["rows"]}
+            given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+            was = composed["leaves"]["rankbar"]["highlight"]
+            self.assertGreater(len(named & rows), 1, mk.__name__)
+            self.assertEqual(set(story.rank_style({"leaves": given})["rankbar"]["highlight_row"].split(",")), (named & rows) | {was}, mk.__name__)
+            rows_, _ = ledger(req, composed, names)
+            K.setup(rows_, names, run.tables)
+            import rankbar
+            svg = rankbar.draw({"data": given["rankbar"], "style": {"rankbar": story.rank_style({"leaves": given})["rankbar"]}})
+            svg = svg[0] if isinstance(svg, tuple) else svg
+            self.assertEqual(len(re.findall(r'<rect [^>]*fill="var\(--accent\)"', svg)), len((named & rows) | {was}), mk.__name__)   # a red bar each
+
+    def test_a_slope_chart_draws_both_rows_its_title_names_in_the_accent(self):
+        req, names = eu27_request()
+        _, old, new, named = self.draw(req, names, ["movers", "overtake", "tiles"], "overtake")
+        self.assertEqual(accent_codes(new), named)
+        self.assertEqual(named, {"DK", "LV"})
+        self.assertLessEqual(accent_codes(old) & named, accent_codes(new))
+
+    def test_the_dot_strip_lead_limit_story_keeps_is_the_strips_own(self):
+        import dot_strip
+        self.assertEqual(story.DOT_LEAD_MAX, dot_strip.LEAD_MAX)
+        data = {"rows": [{"code": c} for c in "ABCDEFGHIJKLMNOP"], "lead": list("ABCDEFGHIJKL")}
+        spec = {"sections": [{"id": "s", "layer": "dot_strip", "title": "x {name.M} {name.N}"}], "hero": {"leaves": {"dot_strip": data}}}
+        self.assertEqual(story.accent_only(spec)["dot_strip"]["lead"], list("ABCDEFGHIJKL"))   # the limit stays: the findings' list stands
+        spec["hero"]["leaves"]["dot_strip"] = {**data, "lead": list("ABC")}
+        got = story.accent_only(spec)["dot_strip"]
+        self.assertEqual((got["lead"], got["accent_only"]), (list("ABCMN"), ["M", "N"]))        # a named row of the strip is led and in the accent
 
     def marks_of(self, svg, code, name):
         """Every element of a drawn svg that is the member's: its shapes and joins (data-code, data-join), its leaders (data-leader),
@@ -1962,8 +2001,10 @@ class AccentIsWhatTheHeadlineNames(unittest.TestCase):
             n_own, n_txt = self.marks_of(new, code, names[code])
             for k in kinds: self.assertTrue(any(x.startswith(f"<{k}") for x in o_own + o_txt), (sid, k))
             if sec["layer"] == "dot_strip": self.assertTrue(any("data-leader" in x for x in n_own), sid)   # its leader is still drawn
-            self.assertEqual([colourless(x) for x in n_own], [colourless(x) for x in o_own], sid)
-            self.assertEqual([colourless(x) for x in n_txt], [colourless(x) for x in o_txt], sid)
+            # a slope chart gives a member the headline names a label of its own, so the chart's board and the dots move a little: its shapes are compared without their places
+            flat = (lambda x: re.sub(r' (cx|cy|x|y|x1|x2|y1|y2|d|points|transform)="[^"]*"', "", colourless(x))) if sec["layer"] == "rank_slope" else colourless
+            self.assertEqual([flat(x) for x in n_own], [flat(x) for x in o_own], sid)
+            self.assertEqual([flat(x) for x in n_txt], [flat(x) for x in o_txt], sid)
             self.assertTrue(any("var(--accent)" in x for x in o_own + o_txt), sid)
             self.assertFalse(any("var(--accent)" in x for x in n_own + n_txt), sid)
 
@@ -2015,6 +2056,93 @@ class AccentIsWhatTheHeadlineNames(unittest.TestCase):
             if "unit_grid" in composed["leaves"]:
                 self.assertIn('<span class="sw ink"></span><span data-word="grid.legend">', page_html)
 
+
+class NotesStandAgainstAReference(unittest.TestCase):
+    """A short note that only gave a last value ("the best trend's member, its last value") says where that value stands against a
+    reference row of the page: a percent measure by the gap in percentage points (op minus), any other unit by the multiple (op times);
+    every number a fact; with no reference row, or where the two print alike, the note stays as it was."""
+
+    def pct(self, req):
+        defs = {**req["fmt_defs"], "x": {"scale": 1, "dec": 1, "suffix": "%"}, "pp": {"scale": 1, "dec": 1, "suffix": " 个百分点"}}
+        return {**req, "fmt_defs": defs, "fmts": {**req["fmts"], "delta": "pp"}}
+
+    def notes(self, req, picks, sid, names=None):
+        """(the composed page, the evaluated facts, the notes of section `sid`)."""
+        composed = FN.compose({**req, "picks": picks})
+        sec = next(x for x in composed["sections"] if x["id"] == sid)
+        _, facts = ledger(req, composed, names or EU_NAMES)
+        return composed, facts, composed["leaves"][sec["layer"]]["notes"]
+
+    def words(self, note):
+        return "".join(x.get("w", "") for x in note["text"])
+
+    def test_the_members_notes_say_the_gap_in_points_on_a_percent_measure(self):
+        req, _ = eu_request()
+        composed, facts, notes = self.notes(self.pct(req), ["path", "members"], "members")
+        self.assertEqual(len(notes), 2)
+        for n, who in zip(notes, ("sm_se", "sm_mt")):
+            self.assertEqual(n["num"], f"fact:{who}")
+            src = [x["src"] for x in n["text"] if "src" in x]
+            self.assertEqual(src[0], "fact:sm_w"); name = src[1][5:]
+            f = facts[name]
+            self.assertEqual((composed["facts"][name]["op"], composed["facts"][name]["fmt"]), ("minus", "pp"))
+            self.assertAlmostEqual(f["v"], abs(facts[who]["v"] - facts["sm_w"]["v"]), places=6)
+            self.assertGreater(f["v"], 0)
+            self.assertTrue(self.words(n).endswith("高 ") or self.words(n).endswith("低 "), self.words(n))
+            self.assertEqual("高" if facts[who]["v"] > facts["sm_w"]["v"] else "低", self.words(n)[-2])
+
+    def test_the_members_notes_say_the_multiple_on_any_other_unit(self):
+        req, _ = eu_request()
+        composed, facts, notes = self.notes(req, ["path", "members"], "members")
+        for n, who in zip(notes, ("sm_se", "sm_mt")):
+            name = [x["src"] for x in n["text"] if "src" in x][1][5:]
+            f = facts[name]
+            self.assertEqual((composed["facts"][name]["op"], composed["facts"][name]["fmt"]), ("times", "times"))
+            big, small = sorted((facts[who]["v"], facts["sm_w"]["v"]), reverse=True)
+            self.assertAlmostEqual(f["v"], big / small, places=6)
+            self.assertGreater(f["v"], 1)
+            self.assertTrue(self.words(n).endswith(" 倍"), self.words(n))
+            # the larger is the one the sentence starts from: the member itself, else the reference ("... is it N times")
+            self.assertEqual(facts[who]["v"] > facts["sm_w"]["v"], "是它的" not in self.words(n))
+
+    def test_no_reference_row_keeps_the_plain_notes(self):
+        req, _ = wb_request()
+        composed, _, notes = self.notes(req, ["members", "spread"], "members", WB_NAMES)
+        self.assertNotIn("sm_w", composed["facts"])
+        self.assertEqual([self.words(n) for n in notes], ["走势最好的，末年的值", "走势最差的，末年的值"])
+        self.assertFalse([k for k in composed["facts"] if k.startswith("vs_")])
+
+    def test_a_gap_that_prints_as_nothing_keeps_the_plain_note(self):
+        req, _ = eu_request()
+        req = self.pct(req)
+        last = max(r["time"] for r in req["rows"] if r["dims"].get("geo") == "SE" and r["table"] == req["main"]["table"])
+        # the whole's last value is the best member's, to the printed place
+        top = next(r["value"] for r in req["rows"] if r["dims"].get("geo") == "SE" and r["time"] == last and r["table"] == req["main"]["table"])
+        rows = [dict(r, value=top) if r["dims"].get("geo") == "EU27_2020" and r["time"] == last and r["table"] == req["main"]["table"] else r for r in req["rows"]]
+        composed, _, notes = self.notes({**req, "rows": rows}, ["members", "rank"], "members")
+        self.assertEqual(self.words(notes[0]), "走势最好的，末年的值")
+        self.assertNotIn("vs_hi", composed["facts"])
+
+    def stands_against_the_lowest(self, req, names, picks, sid, word, key, both):
+        composed, facts, notes = self.notes(req, picks, sid, names)
+        hit = [n for n in notes if word in self.words(n)]
+        self.assertEqual(len(hit), 1, [self.words(n) for n in notes])
+        self.assertIn("最低的", self.words(hit[0]))
+        f = composed["facts"][key]
+        self.assertIn(f["op"], ("minus", "times"))
+        self.assertGreater(facts[key]["v"], 0 if f["op"] == "minus" else 1)
+        self.assertEqual(f["op"], "minus" if both else "times")
+
+    def test_the_map_note_stands_against_the_lowest(self):
+        req, names = eu_chain_request()
+        req = {**req, "points": {c: list(geo.PT[c]) for c in EU_MEMBERS}}
+        self.stands_against_the_lowest(req, names, ["map", "rank"], "map", "第二高的", "vs_second", False)
+        self.stands_against_the_lowest(self.pct(req), names, ["map", "rank"], "map", "第二高的", "vs_second", True)
+
+    def test_the_tile_note_stands_against_the_lowest(self):
+        req, names = eu27_request()
+        self.stands_against_the_lowest(req, names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", False)
+        self.stands_against_the_lowest(self.pct(req), names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", True)
 
 if __name__ == "__main__":
     unittest.main()

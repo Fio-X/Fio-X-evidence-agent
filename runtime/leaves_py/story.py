@@ -220,6 +220,9 @@ def headline_names(title):
     return sorted(set(NAMED.findall(title or "")))
 
 
+DOT_LEAD_MAX = 12   # the dot strip's own limit on its leaders (dot_strip.LEAD_MAX; a test keeps the two equal): a longer list stays as the findings gave it
+
+
 def accent_only(spec):
     """hero.leaves with each titled section's leaf narrowed to the codes its headline names: in ACCENT_DATA its "accent" list, in
     ACCENT_ONLY given "accent_only" (a copy; the spec is not changed)."""
@@ -227,7 +230,17 @@ def accent_only(spec):
     for _, _, layer, _, title, _ in sections(spec):
         d, named = leaves.get(layer), headline_names(title)
         if title is None or not isinstance(d, dict): continue
+        rows, nm = {r.get("code") for r in d.get("rows") or [] if isinstance(r, dict)}, set(named)
         if layer in ACCENT_DATA and isinstance(d.get("accent"), list): leaves[layer] = {**d, "accent": [c for c in d["accent"] if c in named]}
+        elif layer == "rankbar" and isinstance(d.get("highlight"), str):
+            # the rows its headline names are all in the accent (both ends of a "highest ... lowest" title), the whole's row as it was
+            leaves[layer] = {**d, "highlight": ",".join(dict.fromkeys([d["highlight"], *sorted(nm & rows)]))} if rows else d
+        elif layer == "rank_slope" and isinstance(d.get("accent"), list):
+            acc = list(dict.fromkeys([*sorted(nm & rows), *d["accent"]]))[:3]   # the named rows first, at most the leaf's three
+            leaves[layer] = {**d, "accent": acc, "accent_only": named}
+        elif layer == "dot_strip" and isinstance(d.get("lead"), list):
+            lead = list(dict.fromkeys([*d["lead"], *sorted(nm & rows)]))   # a named row of the strip is named on a leader and drawn in the accent
+            leaves[layer] = {**d, "lead": lead if len(lead) <= DOT_LEAD_MAX else d["lead"], "accent_only": named}
         elif layer in ACCENT_ONLY: leaves[layer] = {**d, "accent_only": named}
     return leaves
 
