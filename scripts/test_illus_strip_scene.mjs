@@ -83,6 +83,13 @@ assert.deepEqual(["people", "trade", "tech"].map((t) => [node.topics.scenes[t].r
 assert.deepEqual(sceneStyle(setOf("people")), { topic: "people", style: "ink" });
 assert.deepEqual(sceneStyle(setOf("economy")), { topic: "trade", style: "geo" });
 assert.equal(sceneStyle(setOf("energy")), null, "the energy topic is not drawn by the scene renderer");
+// tech: its opening picture is iso, its page-bottom strip is geo (data: topics.scenes.tech.strip_style), as the iso strip's feet
+// float at the strip's size; a set naming the tech topic (none does yet: the economy set's pieces stand in) draws the geo strip
+assert.equal(node.topics.scenes.tech.style, "iso", "the opening picture of tech stays iso");
+assert.equal(node.topics.scenes.tech.strip_style, "geo");
+for (const t of ["people", "trade"]) assert.equal(node.topics.scenes[t].strip_style, undefined, `${t} has no separate strip style`);
+const techSet = (() => { const e = setOf("economy"); return { ...e, strip_topics: { ...e.strip_topics, pieces: { tech: e.pieces } } }; })();
+assert.deepEqual(sceneStyle(techSet), { topic: "tech", style: "geo" });
 
 const check = (r, label, style, W = 1140, H = 225, YG = 184) => {
   assert.equal(r.refused, undefined, `${label}: ${JSON.stringify(r.refused)}`);
@@ -135,6 +142,11 @@ for (const seed of [1, 12, 77, 4242]) check(strip(ask(setOf("economy"), { knobs:
 check(strip(ask(setOf("economy"), { width: 800, knobs: { height: 160, baseline: 130 } })), "trade 800x160", "geo", 800, 160, 130);
 check(strip(ask(setOf("economy"), { width: 2000 })), "trade 2000", "geo", 2000);
 const seed0 = setOf("economy").knobs.find((k) => k.name === "seed").default;
+// a tech-named set through the page's own request: the geo strip, the same figures as the trade strip (same style, same seed)
+const techPage = strip(ask(techSet));
+assert.equal(techPage.topic, "tech");
+check(techPage, "tech page strip", "geo");
+assert.equal(techPage.svg, trade.svg, "tech's strip is the geo strip, not the iso one");
 const tech = sceneStrip("iso", 1140, 225, 184, seed0, pens);
 check(tech, "tech", "iso");
 for (const seed of [1, 12, 77, 4242]) check(sceneStrip("iso", 1140, 225, 184, seed, pens), `tech seed ${seed}`, "iso");

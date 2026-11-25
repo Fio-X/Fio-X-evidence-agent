@@ -95,7 +95,7 @@ function people() {
 }
 
 // The scene style of a set's topic, or none: the topic is the module's strip_topics list holding exactly the set's pieces, its
-// look the hero registry's topics.scenes.<topic> (style, when its renderer is the scene renderer). Nothing new is mapped here.
+// look the hero registry's topics.scenes.<topic> (strip_style else style, when its renderer is the scene renderer). Nothing new is mapped here.
 function sceneStyle(set) {
   try {
     const T = set.strip_topics || JSON.parse(require('fs').readFileSync(path.join(__dirname, set.module.replace(/\.cjs$/, '.json')), 'utf8')).strip_topics;
@@ -104,7 +104,10 @@ function sceneStyle(set) {
     const own = names(set.pieces), topic = Object.keys(T.pieces).find((t) => names(T.pieces[t]) === own);
     if (!topic) return null;
     const sc = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'illus_hero', 'node.json'), 'utf8')).topics.scenes[topic];
-    return sc && sc.renderer === 'scene' && ['ink', 'iso', 'geo'].includes(sc.style) ? { topic, style: sc.style } : null;
+    // a topic may draw its page-bottom strip in another skin than its opening picture (strip_style: tech's iso feet float at
+    // the strip's size, so its strip is geo; the iso strip drawing stays for a topic that names it)
+    const style = sc && (sc.strip_style || sc.style);
+    return sc && sc.renderer === 'scene' && ['ink', 'iso', 'geo'].includes(style) ? { topic, style } : null;
   } catch (e) { return null; }
 }
 
