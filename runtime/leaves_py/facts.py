@@ -35,9 +35,6 @@ def digit(text):
     """Whether a text holds a digit (any numeric character, as layer 1 counts one) outside its {key} placeholders."""
     return any(unicodedata.category(ch) in ("Nd", "Nl", "No") for ch in re.sub(r"\{[A-Za-z_][\w.]*\}", "", text))
 
-SENTENCE_END = "。！？"
-
-
 def long_unit(u):
     """Whether a number's unit is words (a unit name), not nothing or the percent sign that is the number's own mark."""
     return u.strip() not in ("", "%")
@@ -48,7 +45,7 @@ def unit_runs(spec, F, text):
     off. In a run of numbers of one unit that is words (two or more in a sentence, nothing between them but words, names, years and
     numbers with no unit), the unit follows only the last; a number of another unit (a ratio, a percent) or a sentence's end ends a run."""
     flags, prev = [], None
-    for mo in re.finditer(r"\{([a-z0-9_.]+)\}|[" + SENTENCE_END + "]", text):
+    for mo in re.finditer(r"\{([a-z0-9_.]+)\}|[" + re.escape(word("sentence.end")) + "]", text):   # the marks that end a sentence
         if mo.group(1) is None: prev = None; continue
         k, _, part = mo.group(1).partition(".")
         if part: continue

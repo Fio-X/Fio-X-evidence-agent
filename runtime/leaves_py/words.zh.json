@@ -6,6 +6,7 @@
  "half.1": "上",
  "half.2": "下",
  "paren": "（{v}）",
+ "sentence.end": "。！？",
  "scope.within": "在图中各方中",
  "missing": "缺",
  "gap": "差 {v}",

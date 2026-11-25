@@ -457,7 +457,8 @@ def cl_bignums(f, occ):
     for n, (k, lab) in enumerate(cells):
         # a number whose unit is words prints alone, its unit once in brackets on the label under it (when the label has room)
         u = FX.unit(c.spec, c.F[k]).strip() if k in c.F and "fmt" in c.F[k] else ""
-        unit_lab = html.escape(word("paren", v=u), quote=False) if FX.long_unit(u) and not FX.digit(u) else ""
+        # (the story's header: unit_to_label; the column page keeps each number's unit after it)
+        unit_lab = html.escape(word("paren", v=u), quote=False) if getattr(f, "unit_to_label", False) and FX.long_unit(u) and not FX.digit(u) else ""
         if unit_lab and len(re.sub(r"<[^>]+>", "", lab + unit_lab)) > K("label_lines") * 22: unit_lab = ""
         v = c.t("{" + k + (".n" if unit_lab else "") + "}") + times_word(c, k); lab += unit_lab
         size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)

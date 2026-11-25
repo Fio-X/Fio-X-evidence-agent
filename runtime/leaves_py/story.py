@@ -55,7 +55,7 @@ def cl_bignums(f, occ):
     if d is None: raise FX.Refused("the hero names no leaves.bignums")
     st = dict(f.h.get("style") or {})
     st["bignums"] = {**st.get("bignums", {}), **FIXED["bignums"]}
-    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}})(), occ)
+    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}, "unit_to_label": True})(), occ)
 
 
 def rank_style(h):
