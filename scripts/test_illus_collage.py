@@ -9,7 +9,8 @@ the accent and come round again, never twice in one group, when K is more; the s
 image packages blocked: the run needs the standard library only) and another member list another picture; the reply is in the hero grammar
 (a Python mirror of next_leaf.rs hero_faults: g, path, image, defs, mask, linearGradient, stop; hex colours; png/jpeg data URLs), holds no text,
 and its accent figures (accent blocks under a clothing mask) are the declared count, its figures (outline masks) the member count; the svg is at
-most 3 MB, the pack at most 6 MB and each piece at most 150 KB; every piece's sha256 is the pack's, every figure has a CC0/PDM licence row.
+most 3 MB, the pack at most 6 MB and each piece at most 150 KB; every piece's sha256 is the pack's, every figure has a CC0/PDM licence row; at least 25 figures wear
+the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 30 px at the largest tier.
 Run: python3 -I -B scripts/test_illus_collage.py"""
 import csv
 import hashlib
@@ -150,6 +151,96 @@ def accent_figures(svg, accent):
     for m in reds: assert re.search(r'<mask id="' + m + r'"><image href="data:image/png;base64,', svg), m
     figs = re.findall(r'<path d="[^"]*" fill="#[0-9a-f]{6}" mask="url\(#(clg-s(?:\d+|h))\)"/>', svg)
     return len(set(reds)), len(set(figs))
+
+
+STRAIGHT_PX = 30        # the longest straight run allowed on a clothing mask's edge inside the figure, at the largest tier (480 px high)
+STRAIGHT_TOL = 0.8      # px off the chord that still counts as straight
+NB8 = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)]
+
+
+def png_bits(data):
+    """A non-interlaced 1-bit or 8-bit grey PNG as rows of 0/1, decoded with the standard library (zlib) so the check runs without Pillow."""
+    import struct
+    import zlib
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    i = 8; idat = b""; w = h = depth = None
+    while i < len(data):
+        n, = struct.unpack(">I", data[i:i + 4]); kind = data[i + 4:i + 8]; c = data[i + 8:i + 8 + n]; i += 12 + n
+        if kind == b"IHDR":
+            w, h, depth, ctype, _, _, il = struct.unpack(">IIBBBBB", c); assert ctype == 0 and il == 0 and depth in (1, 8)
+        elif kind == b"IDAT": idat += c
+    raw = zlib.decompress(idat); stride = (w * depth + 7) // 8; prev = bytearray(stride); rows = []; p = 0
+    for _ in range(h):
+        f = raw[p]; line = bytearray(raw[p + 1:p + 1 + stride]); p += 1 + stride
+        for x in range(stride):
+            a = line[x - 1] if x else 0; b = prev[x]; c = prev[x - 1] if x else 0
+            if f == 1: line[x] = (line[x] + a) & 255
+            elif f == 2: line[x] = (line[x] + b) & 255
+            elif f == 3: line[x] = (line[x] + (a + b) // 2) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        prev = line
+        rows.append([(line[x >> 3] >> (7 - (x & 7))) & 1 for x in range(w)] if depth == 1 else [1 if v > 127 else 0 for v in line[:w]])
+    return rows
+
+
+def filled(m):
+    """A 0/1 mask with its holes filled (everything not reachable from the border through unset pixels)."""
+    from collections import deque
+    h, w = len(m), len(m[0]); out = [[1] * w for _ in range(h)]; q = deque()
+    for y in range(h):
+        for x in range(w):
+            if (y in (0, h - 1) or x in (0, w - 1)) and not m[y][x]: out[y][x] = 0; q.append((y, x))
+    while q:
+        y, x = q.popleft()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            yy, xx = y + dy, x + dx
+            if 0 <= yy < h and 0 <= xx < w and out[yy][xx] and not m[yy][xx]: out[yy][xx] = 0; q.append((yy, xx))
+    return out
+
+
+def contours(m):
+    """The outer contour of every part of a 0/1 mask, as ordered (y, x) lists (Moore neighbour tracing)."""
+    h, w = len(m), len(m[0]); at = lambda y, x: 0 <= y < h and 0 <= x < w and m[y][x]
+    seen = set(); out = []
+    for y in range(h):
+        for x in range(w):
+            if m[y][x] and not at(y, x - 1) and (y, x) not in seen:
+                start = cur = (y, x); pts = [start]; back = 4
+                for _ in range(8 * h * w):
+                    for k in range(8):
+                        d = (back + 1 + k) % 8; ny, nx = cur[0] + NB8[d][0], cur[1] + NB8[d][1]
+                        if at(ny, nx): break
+                    else: break
+                    cur = (ny, nx); back = (d + 4) % 8
+                    if cur == start: break
+                    pts.append(cur)
+                seen.update(pts); out.append(pts)
+    return out
+
+
+def longest_straight(cloth, sil, tol=STRAIGHT_TOL, margin=2):
+    """The longest straight run (px, chord length) of a clothing mask's edge where the edge lies inside the figure (over `margin` px inside
+    its filled outline): a polygon side cutting across the clothing shows up here, the figure's own outline does not."""
+    import math
+    f = filled(sil); h, w = len(f), len(f[0])
+    inside = lambda y, x: all(0 <= y + dy < h and 0 <= x + dx < w and f[y + dy][x + dx] for dy in range(-margin, margin + 1) for dx in range(-margin, margin + 1))
+    best = 0.0
+    for pts in contours(cloth):
+        flags = [inside(*q) for q in pts]; n = len(pts); i = 0
+        while i < n:
+            if not flags[i]: i += 1; continue
+            j = i
+            while j + 1 < n and flags[j + 1]: j += 1
+            run = pts[i:j + 1]
+            for a in range(len(run)):
+                for b in range(a + 2, len(run)):
+                    (y0, x0), (y1, x1) = run[a], run[b]; L = math.hypot(y1 - y0, x1 - x0)
+                    if max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / L for y, x in run[a + 1:b]) > tol: break
+                    best = max(best, L)
+            i = j + 1
+    return best
 
 
 BLOCKED = "import sys\nclass B:\n    def find_spec(self, name, path=None, target=None):\n        if name.split('.')[0] in ('PIL', 'numpy', 'scipy', 'cairosvg'): raise ImportError('blocked: ' + name)\nsys.meta_path.insert(0, B())\nsys.argv = [sys.argv[1]]\nimport runpy\nrunpy.run_path(sys.argv[0], run_name='__main__')\n"
@@ -420,31 +511,52 @@ class Pack(unittest.TestCase):
             self.assertTrue(rows[f["id"]]["source_url"].startswith("https://www.metmuseum.org/art/collection/search/"), f["id"])
         for name in ("LICENCE-met-openaccess-README.txt", "LICENSE-CC0-1.0-legalcode.txt"): self.assertTrue(os.path.getsize(os.path.join(COLLAGE, name)) > 1000, name)
         hand = set(re.findall(r'^    "(\d+_\d)": dict\(poly=', text(os.path.join(ROOT, "scripts", "build_collage_pack.py")), re.M))
-        self.assertGreaterEqual(len(hand), 12)
+        self.assertGreaterEqual(len(hand), 25)
         self.assertEqual({f["id"][len("met_gam_"):] for f in self.index["figures"] if f["red_ok"]}, hand)     # only the hand-masked figures wear the accent
         self.assertEqual({p["figure"] for p in self.index["pieces"] if p["kind"] == "cloth"}, {"met_gam_" + h for h in hand})
 
     def test_no_accent_mask_is_a_flat_horizontal_cut(self):
         """The top edge of every red_ok figure's clothing mask follows the shoulders: its start row varies across the mask's columns (not over
-        half of them within 1.5% of the height of the commonest start row), at every tier, decoded from the pack (Pillow, test time only)."""
-        try:
-            from PIL import Image
-        except ImportError:
-            self.skipTest("Pillow is not installed")
-        import io
+        half of them within 1.5% of the height of the commonest start row), at every tier, decoded from the pack with the standard library."""
         by = {p["id"]: p for p in self.index["pieces"]}; flat = []
         for f in self.index["figures"]:
             if not f["red_ok"]: continue
             for t in ("l", "m", "s"):
-                p = by[f"{f['id']}.{t}.cloth"]; im = Image.open(io.BytesIO(self.bin[p["offset"]:p["offset"] + p["len"]])).convert("L")
-                w, h = im.size; px = im.load(); tops = []
+                p = by[f"{f['id']}.{t}.cloth"]; m = png_bits(self.bin[p["offset"]:p["offset"] + p["len"]])
+                h, w = len(m), len(m[0]); tops = []
                 for x in range(w):
-                    y = next((y for y in range(h) if px[x, y] > 127), None)
+                    y = next((y for y in range(h) if m[y][x]), None)
                     if y is not None: tops.append(y)
                 if flat_cut(tops, h): flat.append((f["id"], t))
         self.assertEqual(flat, [])
         self.assertTrue(flat_cut([20] * 40, 100)); self.assertTrue(flat_cut([20] * 30 + [40, 45, 50, 60, 22, 21, 19, 30, 35, 20], 100))   # the detector catches a flat cut
         self.assertFalse(flat_cut([40 - abs(x - 20) for x in range(41)], 100))                                                          # and passes a shoulder line
+
+    def test_at_least_25_accent_figures_each_with_a_cloth_mask_in_every_tier(self):
+        reds = [f["id"] for f in self.index["figures"] if f["red_ok"]]
+        self.assertGreaterEqual(len(reds), 25)
+        self.assertLess(len(reds), 29)            # fewer than the largest accent count in the k=29 shape, so the masked figures still come round again
+        ids = {p["id"] for p in self.index["pieces"]}
+        for f in reds:
+            for t in ("l", "m", "s"): self.assertIn(f"{f}.{t}.cloth", ids)
+
+    def test_no_accent_mask_edge_has_a_long_straight_cut(self):
+        """Inside the figure, every red_ok clothing mask's edge follows the engraving: no straight run longer than STRAIGHT_PX px at the
+        largest tier (480 px high), decoded from the pack with the standard library."""
+        by = {p["id"]: p for p in self.index["pieces"]}
+        piece = lambda k: png_bits(self.bin[by[k]["offset"]:by[k]["offset"] + by[k]["len"]])
+        long = {}
+        for f in self.index["figures"]:
+            if not f["red_ok"]: continue
+            L = longest_straight(piece(f["id"] + ".l.cloth"), piece(f["id"] + ".l.sil"))
+            if L > STRAIGHT_PX: long[f["id"]] = round(L, 1)
+        self.assertEqual(long, {})
+        sil = [[1] * 120 for _ in range(200)]
+        box = [[1 if 40 <= y < 160 and 20 <= x < 100 else 0 for x in range(120)] for y in range(200)]
+        self.assertGreater(longest_straight(box, sil), 100)                            # the detector catches a polygon side across the figure
+        disc = [[1 if (y - 100) ** 2 + (x - 60) ** 2 < 45 ** 2 else 0 for x in range(120)] for y in range(200)]
+        self.assertLess(longest_straight(disc, sil), STRAIGHT_PX)                       # and passes a curved edge
+        self.assertEqual(longest_straight(box, box), 0)                                 # and ignores the figure's own outline
 
     def test_the_pack_holds_no_local_path_or_non_english_text(self):
         for name in ("pack.json", "LICENSES.tsv", "draw.py"):
