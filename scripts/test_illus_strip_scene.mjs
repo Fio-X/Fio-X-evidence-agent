@@ -165,7 +165,12 @@ assert.equal(strip(ask(setOf("people"), { accent: "var(--accent)" })).style, "in
 // the energy set and the economy set's pieces: the old piece strip byte for byte; a family request: no people
 const energy = strip(ask(setOf("energy")));
 assert.equal(sha(energy.svg), "b6709f4cf6e976aa43f2645f0d8a56ee78dbc0c0868caadb05d23ade6ec881ff", "the energy strip as before");
-assert.equal(sha(strip(ask(setOf("economy")), { scene: false }).svg), "5b05706c22db61a022adbe7f66b1b8cde4d94f982093f13a44b45bbb2a95e9f0", "the economy pieces as before");
+// The economy pieces' paths carry full double precision (13 to 14 decimals), which the last digits of a platform's maths can move (the
+// same hash differed on CI's Linux), so this one is pinned on the text with every decimal number rounded to a tenth: the same strip, whole
+// structure and coordinates, but not the platform's last bits.
+const tenth = (t) => t.replace(/-?\d+\.\d+(?:e[-+]?\d+)?/g, (m) => { const v = (+m).toFixed(1); return v === "-0.0" ? "0.0" : v; });
+const economyPieces = tenth(strip(ask(setOf("economy")), { scene: false }).svg);
+assert.equal(sha(economyPieces), "2050140ef0f3f8d9a2e4e6771a7a2e3485dd11e57129a97c54c01a821488fc99", `the economy pieces as before (rounded to a tenth; ${economyPieces.length} chars, begins ${economyPieces.slice(0, 160)})`);
 assert.equal(strip(ask(setOf("people"), { family: "pop65", count: 27 })).style, undefined, "a family request keeps strip_topics' pieces");
 assert.equal(strip(ask(setOf("economy"), { family: "pop65", count: 27 })).style, undefined, "a family request keeps strip_topics' pieces");
 assert.equal(energy.style, undefined);

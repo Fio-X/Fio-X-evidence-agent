@@ -216,11 +216,12 @@ class Protocol(unittest.TestCase):
         self.assertEqual(r, {"unavailable": "Blender is not installed"})
 
     def test_a_slow_blender_is_unavailable(self):
-        was = R.run
+        was, was_path = R.run, R.blender_path
         def slow(cmd, deadline): raise R.Unavailable(f"{os.path.basename(cmd[0])} took longer than {deadline:.0f} s")
         R.run = slow
+        R.blender_path = lambda: "/nonexistent/Blender"      # a machine with no Blender (CI) still reaches the slow run
         try: r = self.ask(RENEW)
-        finally: R.run = was
+        finally: R.run, R.blender_path = was, was_path
         self.assertIn("took longer", r.get("unavailable", ""))
 
 
