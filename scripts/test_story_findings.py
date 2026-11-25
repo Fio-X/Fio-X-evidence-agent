@@ -2854,6 +2854,113 @@ class MapsAreGreyButTheNamed(unittest.TestCase):
             got = bake.bake({"html": page_html, "ready": "", "width": 1140})
             self.assertNotIn("error", got, (what, got.get("error")))
 
+# ---------------------------------------------------------------- units once, a short head, a ratio's times word
+
+CO2_LONG = "不含土地利用、土地利用变化和林业的人均二氧化碳排放量（吨二氧化碳当量／人）"   # test-only words in the reviewed table name's shape
+LABELLED = ("change_dots", "rankbar", "pair_bars", "small_multiples", "member_map", "tile_map", "target_path", "gap_axis")
+
+
+def unit_shape(kind):
+    """(request, names, the unit a label would print, the head's expected name) of three shapes: a World Bank tonnes-per-head shape
+    (CO2 per capita), a World Bank US dollars per head shape (GDP per head) and a Eurostat percent share (unchanged)."""
+    if kind == "pct":
+        req, names = percent(lambda: eu27_plain(whole=True))()
+        return req, names, "%", req["words"]["measure"]
+    if kind == "co2":
+        req, unit, measure, head = linear_request(WB_T + "@2", "country", WB12, 2016, 2024, text=True), "吨二氧化碳当量/人", CO2_LONG, "碳排放"
+        ends = WB12
+    else:
+        ends = {c: (a * 1000, b * 1000) for c, (a, b) in WB12.items()}
+        req, unit, measure, head = linear_request("NY.GDP.PCAP.CD", "country", ends, 2016, 2024, text=True), "美元/人", "人均国内生产总值（现价美元）", "人均GDP"
+    req["fmt_defs"] = {**FMT_DEFS, "x": {"scale": 1, "dec": 1, "suffix": " " + unit}}
+    req["words"] = {"measure": measure, "unit": unit}
+    return req, WB12_NAMES, unit, head
+
+
+def label_refs(layer, data):
+    """The ledger entries a leaf prints next to its marks (not its head, notes or ratios)."""
+    out = []
+    for r in (data.get("rows") or []) + (data.get("cells") or []):
+        out += [r[k] for k in ("a_text", "b_text", "value_text", "last_text", "text") if isinstance(r.get(k), str)]
+        if isinstance(r.get("share_text"), str) and not r.get("share_none"): out.append(r["share_text"])
+    out += [v for v in (data.get("ends") or {}).values() if isinstance(v, str)]
+    return out
+
+
+class UnitsOnceShortHeadsTimesWord(unittest.TestCase):
+    """A label next to a mark inside a chart prints the number alone and the chart's head states the unit once (a percent sign stays
+    after each number); a chart's head names the measure by its family's short name (measure-families.json), the long name left to the
+    source line; a ratio's big number prints the times word after it. On a tonnes-per-head, a US-dollars-per-head and a percent shape."""
+
+    PICKS = (["movers", "rank", "ends", "members"], ["ends", "tiles", "overtake"], ["rank", "spread", "movers"])
+
+    def drawn(self, kind):
+        req, names, unit, head = unit_shape(kind)
+        out = []
+        for picks in self.PICKS:
+            try: out.append(draw_all(self, req, names, picks))
+            except FN.Refused: continue
+        self.assertTrue(out, kind)
+        return req, unit, head, out
+
+    def test_a_label_inside_a_chart_prints_the_number_alone_and_the_head_the_unit_once(self):
+        for kind in ("co2", "usd"):
+            _, unit, _, out = self.drawn(kind)
+            seen = set()
+            for composed, _, drawn in out:
+                for layer, data in composed["leaves"].items():
+                    if layer not in LABELLED: continue
+                    refs = label_refs(layer, data)
+                    self.assertTrue(refs and all(r.endswith(".n") for r in refs), (kind, layer, refs))
+                    self.assertEqual(data["unit"], [{"w": unit}], (kind, layer))
+                    self.assertEqual(str(drawn[layer]).count(unit), 1, (kind, layer))   # the head's, once
+                    seen.add(layer)
+            self.assertGreaterEqual(len(seen), 4, (kind, seen))
+
+    def test_a_percent_shape_keeps_its_sign_after_each_label(self):
+        _, unit, _, out = self.drawn("pct")
+        seen = 0
+        for composed, _, drawn in out:
+            for layer, data in composed["leaves"].items():
+                if layer not in LABELLED: continue
+                for r in label_refs(layer, data):
+                    self.assertTrue(not r.endswith(".n") or r.startswith("fact:g_"), (layer, r))   # a gap of a percent was bare before (points)
+                self.assertGreaterEqual(str(drawn[layer]).count("%"), 2, layer)
+                seen += 1
+        self.assertGreaterEqual(seen, 4)
+
+    def test_a_chart_head_names_the_measure_by_its_short_name(self):
+        for kind in ("co2", "usd", "pct"):
+            req, _, head, out = self.drawn(kind)
+            for composed, _, drawn in out:
+                for layer, data in composed["leaves"].items():
+                    if "title" not in data or layer in ("risk_notes", "winners_losers", "event_chain"): continue
+                    self.assertEqual(data["title"], [{"w": head}], (kind, layer))
+                    if kind != "pct": self.assertNotIn(req["words"]["measure"], str(drawn[layer]), (kind, layer))
+        self.assertEqual(FN.short_measure("EN.GHG.CO2.PC.CE.AR5@2"), "碳排放")
+        self.assertEqual(FN.short_measure("nama_10_pc"), "人均GDP")
+        self.assertIsNone(FN.short_measure("no_such_table"))
+
+    def test_a_ratio_s_big_number_prints_the_times_word(self):
+        import column
+        times = FN.WD.WORDS["story.times"]
+        for kind in ("co2", "usd", "pct"):
+            req, names, _, _ = unit_shape(kind)
+            composed, facts, drawn = draw_all(self, req, names, ["ends", "rank", "movers"])
+            claims = composed["leaves"]["thesis_claims"]["claims"]
+            for c in claims:
+                is_times = composed["facts"][c["num"][len("fact:"):]].get("op") == "times"
+                self.assertEqual(c.get("num_unit"), [{"w": times}] if is_times else None, (kind, c["num"]))
+            self.assertEqual(claims[0]["num"], "fact:hi_lo", kind)
+            self.assertRegex(str(drawn["thesis_claims"]), r'data-src="fact:hi_lo"[^>]*>[^<]*</tspan>' + re.escape(times), kind)
+            self.assertTrue(composed["title"].endswith("{hi_lo}" + times), (kind, composed["title"]))
+        ctx = type("C", (), {"spec": {"fmts": {"story_times": {"suffix": ""}, "x": {"suffix": " 美元/人"}, "pct_x": {"suffix": "%"}},
+                                      "facts": {"r": {"op": "times", "a": "v", "b": "w", "fmt": "story_times"}, "v": {"fmt": "x"},
+                                                "s": {"op": "times", "a": "v", "b": "w", "fmt": "pct_x"}}}})()
+        self.assertEqual(column.times_word(ctx, "r"), times)
+        self.assertEqual(column.times_word(ctx, "v"), "")
+        self.assertEqual(column.times_word(ctx, "s"), "")   # a ratio whose format already puts a unit after it
+
 
 if __name__ == "__main__":
     unittest.main()
