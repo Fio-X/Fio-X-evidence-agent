@@ -147,7 +147,7 @@ def flat_cut(tops, h):
 def accent_figures(svg, accent):
     """(accent figures, figures) read off the svg's structure: an accent figure is a path in the accent under a clothing mask (clg-c<j>) whose
     mask is defined with an image; a figure is a block under an outline mask (clg-s<j>); the hero's are clg-ch and clg-sh."""
-    reds = re.findall(r'<path d="[^"]*" fill="' + re.escape(accent) + r'" mask="url\(#(clg-c(?:\d+|h))\)"/>', svg)
+    reds = re.findall(r'<path d="[^"]*" fill="' + re.escape(accent) + r'" mask="url\(#(clg-c(?:\d+|h))\)"(?: opacity="[0-9.]+")?/>', svg)
     for m in reds: assert re.search(r'<mask id="' + m + r'"><image href="data:image/png;base64,', svg), m
     figs = re.findall(r'<path d="[^"]*" fill="#[0-9a-f]{6}" mask="url\(#(clg-s(?:\d+|h))\)"/>', svg)
     return len(set(reds)), len(set(figs))
@@ -402,10 +402,52 @@ class Collage(unittest.TestCase):
         cfg = dict(R.CR, max_uses=1); kn = R.collage_knobs(top_req(30, 3))
         with self.assertRaisesRegex(CD.PackError, "at most 1 times"): CD.draw([f"M{i}" for i in range(30)], masked + 1, 30, 1140, ACCENT, cfg, kn)
 
-    def test_the_backdrop_fills_the_top_of_the_picture(self):
-        comp = R.build_collage(top_req(30, 3))[5]; rows = R.CR["far"]["rows"]
-        self.assertLessEqual(min(r["foot"] - r["h"] for r in rows), 0.15)          # the backdrop's tops reach the top sixth: no empty paper band above the queue
-        self.assertGreaterEqual(comp["far"], 20)
+    def test_the_far_view_fills_the_top_in_layers_that_fade_with_no_pasted_block(self):
+        svg, w, h, secs, scene, comp = R.build_collage(top_req(30, 3)); L = R.CR["far"]["layers"]
+        self.assertLessEqual(min(r["foot"] - r["h"] for r in L), 0.15)          # the far view's tops reach the top sixth: no empty paper band above the queue
+        self.assertGreaterEqual(len(L), 2); self.assertTrue(all(a["h"] < b["h"] and a["fill"] > b["fill"] and a["ink"] < b["ink"] for a, b in zip(L, L[1:])))   # each layer paler and smaller than the next
+        self.assertTrue(all(c > 0 for c in comp["far_layers"]), comp["far_layers"])
+        ids, at = comp["far_ids"], 0
+        for c in comp["far_layers"]:
+            self.assertEqual(len(set(ids[at:at + c])), c); at += c          # no figure twice within one layer
+        # no opaque axis-aligned block: every rectangle path is a figure box under an outline/clothing mask, or the grain under its mask
+        for m in re.finditer(r'<path d="M0 0H[0-9.]+V[0-9.]+H0Z"([^>]*)/>', svg): self.assertIn('mask="url(#clg-', m.group(1))
+        ops = [float(o) for o in re.findall(r'<mask id="clg-f\d+">.*?</defs><path [^>]*/><g opacity="([0-9.]+)">', svg)]
+        self.assertEqual(len(ops), comp["far"]); self.assertLess(min(ops), 0.1)          # a layer's ends fade into the paper
+        dark = re.search(r'<path d="(M[^"]*C[^"]*)" fill="url\(#clg-dh\)" mask="url\(#clg-dm\)"/>', svg)
+        self.assertIsNotNone(dark); self.assertIn('stop-opacity="0"', svg)        # the dark mass: curved, soft (gradients fade to nothing)
+
+    def test_accent_lies_under_the_lines_and_the_hero_red_is_the_fullest(self):
+        svg, w, h, secs, scene, comp = R.build_collage(top_req(30, 13))
+        for m in re.finditer(r'<path d="[^"]*" fill="' + ACCENT + r'" mask="url\(#(clg-c(?:\d+|h))\)"( opacity="([0-9.]+)")?/>', svg):
+            rest = svg[m.end():]; g = rest[:rest.index("</g>") + 4]
+            lines = re.match(r'<g opacity="([0-9.]+)"><image href="data:image/png;base64,', g)
+            self.assertIsNotNone(lines, m.group(1)); self.assertGreaterEqual(float(lines.group(1)), 0.95, m.group(1))   # the lines next, over the accent, at full ink
+            self.assertEqual(g.count("<image "), 1, m.group(1))                                                       # once: no second pass darkening the red
+            if m.group(1) == "clg-ch": self.assertIsNone(m.group(2))                                                  # the hero's accent at full strength
+            else: self.assertLess(float(m.group(3)), 1.0)                                                             # the queue's lighter
+
+    def test_dark_share_of_the_dark_mass_on_a_fixed_request(self):
+        """The share of the frame the dark mass darkens below 0.45 of the paper (the measure's dark class), modelled from its own box, curve-free
+        bounding shape and gradient stops on a 144 x 56 grid (the test has no renderer, so this is the mass alone, without the engraving ink that the
+        rendered picture adds): at least 2 %, the hero's paper block subtracted. (Rendered and measured outside the test: 7-10 % dark.)"""
+        comp = R.build_collage(top_req(27, 13, width=1440))[5]; D = R.CR["dark"]; bx, by, bw, bh = comp["dark_box"]
+        lerp = lambda st, t: next(a0 + (a1 - a0) * (t - o0) / ((o1 - o0) or 1) for (o0, a0), (o1, a1) in zip(st, st[1:]) if o0 <= t <= o1)
+        hb = comp["hero_box"]; dark = 0
+        for gy in range(56):
+            for gx in range(144):
+                x, y = (gx + 0.5) * 10, (gy + 0.5) * 10
+                if not (bx <= x <= bx + 0.7 * bw and by + 0.12 * bh <= y <= by + bh): continue
+                if hb[0] <= x <= hb[0] + hb[2] and hb[1] <= y <= hb[1] + hb[3]: continue
+                a = lerp(D["h_stops"], (x - bx) / bw) * lerp(D["v_stops"], (y - by) / bh)
+                dark += (1 - a) + a * D["tone"] < 0.45
+        self.assertGreaterEqual(dark / (144 * 56), 0.02)
+
+    def test_the_ground_grows_toward_the_lower_right(self):
+        svg = R.build_collage(top_req(30, 3))[0]
+        pts = [(float(a), float(b)) for d in re.findall(r'<path d="([^"]*)" fill="none" stroke="#[0-9a-f]{6}"', svg) for a, b in re.findall(r"M([0-9.]+) ([0-9.]+)h", d)]
+        lr = [p for p in pts if p[0] > 720 and p[1] > 280]; self.assertGreater(len(lr), 300)            # foreground in the lower-right quadrant
+        self.assertGreater(sum(1 for p in pts if p[1] > 500), 2 * sum(1 for p in pts if 280 < p[1] <= 340))   # denser the lower it lies
 
     def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
         ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
@@ -432,7 +474,7 @@ class Collage(unittest.TestCase):
         for f in far:          # the backdrop's blocks: the paper darkened (one factor on all three channels), never the accent
             r = [int(f[i:i + 2], 16) / int(paper[i:i + 2], 16) for i in (1, 3, 5)]; self.assertLess(max(r) - min(r), 0.02, f); self.assertLessEqual(max(r), 1.0, f)
         self.assertEqual(fills, {ACCENT, "#000000", tone(R.CR["hero_fill"]), tone(ck["queue_fill"]["default"])})     # one accent, the rest the paper's greys
-        self.assertEqual(svg.count('<path d="M0 0H'), svg.count("<path "))       # every path a figure's box
+        self.assertEqual(svg.count('<path d="M0 0H'), svg.count("<path ") - 2 - svg.count('stroke-width='))       # every path a figure's box, but the dark mass (2) and the ground strokes
         self.assertEqual(svg.count('<path d="M0 0H1440V560H0Z"'), 1)              # the grain the only full-frame one: no ground band, one sheet of paper
         self.assertNotRegex(svg, r'<path d="M0 [1-9]')
 

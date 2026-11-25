@@ -18,7 +18,10 @@ Only the figures with a hand-set clothing mask wear the accent (pack.json red_ok
 round again in the same seeded order (composition: red_repeats), never two of the same in one group and no figure more than max_uses times in
 the picture (composition: uses_max); K over max_uses x the masked figures is a PackError (unavailable). The accent places follow one spread
 rule for every K (accent_places; composition: red_rule, red_adjacent). Behind the queue, right after the paper, the backdrop (far_slots;
-composition: far, far_ids, far_pieces): rows of pale figures on a raised step that fill the top of the frame; they are not among the N.
+composition: far, far_ids, far_pieces, far_layers): layers of pale figures, each paler and smaller than the one in front, their ends fading into
+the paper, no figure twice in a layer; they are not among the N. Between the far layers and the nearest one, a soft dark mass behind the hero
+(gradient-filled curve under a gradient mask; composition: dark_box); in front of the queue's feet, engraved ground strokes that grow with y
+(composition: ground). An accent figure's lines lie over its accent at red_ink, once; the queue's accent at queue_red_opacity, the hero's full.
 
 Same request, same bytes: the figures and their places come from random.Random seeded with the sha256 of the canonical JSON of the sorted
 member codes (for a proportion its share), K, N, the width, the knobs and the pack's sha256; no clock, no hash(), no unseeded random."""
@@ -125,15 +128,31 @@ def accent_places(kq, q, sl, cfg):
     return "".join("r" if i in red else "g" for i in range(q))
 
 
-def far_slots(cfg):
-    """The backdrop's places, far row first: (row, height, centre x, foot y). Each row of collage_renderer.far stands on one foot line (a raised
-    step behind the queue, as the deck in an engraved crowd) from x[0] to x[1] of the width, its figures `step` x their width apart."""
-    out = []
-    for r, row in enumerate(cfg["far"]["rows"]):
-        h = row["h"] * CH; y = row["foot"] * CH; x = row["x"][0] * CW; dx = row["step"] * cfg["queue"]["aspect"] * h
-        while x <= row["x"][1] * CW:
-            out.append((r, h, x, y)); x += dx
+def far_slots(layer, rng):
+    """One layer of the far view (collage_renderer.far.layers): its n places (height, centre x, foot y, end fade), spread evenly over x[0]..x[1]
+    of the width with a seeded jitter of the spacing, the height and the foot (so no row has one straight foot line); the end fade falls from
+    1 to 0 over the outer `edge` share of the span, so a layer's ends dissolve into the paper."""
+    x0, x1 = layer["x"][0] * CW, layer["x"][1] * CW; n = layer["n"]; dx = (x1 - x0) / n; out = []
+    for j in range(n):
+        x = x0 + (j + 0.5) * dx + (rng.random() - 0.5) * layer["jitter"] * dx
+        h = layer["h"] * CH * (1 + (rng.random() - 0.5) * layer["jitter"] * 0.5)
+        y = layer["foot"] * CH + (rng.random() - 0.5) * layer["foot_jitter"] * h
+        e = max(0.0, min(1.0, (x - x0) / (layer["edge"] * (x1 - x0)), (x1 - x) / (layer["edge"] * (x1 - x0))))
+        out.append((h, x, y, e * e * (3 - 2 * e)))
     return out
+
+
+def ground_strokes(cfg, kn, rng):
+    """The ground (collage_renderer.ground): short engraved strokes in front of the queue's feet line, more, longer and heavier the lower
+    they lie (the footing grows with y; no band): {stroke width: path d}."""
+    G = cfg["ground"]; (hx, hy0), (fx, fy), _ = depth_rule(kn); y0 = G["top"] * CH; d = {}
+    line = lambda x: hy0 - (hy0 - fy) * (x - hx) / (fx - hx)
+    for _ in range(G["n"]):
+        x = rng.random() * CW; t = rng.random() ** G["bias"]; y = CH - t * (CH - y0)
+        if y < line(x) - G["under_feet"]: continue
+        u = (y - y0) / (CH - y0); L = G["len"][0] + (G["len"][1] - G["len"][0]) * u; w = G["width"][0 if u < 0.5 else 1]
+        d.setdefault(w, []).append(f"M{num(x)} {num(y)}h{num(L)}")
+    return {w: "".join(v) for w, v in sorted(d.items())}
 
 
 def grid_bits(hexs, gw, gh):
@@ -231,7 +250,7 @@ def draw(codes, k, n, width, accent, cfg, kn):
     out = [f'<image href="{href("paper")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/>']
     shadow = href("shadow"); used = []
 
-    def figure(tag, fid, h, x, y, red, fill, ink, again=0.0):
+    def figure(tag, fid, h, x, y, red, fill, ink):
         (x0, y0, w, hh_), t = box_of(h, x, y, fid); used.append(f"{fid}.{t}")
         sw = w * cfg["shadow"]["w"]; sh = max(cfg["shadow"]["min_h"], h * cfg["shadow"]["h"])
         out.append(f'<g transform="translate({num(x - sw / 2)},{num(y - sh)})"><image href="{shadow}" width="{num(sw)}" height="{num(2 * sh)}" preserveAspectRatio="none"/></g>')
@@ -239,32 +258,49 @@ def draw(codes, k, n, width, accent, cfg, kn):
         parts = [f'<g transform="translate({num(x0)},{num(y0)})"><defs><mask id="clg-s{tag}"><image href="{href(f"{fid}.{t}.sil")}" {size}/></mask>']
         if red: parts.append(f'<mask id="clg-c{tag}"><image href="{href(f"{fid}.{t}.cloth")}" {size}/></mask>')
         parts.append(f'</defs><path d="{box}" fill="{fill}" mask="url(#clg-s{tag})"/>')
-        if red: parts.append(f'<path d="{box}" fill="{accent}" mask="url(#clg-c{tag})"/>')
+        if red: parts.append(f'<path d="{box}" fill="{accent}" mask="url(#clg-c{tag})"' + (f' opacity="{num(red)}"' if red < 1 else "") + '/>')      # the accent under the lines
         lines = href(f"{fid}.{t}.lines")
         parts.append(f'<g opacity="{num(ink)}"><image href="{lines}" {size}/></g>')
-        if again: parts.append(f'<g opacity="{num(again)}"><image href="{lines}" {size}/></g>')      # the lines once more: the darkest figure
         parts.append('</g>')
         out.append("".join(parts))
         return (x0, y0, w, hh_)
-    # the backdrop (collage_renderer.far): a crowd on a raised step behind the queue, far row first, in pale blocks and faint lines that fade
-    # to the right; the figures no one else drew first, then those drawn once (none more than max_uses times); no accent, no outline-mask count
-    F = cfg["far"]; far_used = []; spare = sorted(order, key=lambda f: uses.get(f, 0)); far_ids = []
-    for j, (r, h, x, y) in enumerate(far_slots(cfg)):
-        fid = next((f for f in spare if uses.get(f, 0) < cap), None)
-        if fid is None: break
-        spare.remove(fid); spare.append(fid); uses[fid] = uses.get(fid, 0) + 1; far_ids.append(fid)
-        row = F["rows"][r]; x += (rng.random() - 0.5) * F["jitter"] * h; hj = h * (1 + (rng.random() - 0.5) * F["jitter"])
-        (x0, y0, w, hb), t = box_of(hj, x, y, fid); far_used.append(f"{fid}.{t}")
-        size = f'width="{num(w)}" height="{num(hb)}" preserveAspectRatio="none"'; fade = 1 - F["fade"] * x / CW
-        out.append(f'<g transform="translate({num(x0)},{num(y0)})"><defs><mask id="clg-f{j}"><image href="{href(f"{fid}.{t}.sil")}" {size}/></mask></defs>'
-                   f'<path d="M0 0H{num(w)}V{num(hb)}H0Z" fill="{tone(paper, row["fill"] + (1 - row["fill"]) * F["fade"] * x / CW)}" mask="url(#clg-f{j})"/>'
-                   f'<g opacity="{num(row["ink"] * fade)}"><image href="{href(f"{fid}.{t}.lines")}" {size}/></g></g>')
+    # the far view (collage_renderer.far): layers far to near, each paler and smaller than the one in front of it, its ends dissolving into the
+    # paper; within a layer no figure twice, across the picture none more than max_uses times (the least drawn first); no accent, not among the N
+    F = cfg["far"]; far_used = []; far_ids = []; far_layers = []; j = 0
+
+    def far_layer(L):
+        nonlocal j
+        mine = set(); cnt = 0
+        for h, x, y, e in far_slots(L, rng):
+            fid = min((f for f in order if uses.get(f, 0) < cap and f not in mine), key=lambda f: (uses.get(f, 0), order.index(f)), default=None)
+            if fid is None or e <= 0.02: continue
+            mine.add(fid); uses[fid] = uses.get(fid, 0) + 1; far_ids.append(fid); cnt += 1
+            (x0, y0, w, hb), t = box_of(h, x, y, fid); far_used.append(f"{fid}.{t}")
+            size = f'width="{num(w)}" height="{num(hb)}" preserveAspectRatio="none"'
+            out.append(f'<g transform="translate({num(x0)},{num(y0)})"><defs><mask id="clg-f{j}"><image href="{href(f"{fid}.{t}.sil")}" {size}/></mask></defs>'
+                       f'<path d="M0 0H{num(w)}V{num(hb)}H0Z" fill="{tone(paper, 1 - (1 - L["fill"]) * e)}" mask="url(#clg-f{j})"/>'
+                       f'<g opacity="{num(L["ink"] * e)}"><image href="{href(f"{fid}.{t}.lines")}" {size}/></g></g>'); j += 1
+        far_layers.append(cnt)
+    for L in F["layers"][:F["behind_dark"]]: far_layer(L)
+    # the dark mass (collage_renderer.dark): one soft-edged shade behind the hero (a curved shape, a horizontal gradient that fades to the paper
+    # on its right, under a vertical gradient mask that fades its top and foot), so the hero reads light and red against dark
+    D = cfg["dark"]; bx, by, bw, bh = D["box"][0] * CW, D["box"][1] * CH, D["box"][2] * CW, D["box"][3] * CH
+    blob = (f'M{num(bx)} {num(by + bh * 0.12)}C{num(bx + bw * 0.35)} {num(by - bh * 0.04)} {num(bx + bw * 0.8)} {num(by + bh * 0.02)} {num(bx + bw)} {num(by + bh * 0.3)}'
+            f'C{num(bx + bw * 1.04)} {num(by + bh * 0.6)} {num(bx + bw * 0.9)} {num(by + bh * 0.9)} {num(bx + bw * 0.7)} {num(by + bh)}H{num(bx)}Z')
+    stops_h = "".join(f'<stop offset="{num(o)}" stop-color="{tone(paper, D["tone"])}" stop-opacity="{num(a)}"/>' for o, a in D["h_stops"])
+    stops_v = "".join(f'<stop offset="{num(o)}" stop-color="#ffffff" stop-opacity="{num(a)}"/>' for o, a in D["v_stops"])
+    out.append(f'<defs><linearGradient id="clg-dh" x1="0" y1="0" x2="1" y2="0">{stops_h}</linearGradient><linearGradient id="clg-dv" x1="0" y1="0" x2="0" y2="1">{stops_v}</linearGradient>'
+               f'<mask id="clg-dm"><path d="{blob}" fill="url(#clg-dv)"/></mask></defs><path d="{blob}" fill="url(#clg-dh)" mask="url(#clg-dm)"/>')
+    for L in F["layers"][F["behind_dark"]:]: far_layer(L)
+    # the ground in front of the queue: engraved strokes that grow with y
+    gs = ground_strokes(cfg, kn, rng); gi = tone(paper, cfg["ground"]["tone"])
+    for w, d in gs.items(): out.append(f'<path d="{d}" fill="none" stroke="{gi}" stroke-width="{num(w)}" opacity="{num(cfg["ground"]["opacity"])}"/>')
     qfill = tone(paper, kn["queue_fill"])
     for j, i in enumerate(draw_order):
         h, x, y = sl[i]
-        ink = cfg["red_ink"] if flags[i] == "r" else kn["queue_ink"]      # the engraving stays legible over the accent
-        figure(str(j), chosen[i], h, x, y, flags[i] == "r", qfill, ink * (fl[0] + fl[1] * min(1.0, h / fl[2])))
-    hero_box = figure("h", hero, hh, hx, hy, True, tone(paper, cfg["hero_fill"]), 1.0, cfg["hero_ink_again"]) if hero else None
+        r = flags[i] == "r"      # an accent figure's lines at red_ink, never faded with distance: the engraving stays legible over the accent
+        figure(str(j), chosen[i], h, x, y, cfg["queue_red_opacity"] if r else 0, qfill, cfg["red_ink"] if r else kn["queue_ink"] * (fl[0] + fl[1] * min(1.0, h / fl[2])))
+    hero_box = figure("h", hero, hh, hx, hy, True, tone(paper, cfg["hero_fill"]), 1.0) if hero else None
     out.append(f'<defs><mask id="clg-grain"><image href="{href("grain")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/></mask></defs>'
                f'<path d="M0 0H{CW}V{CH}H0Z" fill="#000000" opacity="{num(index["grain_opacity"])}" mask="url(#clg-grain)"/>')
     comp = dict(layout=f"collage-{k}of{n}", objects=n, lit=k, omitted=0, queue=q, queue_flags=flags, pieces=used,
@@ -275,5 +311,6 @@ def draw(codes, k, n, width, accent, cfg, kn):
                 red_visible_min=min(seen.values()) if seen else None)
     comp["red_repeats"] = len(comp["red"]) - len(set(comp["red"]))
     comp.update(red_rule="spread", red_adjacent=sum(1 for a, b in zip(flags, flags[1:]) if a == b == "r"), red_ok_count=masked, max_uses=cap,
-                uses_max=max(uses.values()) if uses else 0, far=len(far_ids), far_ids=far_ids, far_pieces=far_used)
+                uses_max=max(uses.values()) if uses else 0, far=len(far_ids), far_ids=far_ids, far_pieces=far_used, far_layers=far_layers,
+                dark_box=[round(v, 2) for v in (bx, by, bw, bh)], ground={str(w): d.count('M') for w, d in gs.items()})
     return {"inner": "".join(out), "composition": comp}
