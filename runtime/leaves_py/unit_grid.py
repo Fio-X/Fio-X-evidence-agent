@@ -150,18 +150,30 @@ class Frame:
         elif k("sort") == "flag_first": f.rows.sort(key=lambda r: (not r["lit"], -r["v"], r["code"]))
         f.cols = min(k("cols"), len(f.rows))
         gap, sn = k("gap"), k("show_names")
-        widest = max(tw(r["name"][1], f.size) for r in f.rows)
-        if sn == "auto" and widest > k("cell") + gap - 4:
+        widths = [tw(r["name"][1], f.size) for r in f.rows]
+
+        def stand(cols, pitch):
+            """Every name under its glyph, in the row, clear of the one before it as it is drawn (a name keeps inside the board: the first
+            column's is shifted right, so a long name in the first two columns can meet its neighbour)."""
+            for i, w in enumerate(widths):
+                if w > pitch - 4: return False
+                if i % cols and i:
+                    x0 = lambda j: min(max(8 + (j % cols) * pitch + k("cell") / 2 - widths[j] / 2, 0.0), f.W - widths[j])
+                    if x0(i) < x0(i - 1) + widths[i - 1] + 2: return False
+            return True
+        if sn == "auto" and f.cols * k("cell") + (f.cols - 1) * gap + 16 <= f.W and not stand(f.cols, k("cell") + gap):   # a grid that fits as given
             # every name under its glyph is worth a wider gap (a question that asks which ones is answered by the grey names too): the gap grows to the
             # widest name, and while the grid then leaves the board the row holds one glyph fewer (at least MIN_COLS); else only the lit ones are named
-            want = math.ceil(widest + 4 - k("cell"))
+            want = math.ceil(max(widths) + 4 - k("cell"))
             for cols in range(f.cols, MIN_COLS - 1, -1):
-                if cols * k("cell") + (cols - 1) * want + 16 <= f.W: f.cols, gap = cols, want; break
+                room = (f.W - 16 - cols * k("cell")) // (cols - 1)   # the widest gap the board allows at this many columns
+                g = next((g for g in range(want, room + 1) if stand(cols, k("cell") + g)), None)
+                if g is not None: f.cols, gap = cols, g; break
         f.pitch = k("cell") + gap
         f.grid_w = f.cols * k("cell") + (f.cols - 1) * gap
         if f.grid_w + 16 > f.W: raise Refused(f"unit_grid: the grid ({f.grid_w} px) is wider than the board ({f.W} px less its margins)")
         # names: under every glyph when each fits its column, else only under the lit ones
-        fits = all(tw(r["name"][1], f.size) <= f.pitch - 4 for r in f.rows)
+        fits = stand(f.cols, f.pitch)
         if sn == "all" and not fits: raise Refused(f"unit_grid: a name is wider than its column ({f.pitch - 4} px); fewer columns, a larger gap, or show_names lit")
         f.names = "all" if sn != "lit" and fits else "lit"
         f.H = 0

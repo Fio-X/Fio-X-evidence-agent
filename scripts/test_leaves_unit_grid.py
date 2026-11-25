@@ -169,6 +169,19 @@ class Picture(unittest.TestCase):
         lit_only = re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', draw(eu(), show_names="lit")[0])
         self.assertEqual(set(lit_only), EU_LIT)
 
+    def test_long_names_in_the_first_two_columns_never_meet(self):
+        """The first column's name is kept inside the board (shifted right), so two long names side by side there could meet: the grid then
+        names only the lit ones (no refusal), and with every name short or the board wide enough, all of them."""
+        long = dict(zip(WB, ["甲乙丙丁戊己庚", "辛壬癸子丑寅卯", "辰巳午未申酉戌", "亥天地玄黄宇宙", "洪荒日月盈昃辰", "宿列张寒来暑往", "秋收冬藏闰余成", "岁律吕调阳云腾"]))   # seven characters each
+        rows, data, names = wb()
+        data.pop("lead", None)
+        K.setup(rows, long, run.tables)
+        for width in (420, 640, 1140):
+            svg = unit_grid.draw({"data": data, "style": {"unit_grid": {"width": width, "cell": 40, "cols": 4}}})[0]
+            named = set(re.findall(r'data-src="name:[^"]*:([A-Z0-9_]+)"', svg))
+            self.assertIn(named, (set(WB), WB_LOW5), width)         # every glyph, or the lit ones: never a refusal, never a part
+
+
     def test_one_accent_and_none(self):
         svg = self.out["eu_cell"][0]
         self.assertEqual(len(re.findall(r'fill="var\(--accent\)" data-code="[A-Z]', svg)), len(EU_LIT))
