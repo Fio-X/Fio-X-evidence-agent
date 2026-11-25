@@ -1488,7 +1488,9 @@ def angle_groups(q):
     order = sorted(kept, key=lambda g: (-gm[g], g))
     rows_data = {"up": {"title": ST("story.groups.up"), "rows": cols["up"]}, "down": {"title": ST("story.groups.down"), "rows": cols["down"]},
                  "footnote": ST("story.groups.foot")}
-    anns = [note("gp_all", "story.note.groups.all"), note("gp_vlo", "story.note.groups.wide", **bind)]   # numbers the title and text do not print
+    # numbers the title and text do not print; the widest group's lowest member set against that group's own simple mean (compared:
+    # the gap in points on a percent measure, else the mean as a multiple of it; the plain note where the two print alike)
+    anns = [note("gp_all", "story.note.groups.all"), compared(q, f, "gp_vlo", "story.note.groups.wide", "gp_vlo", "gp_vlo", gk(wide), at[wlo], gm[wide], **bind)]
     scale = float(q.defs.get(q.fmts["value"], {}).get("scale", 1))
     # the group means as glyphs (area = mean, at most fifteen, none below 0, the smallest still six px across at the largest's 110),
     # the mean of every grouped member as the ghost glyph, labelled by the words' table

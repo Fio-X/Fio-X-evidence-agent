@@ -329,6 +329,8 @@
 "story.groups.foot": "每行：全部成员国简单平均 → 该组成员国简单平均",
 "story.note.groups.all": "所有参与分组的成员国简单平均",
 "story.note.groups.wide": "{g:wide}里最低的{n:wlo}",
+"story.note.groups.wide_pp_dn": "{g:wide}里最低的{n:wlo}，比{g:wide}平均（{f:rv}）低 {f:d}",
+"story.note.groups.wide_x_dn": "{g:wide}里最低的{n:wlo}，{g:wide}平均（{f:rv}）是它的 {f:d} 倍",
 "story.risk.groups_moved": "{n:c}按联合国地理分区属{g:from}，本页归入{g:to}",
 "story.risk.groups_left": "{l:left}所在分组成员太少，不参与分组比较",
 "story.ask.pace": "加快|放慢|提速|减速|变快|变慢|以后|之后|以前|之前",

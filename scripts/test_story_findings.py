@@ -1757,6 +1757,39 @@ class GlyphAccentIsTheNamed(unittest.TestCase):
         self.assertEqual(seen, {c[0] for c in self.CASES}, seen)
 
 
+def percent(mk):
+    """A shape's request with its value format printing a percent sign (the Eurostat share pages' format)."""
+    def go(*a):
+        req, names = mk(*a)
+        return {**req, "fmt_defs": {**req["fmt_defs"], "x": {**req["fmt_defs"]["x"], "suffix": "%"}}}, names
+    return go
+
+
+class LowestOfGroupAndMoversHeadline(unittest.TestCase):
+    """The groups section's note on the widest group's lowest member sets it against that group's own simple mean (the gap in points
+    on a percent measure, the mean as a multiple of it on any other unit), a fact recomputed from the rows. A Eurostat percent shape
+    and a World Bank value shape each."""
+
+    def test_the_lowest_of_the_widest_group_is_set_against_its_mean(self):
+        seen = set()
+        for mk, kind in ((percent(eu27_plain), "pp"), (wb24_request, "x")):
+            req, names = mk(ASKED["groups"])
+            composed, facts, _ = draw_all(self, req, names, ["groups", "rank"])
+            note = next(n for n in composed["leaves"]["glyph_row"]["notes"] if n["num"] == "fact:gp_vlo")
+            words = "".join(x.get("w", "") for x in note["text"])
+            self.assertTrue(("比" in words and "低" in words) if kind == "pp" else "倍" in words, (kind, note))
+            self.assertIn("平均", words, kind)
+            ref = next(x["src"][5:] for x in note["text"] if x.get("src", "").startswith("fact:gp_") and x["src"] != "fact:gp_vlo")
+            d = next(x["src"][5:] for x in note["text"] if x.get("src", "").startswith("fact:vs_"))
+            # the widest group's mean is the reference: its lowest member is below it; the number is the gap or the multiple, from the rows
+            self.assertLess(facts["gp_vlo"]["v"], facts[ref]["v"], kind)
+            want = facts[ref]["v"] - facts["gp_vlo"]["v"] if kind == "pp" else facts[ref]["v"] / facts["gp_vlo"]["v"]
+            self.assertAlmostEqual(facts[d]["v"], want, places=6)
+            self.assertEqual(composed["facts"][d]["op"], "minus" if kind == "pp" else "times", kind)
+            seen.add(kind)
+        self.assertEqual(seen, {"pp", "x"})
+
+
 
 def blocks(composed):
     """The page's data blocks: the sections with a data leaf (not the numbers, the thesis or the notes)."""
