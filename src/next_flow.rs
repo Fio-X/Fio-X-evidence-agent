@@ -2362,7 +2362,7 @@ pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
 
 /// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
 /// The question's own terms that hold a numeral and name no number (Ask::Text terms), said so the model keeps them rather than
-/// drop them for the number rules (dev n15 五岁以下, e11 PM2.5, n10 每百人: the names lost the term the question asked);
+/// drop them for the number rules (dev n15 "under five", e11 PM2.5, n10 "per hundred people": the names lost the term the question asked);
 /// empty when the question writes none.
 fn terms_rule(terms: &[String]) -> String {
     if terms.is_empty() {
@@ -9105,7 +9105,7 @@ mod tests {
         }
     }
 
-    /// Dev n15 (五岁以下), e11 (PM2.5) and n10 (每百人), rounds 17-19: the stand-ins left the term the question asked out of the
+    /// Dev n15 ("under five"), e11 (PM2.5) and n10 ("per hundred people"), rounds 17-19: the stand-ins left the term the question asked out of the
     /// chart names, reading "no number" as barring it. The question's own number-free terms are named on the text ask (the
     /// fields' and the names' descriptions), and a name that keeps one passes the checks as before; a question with none
     /// adds nothing.

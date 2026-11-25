@@ -44,7 +44,7 @@ class TargetFooter(unittest.TestCase):
             self.assertFalse(any(c.isnumeric() for c in line(t)[: -len(t["source_ref"])]), t["id"])
 
     def test_a_character_that_runs_into_the_reference_is_refused(self):
-        t = TARGETS[1]  # the reference ends in a word character (款): a word right after it is not a mark
+        t = TARGETS[1]  # the reference ends in a word character (the character for clause): a word right after it is not a mark
         with self.assertRaises(FX.Refused):
             scmp.footer({"source": [line(t) + "与欧盟统计局"], "refs": [t["source_ref"]]})
         # a separator after it is

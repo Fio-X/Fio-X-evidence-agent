@@ -1202,7 +1202,7 @@ pub struct ScopeRefusal {
     pub reason_zh: String,
     pub hit: String,
     /// Some(year) when the one thing refused is a future year the legal-targets registry holds a target for (owner
-    /// 11-22 23:59, 放行目标年): the refusal is held, not lifted. The flow lets the question on to the page step and stops
+    /// 11-22 23:59, let target years through): the refusal is held, not lifted. The flow lets the question on to the page step and stops
     /// with this same refusal unless the picked page runs against that year's target.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_year: Option<i32>,
@@ -7904,7 +7904,7 @@ mod tests {
         assert_eq!(scope_refused_zh("2027 年德国的人口是多少？", 2027), None);
     }
 
-    /// Owner 11-22 23:59 (放行目标年): a future year that is a registered target year is held, with the year, for the page
+    /// Owner 11-22 23:59 (let target years through): a future year that is a registered target year is held, with the year, for the page
     /// step to settle; every other future year, a second future year, and a forecast word still refuse outright.
     #[test]
     fn a_target_year_is_held_not_let_through() {

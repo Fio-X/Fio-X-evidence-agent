@@ -276,7 +276,7 @@ fn plain(question: &str) -> String {
     q
 }
 
-/// The count a question's characters spell from `at` on (3, 十二, 两): its digits or its Chinese numerals up to 九十九,
+/// The count a question's characters spell from `at` on (3, the numeral twelve, the word for two): its digits or its Chinese numerals up to ninety-nine,
 /// with the number of characters it took; None when no count starts there.
 fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
     let digit = |c: char| {
@@ -319,8 +319,9 @@ fn count_after(q: &str, mark: char) -> Option<usize> {
         .find_map(|(i, _)| count_at(&chars, i + 1).map(|(n, _)| n))
 }
 
-/// The count right after a highest or lowest word, with a counter after it (最高的三个, 最低的五个, 最慢的 3 个): the
-/// first n at one end, and whether it is the low end. A count without a counter ("最高的 2023 年") is not one.
+/// The count right after a highest or lowest word, with a counter after it (the highest three, the lowest five, the slowest 3,
+/// each with its counter word): the first n at one end, and whether it is the low end. A count without a counter (the
+/// highest in 2023, the number followed by the word for year) is not one.
 fn count_after_extreme(q: &str) -> Option<(usize, bool)> {
     let chars: Vec<char> = q.chars().collect();
     let ends = MAX_ZH
@@ -378,7 +379,7 @@ pub fn asks_lowest(question: &str) -> bool {
     )
 }
 
-/// The first n at one end a question asks for (前三, 最高的五个, 倒数后三, 最低的五个), by its words: the focus of its
+/// The first n at one end a question asks for (the first three, the highest five, the last three from the bottom, the lowest five), by its words: the focus of its
 /// relation is Top(n) or Bottom(n), with whether it is the low end. Anything else (the highest one, both ends, a change): None.
 pub fn asks_top(question: &str) -> Option<(usize, bool)> {
     match focus(question, relation(question), None) {
@@ -388,15 +389,15 @@ pub fn asks_top(question: &str) -> Option<(usize, bool)> {
     }
 }
 
-/// Whether the question asks how its places fell (各降了多少, 降得最多, 减少了多少): a change asked (its relation Change) with a
+/// Whether the question asks how its places fell (how much did each fall, which fell the most, how much did it decrease): a change asked (its relation Change) with a
 /// falling word (DOWN_ZH) and no rising word (UP_ZH), by its words. A change page leads with the largest fall then, not with a
-/// rise that ties or outnumbers the falls (dev e11, rounds 17-19: 各降了多少 over two rises and two falls led with a rise).
+/// rise that ties or outnumbers the falls (dev e11, rounds 17-19: "how much did each fall" over two rises and two falls led with a rise).
 pub fn asks_fall(question: &str) -> bool {
     let q = plain(question);
     relation(question) == Rel::Change && any(&q, &DOWN_ZH) && !any(&q, &UP_ZH)
 }
 
-/// Whether the question asks where one place stands in its ranking (排第几, 排在, 位置): the focus of its relation is Position.
+/// Whether the question asks where one place stands in its ranking (what rank, ranks at, position): the focus of its relation is Position.
 pub fn asks_position(question: &str) -> bool {
     matches!(
         focus(question, relation(question), None),
@@ -913,7 +914,7 @@ mod tests {
         }
     }
 
-    /// A question asks for the first n at one end by 前n, 倒数后n, or a highest or lowest word with a count and a counter
+    /// A question asks for the first n at one end by "the first n", "the last n from the bottom", or a highest or lowest word with a count and a counter
     /// after it (sentences written for the test, in the bank's wordings): not for the highest or lowest one, both ends, a
     /// year after the word, or a change.
     #[test]
@@ -972,7 +973,7 @@ mod tests {
         }
     }
 
-    /// A question that asks where one place stands in its ranking (排第几) is read as such; the highest, a first n, a
+    /// A question that asks where one place stands in its ranking (what rank it is) is read as such; the highest, a first n, a
     /// change, a total, or a ranking with no place asked is not.
     #[test]
     fn a_question_asking_where_a_place_stands_is_read_from_its_words() {
@@ -995,7 +996,7 @@ mod tests {
     }
 
     /// A change asked with a falling word and no rising word asks how its places fell (dev e11 over rounds 17-19, n38, vc5);
-    /// a rise, both ways, a level, or a falling word inside a measure's name (降水) is not.
+    /// a rise, both ways, a level, or a falling word inside a measure's name (precipitation, whose Chinese name holds the word for fall) is not.
     #[test]
     fn a_question_asking_how_places_fell_is_read_from_its_words() {
         for q in [

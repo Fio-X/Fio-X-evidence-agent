@@ -625,7 +625,7 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     }
     years.dedup();
     let last = last_years(&chars);
-    // years all after this one (a target's year, "离 2030 年目标") name no years a table holds: no window of the
+    // years all after this one (a target's year, as in "how far from the 2030 target") name no years a table holds: no window of the
     // question's, the program's own (owner 11-22 23:59: only a target year gets this far, the scope check refuses others)
     if years.iter().all(|y| y.0 > this_year) {
         years.clear();

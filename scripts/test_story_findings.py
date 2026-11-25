@@ -1548,8 +1548,8 @@ class PaceAndGroups(unittest.TestCase):
             self.assertEqual(len(cands), len({c["id"] for c in cands}))
 
     def test_reference_labels_come_from_the_words_and_the_target_row(self):
-        """The groups' glyph row has the members' mean as its ghost glyph, labelled 成员国简单平均 (story.ref.mean); its dot strip draws
-        the mean with the leaf's own word (dot.mean, the same words) and the target labelled '<place> <year> 年整体目标' from the request's
+        """The groups' glyph row has the members' mean as its ghost glyph, labelled with the words for the members' simple mean (story.ref.mean); its dot strip draws
+        the mean with the leaf's own word (dot.mean, the same words) and the target labelled '<place>', '<year>', then the words for the year's overall target, from the request's
         target row (EU27_2020 at 2030 here); a World Bank shape with no target has no target reference."""
         def say(segs, rows):
             led = {r["src"]: r["text"] for r in rows if "text" in r}
@@ -1635,7 +1635,7 @@ class PaceAndGroups(unittest.TestCase):
     @staticmethod
     def with_delta(req, level_words=False):
         """The request with a difference format whose unit is words after the number (the way the real runs' fmts print a pace:
-        "0.7 个百分点"): a pace and a change print with the unit, a cell of a winners_losers row must still be a plain number."""
+        0.7 followed by the words for percentage points): a pace and a change print with the unit, a cell of a winners_losers row must still be a plain number."""
         defs = {**req["fmt_defs"], "dlt": {"scale": 1, "dec": 1, "suffix": " 个百分点"}}
         if level_words: defs[req["fmts"]["value"]] = {**defs[req["fmts"]["value"]], "suffix": " 吨"}   # the level's own format with unit words too
         return {**req, "fmts": {**req["fmts"], "delta": "dlt"}, "fmt_defs": defs}
@@ -1831,7 +1831,7 @@ class PageBlocks(unittest.TestCase):
         self.assertEqual(strip["lead"][0], below["about"][0])   # the lowest member under the line is named first
 
     def test_which_countries_names_them_and_counts_them_from_facts(self):
-        """A question that asks which countries (哪些国家 … 拖后腿) leads with the members under the line: their count a fact layer 1
+        """A question that asks which countries (which countries ... are holding back) leads with the members under the line: their count a fact layer 1
         counts from the rows (op count under a line), their names the request's name rows, never typed; on three shapes (a target, a
         whole with no target, neither)."""
         kinds = set()

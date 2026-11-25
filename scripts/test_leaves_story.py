@@ -144,7 +144,7 @@ class Story(unittest.TestCase):
         body = re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", body)
         text = re.sub(r"<[^>]+>", "", body)
         left = re.findall(r".{0,12}\d.{0,12}", text)
-        # the one digit the titles write on their own is the year in a worded title's words ("2019 年的"): refused by worded, so none here
+        # the one digit the titles write on their own is the year in a worded title's words ("of 2019", the year with its year word): refused by worded, so none here
         self.assertEqual(left, [])
 
     def test_sections_in_the_requests_order(self):

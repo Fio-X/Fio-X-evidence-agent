@@ -2250,7 +2250,7 @@ fn ring_picks(
 }
 
 /// The one ranked place among the countries the knowledge group reads in the question (Place::Country, an iso2 code),
-/// compared by code, never by a name two name tables or a word like 发展中国家 may spell alike: a Eurostat table's code is
+/// compared by code, never by a name two name tables or a word like "developing countries" (which in Chinese holds China's name) may spell alike: a Eurostat table's code is
 /// the iso code turned into Eurostat's where they differ (next_params::ESTAT_ISO: GR is EL), a World Bank table's the code
 /// its place list gives that iso2. None when none of them or more than one is a place the page ranks.
 fn place_asked_about(
@@ -3812,7 +3812,7 @@ fn recipe_request(
             None => {}
         }
     }
-    // a question that asks for the first n at one end (the knowledge group's reading of its words: 最高的三个, 倒数后五), on
+    // a question that asks for the first n at one end (the knowledge group's reading of its words: the highest three, the last five from the bottom), on
     // a ranking page the program did not narrow over no country the question names on its own, n at least 2 and below the
     // places ranked, the n-th apart from the next: the page draws only those n (the core's top_n over the whole ranking,
     // picks.asked_first_n or asked_last_n for a finding's case), a group's line says the places drawn, and the members left
@@ -3869,7 +3869,7 @@ fn recipe_request(
             p["picks"]["ranked"] = json!(picks.ranked);
             p["picks"]["marks"] = json!(picks.marks);
             p["picks"][if low { "asked_last_n" } else { "asked_first_n" }] = json!(n);
-            // the notes then say the drawn set as a narrowed page's do (所选最高者): its ends are no longer the ranking's
+            // the notes then say the drawn set as a narrowed page's do (the highest of those picked): its ends are no longer the ranking's
             p["picks"]["cut"] = json!(true);
             if let Some(b) = basis.as_mut() {
                 b.line = b.line_drawn.clone();
@@ -16640,7 +16640,7 @@ mod tests {
         published(name, fill, at)
     }
 
-    /// A question that asks where one place stands ("排第几") and names one place the page ranks makes that place the
+    /// A question that asks where one place stands (what rank it is) and names one place the page ranks makes that place the
     /// page's focus (picks.focus: the Position finding says the place it holds, the page marks it), on both ranking
     /// recipes; a question naming no ranked place or two of them, or one that does not ask a place, sets none; the
     /// leader named stays the leader (the level finding).
@@ -16698,7 +16698,7 @@ mod tests {
             // the leader named: the focus is the leader
             let at = ask(&format!("2025 年各国失业率，{}排第几？", zh(leader)));
             assert_eq!(at["focus"], json!(leader), "{name}");
-            // a word that holds a country's name (发展中国家 holds 中国) is no place: the named one is the focus
+            // a word that holds a country's name ("developing countries" holds China in Chinese) is no place: the named one is the focus
             let word = ask(&format!("2025 年发展中国家的失业率，{}排第几？", zh(third)));
             assert_eq!(word["focus"], json!(third), "{name}: {word}");
             // two places named: none to say the place of
@@ -16852,7 +16852,7 @@ mod tests {
         assert!(two["page_in"]["picks"].get("focus").is_none());
         let asked_not = ask("2024 年人口最多的十个国家里，尼日利亚怎么样？", &["NG"]);
         assert!(asked_not["page_in"]["picks"].get("focus").is_none());
-        // a name inside another word (发展中国家 holds 中国) is no place the knowledge group read: only India is named
+        // a name inside another word ("developing countries" holds China in Chinese) is no place the knowledge group read: only India is named
         let word = ask("2024 年发展中国家里，印度排第几？", &["IN"]);
         assert_eq!(word["page_in"]["picks"]["focus"], json!("IND"));
         // a named country the page does not rank (Japan) is none; one ranked and one not is the ranked one
@@ -16943,7 +16943,7 @@ mod tests {
                     plain.contains("画出 3 国"),
                     "{at}: the line says the places drawn"
                 );
-                // a column's notes say the drawn set (the mean of the places drawn: 比图中平均), not the ranking's ends
+                // a column's notes say the drawn set (the mean of the places drawn: "against the mean of those drawn"), not the ranking's ends
                 // the page no longer draws (the ranked bars have no notes)
                 assert!(
                     name != "column" || plain.contains("比图中平均低"),

@@ -4973,7 +4973,7 @@ mod tests {
         }
     }
 
-    /// A question asking how its places fell (picks.asked_fall, the knowledge group's reading of 各降了多少; dev e11, rounds
+    /// A question asking how its places fell (picks.asked_fall, the knowledge group's reading of "how much did each fall"; dev e11, rounds
     /// 17-19) on a change page: the title leads with the largest fall whenever a fall is drawn, though the rises tie or
     /// outnumber the falls (as without the pick, which leads with the largest rise then); with no fall drawn it leads with the
     /// rise as before. Two data shapes: two rises and two falls, three rises and one fall.

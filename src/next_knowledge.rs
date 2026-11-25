@@ -1404,8 +1404,8 @@ mod tests {
             ),
             (1, 73, 3)
         );
-        // the three tables of the event-chain sample, reviewed 11-22 (owner 19:29: 家庭用户电价（半年度）; 温室气体排放（按来源部门）;
-        // 可再生能源和废弃物发电装机容量)
+        // the three tables of the event-chain sample, reviewed 11-22 (owner 19:29: household electricity prices (half-yearly);
+        // greenhouse gas emissions (by source sector); renewable and waste electricity generating capacity)
         assert_eq!(dated("2026-11-22"), 3);
         assert_eq!(zh("nrg_pc_204").as_deref(), Some("家庭用户电价（半年度）"));
         assert_eq!(

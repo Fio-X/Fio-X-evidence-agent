@@ -73,7 +73,7 @@ pub struct Target {
     pub value: String,
     pub unit: String,
     pub unit_label: String,
-    /// Who sets the target, as a page footer names a publisher (欧盟), no digit in it.
+    /// Who sets the target, as a page footer names a publisher (the EU, in Chinese), no digit in it.
     pub publisher_zh: String,
     /// The act and its clause as a footer prints them: the word for the act, a space, then `source_ref`.
     pub source_zh: String,
