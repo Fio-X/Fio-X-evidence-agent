@@ -2577,5 +2577,77 @@ class SuperlativeTitles(unittest.TestCase):
         self.assertTrue({("rank", v, t) for v in (None, 0.0) for t in (False, True)} <= seen, seen)
 
 
+class MapsAreGreyButTheNamed(unittest.TestCase):
+    """A story page's map (member_map) and tile map fill every member by its value in steps of one grey (wbkit.GREY_RAMP) and only
+    the members the section's headline names in the accent, so the section has one focal colour; the map's legend is the grey
+    steps and an accent swatch with its words, and the page legend's map line is the grey ramp. The same on a Eurostat percent
+    shape and a World Bank shape with units; the numbers printed are those of the accent ramp's drawing, and the laid-out page
+    holds no text over another (the bake's layout checks)."""
+    _points, _wb8 = Findings._points, Findings._wb8
+    CASES = (("eu map", lambda t: ({**eu_request()[0], "points": t._points(EU_MEMBERS)}, eu_request()[1]), ["path", "map"], "member_map"),
+             ("wb map", lambda t: t._wb8(), ["map", "spread"], "member_map"),
+             ("eu27 tiles", lambda t: eu27_request(), ["movers", "overtake", "tiles"], "tile_map"),
+             ("wb12 tiles", lambda t: wb12_request(), ["movers", "overtake", "tiles"], "tile_map"))
+
+    def section(self, page_html, layer):
+        """(the codes the map section's h2 names, its svg)."""
+        body = re.search(r'<section class="sec" data-id="[a-z0-9_]+"[^>]*>((?:(?!</section>).)*data-layer="' + layer + r'".*?)</section>', page_html, re.S)[1]
+        h2 = re.search(r"<h2\b[^>]*>(.*?)</h2>", body, re.S)[1]
+        return set(re.findall(r'data-src="name:[^"]*:([^":]+)"', h2)), re.search(r"<svg\b.*?</svg>", body, re.S)[0]
+
+    def test_only_the_named_members_are_red_the_others_one_grey(self):
+        seen = set()
+        for what, mk, picks, layer in self.CASES:
+            req, names = mk(self)
+            composed, _, _, page_html = Findings._page(self, req, names, picks)
+            named, svg = self.section(page_html, layer)
+            cells = {c["code"] for c in composed["leaves"][layer]["cells"]}
+            fills = {m[1]: m[0] for m in re.findall(r'<(?:path|rect) [^>]*?fill="([^"]+)"[^>]*data-code="([^"]+)"', svg)}
+            self.assertEqual(set(fills), cells, what)                                       # every member is filled
+            red = {c for c, f in fills.items() if "--accent" in f}
+            self.assertEqual(red, named & cells, what)                                       # red is what the headline names, no more
+            self.assertTrue(all(fills[c] == "var(--accent)" for c in red), what)
+            self.assertLessEqual({f for c, f in fills.items() if c not in red}, set(K.GREY_RAMP), what)   # the others: steps of one grey
+            self.assertGreater(len({f for c, f in fills.items() if c not in red}), 1, what)           # still graded by value
+            self.assertNotIn("--accent", re.sub(r'<(?:path|rect|circle) [^>]*data-code="(?:' + "|".join(sorted(red)) + r')"[^>]*>', "", svg)
+                             .replace('fill="var(--accent)" data-part="legend named"', ""), what) if red else None
+            # the map's legend: the five grey steps in order, and the accent's line when a member is red
+            self.assertEqual(re.findall(r'<rect [^>]*fill="([^"]+)" data-part="legend"/>', svg), K.GREY_RAMP, what)
+            self.assertEqual(len(re.findall(r'data-part="legend named"', svg)), 1 if red else 0, what)
+            if red: self.assertIn(FN.WD.WORDS["map.legend.named"], page_html, what)
+            # the page legend: the accent line and the map's grey ramp line
+            self.assertIn('<span class="sw accent"></span><span data-word="story.legend.accent">', page_html, what)
+            self.assertIn('<span class="sw ramp"></span><span data-word="story.legend.map">', page_html, what)
+            self.assertNotIn("var(--accent)", re.search(r"\.story \.sw\.ramp\{[^}]*\}", page_html)[0], what)
+            seen.add(what)
+            if red: seen.add("red " + what.split()[0])
+        self.assertEqual(seen >= {"red eu", "red wb12"}, True, seen)                         # both shapes draw a named member in red
+
+    def test_the_numbers_and_places_are_those_of_the_accent_ramp(self):
+        """The map leaf drawn with and without accent_only: the same texts (numbers, names) in the same places; only colours move."""
+        for what, mk, picks, layer in self.CASES:
+            req, names = mk(self)
+            composed = FN.compose({**req, "picks": picks})
+            rows, _ = ledger(req, composed, names)
+            K.setup(rows, names, run.tables)
+            given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+            self.assertIsNotNone(given[layer].get("accent_only"), what)
+            mod = __import__(layer)
+            old, new = (mod.draw({"data": d, "style": {}})[0] for d in (composed["leaves"][layer], given[layer]))
+            self.assertEqual(story.printed(new), story.printed(old), what)
+            key = re.escape(FN.WD.WORDS["map.legend.named"])   # the accent's legend line, drawn as a text off the page (no overlay)
+            strip = lambda svg: re.sub(r'<rect [^>]*data-part="legend named"/>|<circle [^>]*>|<text [^>]*><tspan [^>]*>' + key + "</tspan></text>", "", colourless(svg))
+            if not given[layer]["accent_only"] or layer == "member_map":
+                self.assertEqual(strip(new), strip(old), what)
+
+    def test_the_laid_out_pages_hold_no_text_over_another(self):
+        if not bake.chrome(): self.skipTest("no Chrome or Chromium to lay the page out in")
+        for what, mk, picks, layer in self.CASES:
+            req, names = mk(self)
+            page_html = Findings._page(self, req, names, picks)[3]
+            got = bake.bake({"html": page_html, "ready": "", "width": 1140})
+            self.assertNotIn("error", got, (what, got.get("error")))
+
+
 if __name__ == "__main__":
     unittest.main()
