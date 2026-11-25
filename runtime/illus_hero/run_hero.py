@@ -575,7 +575,8 @@ def build_line(inp):
 def build_people(inp):
     """The same reply the line path gives, drawn by runtime/illus_hero/people: the composition is resolve's own (renderer 'people'); a layout the
     people drawing does not place is `unavailable` (the page's strip stands in), a wrong request is refused. Colours: the page's own tokens
-    (bar, title ink) resolved to hex here; the lit figures' primary and accent are the picture's accent (accent_of: the page's); one_accent greys every other strong colour."""
+    (bar, title ink) resolved to hex here, the accent the picture's (accent_of: the page's). The people drawing paints the accent on the lit figures' outer
+    garments only and greys, one skin tone and ink elsewhere (people.json paint), so its reply is one accent as drawn and no one_accent pass is run on it."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
@@ -585,9 +586,9 @@ def build_people(inp):
     kind = resolved[0]["scene"].split(".")[1]
     if kind not in PD.KINDS: raise Unavailable(f"people: the {kind!r} layout is not drawn by the people renderer")      # the page's strip stands in
     acc = accent_of(inp)
-    d = PD.draw(resolved, {**page_colours(["--accent", "--bar", "--t-title"]), "--accent": acc}, acc)
+    d = PD.draw(resolved, {**page_colours(["--accent", "--bar", "--t-title"]), "--accent": acc})
     k = width / float(PD.CW); h = round(d["h"] * k, 2)
-    return f'<g transform="scale({k:.5f})">{one_accent(d["inner"], acc)}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+    return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
 # ---------------------------------------------------------------- the collage (topics.collage_renderer: runtime/illus_hero/collage/draw.py)
