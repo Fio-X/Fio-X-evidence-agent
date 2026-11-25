@@ -455,7 +455,12 @@ def cl_bignums(f, occ):
     st = f' style="width:{K("width")}px;grid-template-columns:repeat({cols},1fr);text-align:{K("align")}"'
     out = []
     for n, (k, lab) in enumerate(cells):
-        v = c.t("{" + k + "}") + times_word(c, k); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
+        # a number whose unit is words prints alone, its unit once in brackets on the label under it (when the label has room)
+        u = FX.unit(c.spec, c.F[k]).strip() if k in c.F and "fmt" in c.F[k] else ""
+        unit_lab = html.escape(word("paren", v=u), quote=False) if FX.long_unit(u) and not FX.digit(u) else ""
+        if unit_lab and len(re.sub(r"<[^>]+>", "", lab + unit_lab)) > K("label_lines") * 22: unit_lab = ""
+        v = c.t("{" + k + (".n" if unit_lab else "") + "}") + times_word(c, k); lab += unit_lab
+        size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
         out.append(f'<div class="bn"{" data-hot" if n < K("accent_n") else ""}><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
     return f'<div class="bns"{st}>' + "".join(out) + "</div>"
 
