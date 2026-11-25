@@ -2379,5 +2379,62 @@ class ChangeNotes(unittest.TestCase):
         self.assertGreaterEqual(seen, 4)
 
 
+# ---------------------------------------------------------------- the superlative headlines carry a verb
+
+# The page-good judge's verb list (works/pagegood-1031/pagegood.py, VERB), copied: a headline holds one of these words, the places' names taken out
+JUDGE_VERB = ['增', '降', '升', '超', '高于', '低于', '居首', '集中', '占', '达', '成为', '领先', '多于', '少于', '减少', '增加', '下降', '上升', '是', '比', '领跑', '垫底']
+SUPERLATIVE_TITLES = {"story.rank.title_top": ["{n:hi}", "{f:rhi}", "{n:lo}", "{f:rlo}"],
+                      **{f"story.map.title_{s}": ["{y:y1}", "{n:hi}", "{f:mhi}", "{n:lo}", "{f:mlo}"] for s in ("plain", "east", "west", "north", "south")},
+                      **{f"story.tl.title_{s}": ["{y:y1}", "{n:hi}", "{f:thi}", "{n:lo}", "{f:tlo}"] for s in ("plain", "east", "west", "north", "south")}}
+
+
+class SuperlativeTitles(unittest.TestCase):
+    """The headlines that name the highest and the lowest ("X 最高，达 N；Y 最低，只有 N") hold a verb of the judge's list once the places'
+    names are taken out, on a Eurostat percent shape and a World Bank shape with units; their slots are the same facts as before."""
+
+    def has_verb(self, text, names):
+        for n in sorted(names, key=len, reverse=True): text = text.replace(n, "")
+        return [w for w in JUDGE_VERB if w in text]
+
+    def test_every_superlative_title_key_keeps_its_slots_and_reads_with_a_verb(self):
+        samples = ((("瑞典", "比利时"), ("65.4%", "14.9%")), (("美国", "尼日利亚"), ("13.6 吨二氧化碳当量/人", "0.6 吨二氧化碳当量/人")))
+        for key, slots in SUPERLATIVE_TITLES.items():
+            text = FN.WD.WORDS[key]
+            self.assertEqual(re.findall(r"\{[fynlg]:\w+\}", text), slots, key)   # the numbers are the same facts
+            for (hi, lo), (vhi, vlo) in samples:
+                out = text.replace("{y:y1}", "2024 年")
+                for slot, v in zip([x for x in slots if x[1] in "fn"], (hi, vhi, lo, vlo)): out = out.replace(slot, v, 1)
+                self.assertNotIn("{", out, key)
+                self.assertTrue(self.has_verb(out, (hi, lo)), (key, out))
+
+    def headline(self, req, names, picks):
+        """The page's headline (the lead's title) with its placeholders printed from the ledger as the page prints them."""
+        composed = FN.compose({**req, "picks": picks})
+        rows, facts = ledger(req, composed, names)
+        entry = {r["src"]: r.get("text") for r in rows if "src" in r}
+        def fill(m):
+            k = m.group(1)
+            if k.startswith("name."): return names[k[5:]]
+            if k.endswith(".t"): return entry[f"fact:{k[:-2]}.t.y"] + " 年"
+            self.assertIn(k, composed["facts"]); return entry[f"fact:{k}"]
+        return re.sub(r"\{([^}]+)\}", fill, composed["title"])
+
+    def test_the_rank_map_and_tile_headlines_hold_a_verb_on_two_shapes(self):
+        eu, eu_names = eu27_request()
+        eu = NotesStandAgainstAReference.pct(None, eu)
+        no_whole = {**eu, "rows": [r for r in eu["rows"] if r["dims"].get("geo") != "EU27_2020"], "main": {k: v for k, v in eu["main"].items() if k != "whole"}}
+        wb, wb_names = wb12_request()
+        seen = set()
+        for req, names in ((eu, eu_names), (no_whole, eu_names), (wb, wb_names)):
+            for picks in (["rank", "tiles"], ["map", "rank"], ["tiles", "rank"]):
+                if picks[0] not in {c["id"] for c in FN.candidates(req)[1]}: continue
+                h1 = self.headline(req, names, picks)
+                if "排第" in h1: continue   # the rank with a whole leads with where the whole stands (story.rank.title), not this form
+                self.assertTrue(self.has_verb(h1, names.values()), h1)
+                self.assertRegex(h1, r"达 [0-9]"); self.assertRegex(h1, r"只有 [0-9]")
+                seen.add((picks[0], "%" in h1))
+        self.assertTrue({("rank", True), ("rank", False), ("map", True), ("map", False), ("tiles", True), ("tiles", False)} <= seen, seen)
+
+
 if __name__ == "__main__":
     unittest.main()
