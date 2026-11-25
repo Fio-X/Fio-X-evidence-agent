@@ -4165,6 +4165,7 @@ fn recipe_request(
         )
         .map_err(|why| (stage, why))?;
         with_chain(&mut input, chain);
+        unit_name_entry(&mut input, &mut fill["knobs"], &shape.unit)?;
         // a point inside each member's country (the knowledge group's iso3, the visual group's pinned label points), for the
         // findings' map angle; a member with no point leaves the map out, never a point guessed
         let members: Vec<String> = input["main"]["members"]
@@ -5719,6 +5720,29 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
             .collect();
         fill["order"] = Value::Array(kept);
     }
+    Ok(())
+}
+
+/// A unit whose short form holds a digit (a chain-linked volume's base year, as in a euro-per-head unit at 2020 prices) goes to the findings child as the
+/// unit table's name entry (words.unit_src, name:unit_short_zh:<code>), never as typed words, and the page's ledger holds that entry
+/// (knobs.named) as the unit table gives it (fixed_name), as the column page's unit line does. Only a reference to a name-table entry
+/// is added: no word, number or choice of a picture is made here. A unit whose form holds no digit goes as words, as before.
+fn unit_name_entry(input: &mut Value, knobs: &mut Value, unit: &str) -> Result<(), (&'static str, String)> {
+    let Some(short) = next_pack::unit_line_form(unit) else {
+        return Ok(());
+    };
+    if !short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) {
+        return Ok(());
+    }
+    let src = format!("{}{unit}", FIXED_NAMES[1]);
+    if fixed_name(&src).as_deref() != Some(short) {
+        return Err(("fill", format!("unit {unit}: its short form {short:?} is not the unit table's")));
+    }
+    input["words"]["unit_src"] = json!(src);
+    if !knobs["named"].is_object() {
+        knobs["named"] = json!({});
+    }
+    knobs["named"][src.as_str()] = json!(short);
     Ok(())
 }
 
@@ -29129,6 +29153,25 @@ for line in sys.stdin:
                 why.contains(&format!("{r}: not this relation: the table step kept Change, the recipe answers Ranking")),
                 "{r}: {why}"
             );
+        }
+    }
+
+    /// A unit whose short name holds a digit (CLV20_EUR_HAB, a base year) goes to the findings child as the unit table's name entry
+    /// and the page's ledger holds it as the table gives it; a unit with no digit (PC, MIO_EUR) is left as words, nothing added; a
+    /// code the unit table has no name for adds nothing (the story's own refusal of it stands).
+    #[test]
+    fn a_unit_name_with_a_digit_goes_to_the_story_as_the_unit_table_s_name_entry() {
+        let (mut input, mut knobs) = (json!({"words": {"measure": "m", "unit": "u"}}), json!({"spec": {}}));
+        unit_name_entry(&mut input, &mut knobs, "CLV20_EUR_HAB").unwrap();
+        let short = next_pack::unit_line_form("CLV20_EUR_HAB").unwrap();
+        assert!(short.contains("2020"), "{short}");
+        assert_eq!(input["words"]["unit_src"], json!("name:unit_short_zh:CLV20_EUR_HAB"));
+        assert_eq!(knobs["named"], json!({"name:unit_short_zh:CLV20_EUR_HAB": short}));
+        assert_eq!(fixed_name("name:unit_short_zh:CLV20_EUR_HAB").as_deref(), Some(short));
+        for unit in ["PC", "MIO_EUR", "NO_SUCH_UNIT"] {
+            let (mut input, mut knobs) = (json!({"words": {"measure": "m", "unit": "u"}}), json!({"spec": {}}));
+            unit_name_entry(&mut input, &mut knobs, unit).unwrap();
+            assert!(input["words"].get("unit_src").is_none() && knobs.get("named").is_none(), "{unit}");
         }
     }
 

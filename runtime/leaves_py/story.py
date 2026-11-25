@@ -238,9 +238,11 @@ def unbracketed(text):
 
 def measure_name(spec):
     """The measure's Chinese name the page's kicker prints over the headline, without the layout note in brackets (the kicker may read
-    "<measure> (latest rank)"): None when what is left is empty or holds a digit or a Latin letter (no reviewed Chinese name)."""
+    "<measure> (latest rank)"): None when what is left is empty, holds a digit, or holds no Chinese character (an English table title:
+    no reviewed Chinese name). A Chinese name with an acronym in it (GDP per head) is a name."""
     kick = unbracketed(str(spec.get("kicker") or "")).strip()
-    return kick if kick and not FX.digit(kick) and not re.search(r"[A-Za-z]", kick) else None
+    han = any(unicodedata.name(ch, "").startswith("CJK UNIFIED IDEOGRAPH") for ch in kick)
+    return kick if kick and han and not FX.digit(kick) else None
 
 
 def chinese_heads(spec, leaves):

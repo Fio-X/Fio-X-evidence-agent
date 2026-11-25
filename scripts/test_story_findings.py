@@ -219,9 +219,10 @@ def ledger(req, composed, names):
     return rows, facts
 
 
-def draw_all(test, req, names, picks):
+def draw_all(test, req, names, picks, extra=()):
     composed = FN.compose({**req, "picks": picks})
     rows, facts = ledger(req, composed, names)
+    rows += list(extra)   # more ledger entries the page's request holds (a unit's name entry)
     K.setup(rows, names, run.tables)
     drawn = {}
     for layer, data in composed["leaves"].items():
@@ -599,7 +600,8 @@ class Findings(unittest.TestCase):
                     self.assertTrue(composed[k].strip(), k)
                     self.assertNotRegex(composed[k], r"\{\s*\}", k)
                 end = re.sub(r"<[^>]+>", "", re.search(r"<p class=end>(.*?)</p>", page_html, re.S)[1]).strip()
-                self.assertEqual(end, FN.WD.WORDS["story.end.happened_plain" if arc == "happened" else "story.end.lagging"])
+                ranked = any(s_["layer"] in ("rankbar", "rank_slope") for s_ in composed["sections"])   # the lagging line speaks of ranks only with a section of ranks
+                self.assertEqual(end, FN.WD.WORDS["story.end.happened_plain" if arc == "happened" else "story.end.lagging" if ranked else "story.end.lagging_level"])
                 big = [i["fact"] for i in composed["leaves"]["bignums"]["bignums"]]
                 self.assertEqual(big, ["b_now", "m_step"] if arc == "happened" else ["b_hi", "b_lo", "b_ratio"])
                 notes = composed["leaves"]["risk_notes"]["items"]
@@ -2198,6 +2200,98 @@ class NotesStandAgainstAReference(unittest.TestCase):
         req, names = eu27_request()
         self.stands_against_the_lowest(req, names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", False)
         self.stands_against_the_lowest(self.pct(req), names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", True)
+
+
+class ClosingSpeaksOfRanksOnlyWithRanks(unittest.TestCase):
+    """The lagging arc's closing line says "ranks only tell this year's place": a page with no section of ranks (the rank bar, the
+    overtake slope) says the same of the levels; a page with one keeps the line about ranks. On two data shapes."""
+
+    def end(self, mk, picks):
+        req, names = mk()
+        return FN.compose({**req, "picks": picks})
+
+    def test_the_closing_line_follows_the_sections(self):
+        for mk in (eu27_plain, wb24_request):
+            for picks, ranked in ((["below", "ends", "movers"], False), (["ends", "groups", "movers"], False), (["rank", "ends", "movers"], True),
+                                  (["ends", "overtake", "movers"], True)):
+                composed = self.end(mk, picks)
+                self.assertEqual(composed["arc"]["id"], "lagging", (mk.__name__, picks))
+                want = FN.WD.WORDS["story.end.lagging" if ranked else "story.end.lagging_level"]
+                self.assertEqual(re.sub(r"\{[^}]*\}", "", composed["end"]), want, (mk.__name__, picks))
+                self.assertEqual("名次" in composed["end"], ranked, (mk.__name__, picks))
+
+
+class NoNoteSaysItTwice(unittest.TestCase):
+    """The same note (the same number, by what it computes, and the same words) stands once on the page, in the first section that has it:
+    the highest over the lowest is said by the two-ends section and again by the map's range; the later one goes. A note that differs stays."""
+
+    def notes(self, req, picks):
+        c = FN.compose({**req, "picks": picks})
+        return {l: [n["num"] for n in d.get("notes", [])] for l, d in c["leaves"].items() if isinstance(d, dict) and d.get("notes")}
+
+    def test_the_ends_note_is_not_said_again_by_the_map(self):
+        from test_story_findings import eu27_request
+        for mk in (eu27_plain, lambda: eu27_plain(whole=True), eu27_request):
+            req, _ = mk()
+            both = self.notes(req, ["below", "ends", "map"])
+            self.assertIn("fact:d_hl", both["pair_bars"])
+            self.assertNotIn("fact:mrange", both["member_map"])      # the map's range is the ends' difference in the same words
+            self.assertIn("fact:mp_fi", both["member_map"])          # the map's other note says something else and stays
+            one = self.notes(req, ["below", "map", "movers"])
+            self.assertIn("fact:mrange", one["member_map"])          # with no ends section before it the map's note stands
+
+    def test_no_two_notes_of_a_page_say_the_same(self):
+        for mk in (eu27_plain, lambda: eu27_plain(whole=True), eu_request, wb24_request):
+            req, _ = mk()
+            for picks in (["below", "ends", "map"], ["ends", "rank", "movers"], ["rank", "ends", "tiles"], ["ends", "members", "overtake"]):
+                try: composed = FN.compose({**req, "picks": picks})
+                except FN.Refused: continue
+                nums = [n["num"] for d in composed["leaves"].values() if isinstance(d, dict) for n in d.get("notes", [])]
+                self.assertEqual(len(nums), len(set(nums)), (picks, nums))
+
+
+class UnitNameHoldsADigit(unittest.TestCase):
+    """A unit whose short name holds a digit (a chain-linked volume's base year) comes to the child as the unit table's name entry
+    (words.unit_src), never as typed words: every leaf that prints the unit prints that entry, marked with its src, and no digit is
+    left in a word. A digit in the unit words with no such entry is still refused."""
+
+    SRC = "name:unit_short_zh:CLV20_EUR_HAB"
+    NAME = "欧元/人（2020年不变价）"
+
+    def req(self):
+        req, names = eu27_plain(whole=True)
+        return {**req, "words": {"measure": "人均国内生产总值", "unit": self.NAME, "unit_src": self.SRC}}, names
+
+    def test_a_digit_in_the_unit_words_alone_is_refused(self):
+        req, _ = self.req()
+        with self.assertRaisesRegex(FN.Refused, "digit"):
+            FN.candidates({**req, "words": {"measure": "人均国内生产总值", "unit": self.NAME}})
+        with self.assertRaisesRegex(FN.Refused, "digit"):
+            FN.candidates({**req, "words": {"measure": "前20国", "unit": "欧元/人", "unit_src": self.SRC}})
+        with self.assertRaisesRegex(FN.Refused, "name:unit_short_zh"):
+            FN.candidates({**req, "words": {"measure": "人均国内生产总值", "unit": "欧元/人", "unit_src": "fact:a.n"}})
+
+    def test_every_leaf_prints_the_unit_as_the_name_entry(self):
+        req, names = self.req()
+        seen = 0
+        for picks in (["rank", "movers", "ends"], ["ends", "rank", "overtake"], ["path", "members", "below"]):
+            try:
+                composed, _, drawn = draw_all(self, req, names, picks, extra=[{"src": self.SRC, "text": self.NAME}])
+            except FN.Refused:
+                continue
+            for layer, data in composed["leaves"].items():
+                if isinstance(data, dict) and "unit" in data:
+                    self.assertEqual(data["unit"], [{"src": self.SRC}], layer)
+                    self.assertIn(f'data-src="{self.SRC}"', str(drawn[layer]), layer)
+                    seen += 1
+        self.assertGreater(seen, 3)
+
+    def test_a_unit_with_no_digit_still_goes_as_words(self):
+        req, names = eu27_plain(whole=True)
+        composed, _, _ = draw_all(self, req, names, ["rank", "movers", "ends"])
+        units = [d["unit"] for d in composed["leaves"].values() if isinstance(d, dict) and "unit" in d]
+        self.assertTrue(units and all(u == [{"w": req["words"]["unit"]}] for u in units), units)
+
 
 if __name__ == "__main__":
     unittest.main()

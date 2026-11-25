@@ -104,7 +104,8 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "fmts": {"value": fmt, "year": fmt, "times": fmt,            # the spec's format names for a value, a year, a ratio,
             "delta": fmt?},                                     # and a difference or pace (a share's in points; value if none)
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
-   "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
+   "words": {"measure": words, "unit": words, "unit_src": ledger name?},   # the measure's name and its unit (no digit; a unit whose
+                                                                 # name holds one, a base year, comes as unit_src, the unit table's name entry)
    "points": {code: [lon, lat]}?,                              # a point inside each member's country (the map angle's)
    "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
                                                                  # companion tables (knowledge group's chain_companions), their
@@ -370,9 +371,13 @@ class Req:
         # a difference or a pace of the measure (a share's in percentage points): its own format when the request gives one
         q.change = q.fmts.get("delta") or q.fmts["value"]
         q.words = r.get("words") or {}
+        us = q.words.get("unit_src")
+        if us is not None and not (isinstance(us, str) and us.startswith("name:unit_short_zh:")): raise Refused("findings: the unit's name entry is no name:unit_short_zh: entry")
         for k in ("measure", "unit"):
             if not q.words.get(k): raise Refused(f"findings: the request gives no {k} words")
-            if any(ch.isdigit() for ch in q.words[k]): raise Refused(f"findings: the {k} words hold a digit")
+            if any(ch.isdigit() for ch in q.words[k]) and not (k == "unit" and us): raise Refused(f"findings: the {k} words hold a digit")
+        # the unit as a leaf's segments: its words, or (a name with a digit) the unit table's name entry, which layer 1 holds to the table
+        q.unit = [{"src": us}] if us else SW(q.words["unit"])
         q.chain = r.get("chain")
         pts = r.get("points") or {}
         q.points = {c: tuple(v) for c, v in pts.items() if isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)} if isinstance(pts, dict) else {}
@@ -575,7 +580,7 @@ def angle_path(q):
     text = T("story.path.text")
     s = q.wseries
     tk = ticks(top, q.defs.get(q.fmts["value"], {}))
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]),
+    data = {"title": SW(q.words["measure"]), "unit": q.unit,
             "series": {"code": q.whole, "points": [s[y][1] for y in ys], "start_text": "fact:first", "end_text": "fact:now"},
             "target": {"year": "fact:goal.t.y", "text": "fact:goal", "label": ST("story.target")},
             "runs": [{"text": "fact:p_best", "label": ST("story.run.best")},
@@ -626,7 +631,7 @@ def angle_need(q):
          "best": {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.change}}
     title, text = T("story.need.title"), T("story.need.text")
     tk = ticks(gv, q.defs.get(q.fmts["value"], {}))
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]),
+    data = {"title": SW(q.words["measure"]), "unit": q.unit,
             "axis": {"ticks": [f"fact:need_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), "from_zero": True},
             "now": {"text": "fact:now", "at": q.wseries[last][1], "label": ST("story.now")},
             "marks": [{"text": "fact:p_past", "label": ST("story.run.past")}],
@@ -715,7 +720,7 @@ def angle_ends(q):
     f = {"hi": q.value(hi, y1), "lo": q.value(lo, y1), "hi_lo": {"op": "times", "a": "hi", "b": "lo", "fmt": q.fmts["times"]},
          "d_hl": {"op": "minus", "a": "hi", "b": "lo", "fmt": q.change}}
     title, text = T("story.ends.title", a=hi, b=lo), T("story.ends.text", a=hi, b=lo)
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "places": [hi, lo], "place_kind": "place",
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "places": [hi, lo], "place_kind": "place",
             "rows": [{"code": "main", "label": SW(q.words["measure"]), "a": q.panel[hi][y1][1], "b": q.panel[lo][y1][1],
                       "a_text": "fact:hi", "b_text": "fact:lo", "ratio": "fact:hi_lo"}],
             "ratio_unit": ST("story.times")}
@@ -872,7 +877,7 @@ def angle_rank(q):
     if g: f["goal"] = g[2]
     ill = illus_pair(q, at)   # the members' values at the page's year (the whole is a row of the leaf, not a member of the ranking)
     if ill: q.illus["rank"] = {"members": ill["members"]}
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "share_head": head, "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "share_head": head, "name_kind": "place", "rows": rows,
             "highlight": q.whole if q.wseries else hi,   # the code of the row the page draws in the accent (story.rank_style reads it)
             "omit": ST("story.rank.omit")}   # a long rank folds to its ends and the highlighted row (the leaf's fold_over), this line where rows are left out
     if q.wseries:   # each end as a multiple of the whole, where the end is on the side its words say
@@ -940,7 +945,7 @@ def angle_members(q):
     if g and 0 < g[0] <= 1.5 * max(allv):
         f["goal"] = g[2]
         target = {"text": "fact:goal", "scale": float(q.defs[q.fmts["value"]].get("scale", 1)), "label": ST("story.sm.target")}
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
             "cells": [{"code": c, "points": [members[c][y][1] for y in ys], "last_text": f"fact:{key(c)}"} for c in sorted(members)],
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [hi, lo], "footnote": ST("story.sm.foot")}
     if ref: data["ref"] = ref
@@ -988,7 +993,7 @@ def angle_map(q):
     mx = ratio(q, f, "mx", key(hi), key(lo), at[hi], at[lo])
     second = ranked[1]
     tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain")
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
             "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": f"fact:{key(c)}"} if c in called else {})) for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.map.foot")}
     size = clamp(rng / max(abs(at[hi]), 1e-9))
@@ -1056,7 +1061,7 @@ def angle_movers(q):
         lead = max(q.panel, key=lambda c: (q.panel[c][y0][0], c))
         if lead in kept and lead not in (big, other) and ch[lead] != 0:
             anns.append(note("mv_dl", "story.note.mv.lead_up" if amount(lead, "mv_dl") else "story.note.mv.lead_down", c=lead))
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [big, other], "footnote": ST("story.mv.foot", y0=key0(big), y1=key1(big))}
     if whole: data["ref"] = whole
     if len(kept) < len(order): data["omit"] = ST("story.mv.omit")
@@ -1112,7 +1117,7 @@ def angle_overtake(q):
     f["ot_y0"], f["ot_y1"] = q.value(up, y0), q.value(up, y1)   # the two years the title and the key name
     f["ot_rise"] = {"op": "minus", "a": ka(up), "b": kb(up), "fmt": "n"}
     f["ot_fall"] = {"op": "minus", "a": kb(dn), "b": ka(dn), "fmt": "n"}
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [up, dn], "footnote": ST("story.ot.foot")}
     if q.wseries: data["ref"] = q.whole
     size = clamp(cross / pairs * 4)
@@ -1152,7 +1157,7 @@ def angle_tiles(q):
     f = {key(c): q.value(c, y) for c in members}
     f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
     tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain")
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
             "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}
     tx = ratio(q, f, "tx", key(hi), key(lo), at[hi], at[lo])
@@ -1196,7 +1201,7 @@ def strip_two(q, y0, y1, kicker_key, lead):
     if tr:
         f.update(tr[0]); refs.append({**tr[1], "text": "fact:goal.n"})
     k0, k1 = f"ds0_{members[0].lower()}", f"ds1_{members[0].lower()}"
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
             "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)),
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "refs": refs, "footnote": ST("story.risk.simple_mean")}
     if lead: data["lead"] = [c for c in lead if c in members]
@@ -1228,7 +1233,7 @@ def grid_part(q, y, members):
         lit = sorted(order[:5])
         rule = {"op": "bottom", "k": 5}
         key, title = {"lit": ST("story.grid.lit_bottom"), "unlit": ST("story.grid.unlit")}, T("story.grid.title_bottom", lo=lo)
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "mode": "flag", "scale": scale,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)], "rule": rule,
             "key": key}
     return f, {"layer": "unit_grid", "shows": [q.shows(y, "rank")], "data": data, "style": {"unit_grid": {"sort": "flag_first"}}, "kicker": T("story.grid.kicker"),
@@ -1336,8 +1341,8 @@ def angle_pace(q):
                      "title": T("story.pace.rows_title", c=top, a=f"pa_{k}", b=f"pb_{k}") if k else T("story.pace.rows_title_mean"),
                      "text": T("story.pace.rows_text")}
     if pair_ok:   # the two paces as two glyphs whose area is the pace (glyph_row: a derived fact's bare number is its value)
-        unit = (q.defs.get(q.change, {}).get("suffix") or "").strip() or q.words["unit"]
-        layer, data = "glyph_row", {"title": ST("story.pace.pair_title"), "unit": SW(unit), "accent": "after", "footnote": ST("story.risk.simple_mean"),
+        suffix = (q.defs.get(q.change, {}).get("suffix") or "").strip()
+        layer, data = "glyph_row", {"title": ST("story.pace.pair_title"), "unit": SW(suffix) if suffix else q.unit, "accent": "after", "footnote": ST("story.risk.simple_mean"),
                                     "items": [{"code": "before", "name": ST("story.pace.pair_before"), "value": "fact:pc_a.n", "text": "fact:pc_a.n"},
                                               {"code": "after", "name": ST("story.pace.pair_after"), "value": "fact:pc_b.n", "text": "fact:pc_b.n"}]}
         more, fallback = ([rows_part] if rows_part else []), ({"layer": "winners_losers", "data": rows_data, "anns": anns,
@@ -1429,13 +1434,13 @@ def angle_groups(q):
     # the group means as glyphs (area = mean, at most fifteen, none below 0, the smallest still six px across at the largest's 110),
     # the mean of every grouped member as the ghost glyph, labelled by the words' table
     glyph_ok = len(order) <= 15 and gm[lo] >= 0 and allm >= 0 and (gm[lo] == 0 or 110 * math.sqrt(gm[lo] / max(gm[hi], allm)) >= 6)
-    glyph = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "accent": hi, "scale": 1, "footnote": ST("story.risk.simple_mean"),
+    glyph = {"title": SW(q.words["measure"]), "unit": q.unit, "accent": hi, "scale": 1, "footnote": ST("story.risk.simple_mean"),
              "items": [{"code": gid, "name": SW(kept[gid][0]), "value": f"fact:{gk(gid)}.n", "text": f"fact:{gk(gid)}.n"} for gid in order],
              "ref": {"value": "fact:gp_all.n", "text": "fact:gp_all.n", "label": ST("story.ref.mean")}}
     # the members by group on one axis (dot_strip: a row a group, its own mean a tick), the members' mean (the leaf's own words)
     # and the registered target as rules, the target labelled from the request's target row
     for c in pool: f[f"gv_{c.lower()}"] = q.value(c, y)
-    strip = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "scale": scale,
+    strip = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "scale": scale,
              "rows": [{"code": c, "a": q.panel[c][y][1], "a_text": f"fact:gv_{c.lower()}.n", "group": gid} for gid in order for c in kept[gid][1]],
              "periods": [f"period:{q.table}:{y}"], "groups": [{"id": gid, "label": SW(kept[gid][0]), "mean": f"fact:{gk(gid)}.n"} for gid in order],
              "refs": [{"kind": "mean", "text": "fact:gp_all.n"}], "lead": [whi, wlo], "footnote": ST("story.risk.simple_mean")}
@@ -1512,7 +1517,7 @@ def angle_below(q):
     f["bl_lo"] = q.value(lo, y)
     title = T(f"story.below.title_{kind}", names=names, w=w, t=tkey)
     if len(order) > len(names): title.append(("w", WD.WORDS["story.below.more"]))
-    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "mode": "flag", "scale": scale,
+    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)],
             "rule": {"op": "lt", "ref": f"fact:{tkey}.n"}, "key": {"lit": ST("story.below.lit"), "unlit": ST("story.grid.unlit")}}
     line_note = {"goal": ("story.ref.target", {"w": w}), "whole": ("story.below.note_whole", {"w": w}), "mean": ("story.ref.mean", {})}[kind]
@@ -1650,6 +1655,7 @@ def candidates(r):
 ARC_OF = {"chain": "happened", "need": "in_time", "path": "in_time", "spread": "lagging", "rank": "lagging", "ends": "lagging",
           "members": "lagging", "map": "lagging", "movers": "lagging", "overtake": "lagging", "tiles": "lagging",
           "pace": "happened", "groups": "lagging", "below": "lagging"}
+RANK_ANGLES = ("rank", "overtake")   # the findings whose section prints ranks (the closing line of the lagging arc speaks of them)
 ARC_ORDER = {"happened": ["chain", "pace", "spread", "rank", "members", "ends", "movers", "overtake", "groups", "below", "map", "tiles", "path", "need"],
              "in_time": ["need", "path", "pace", "below", "rank", "spread", "groups", "members", "ends", "movers", "overtake", "map", "tiles", "chain"],
              "lagging": ["below", "groups", "spread", "rank", "ends", "members", "movers", "overtake", "map", "tiles", "pace", "chain", "need", "path"]}
@@ -1684,6 +1690,16 @@ def spaced(q, rows, about):
         if c not in at or at[c][0] is None or len(out) >= LEAD_MAX: continue
         if all(at[k][1] != at[c][1] or abs(at[k][0] - at[c][0]) >= gap for k in out): out.append(c)
     return out
+
+
+def unsaid(anns, *parts):
+    """The notes that add something to a section whose title and text are `parts` (segment lists): a note whose numbers (its own and the
+    ledger entries in its words) are all facts the title or text already prints is dropped (the page refuses a section that says again,
+    story.repeats), the same fact whatever its part (.n and .r are one). A finding that heads the page prints its claim instead of its
+    title and a later one prints its title: the same note stands in one place and goes in the other."""
+    base = lambda src: re.sub(r"\.(n|r)$", "", src)
+    have = {base(f"fact:{v}" if kind == "f" else f"fact:{v}.t.y") for part in parts for kind, v in (part or []) if kind in ("f", "y")}
+    return [n for n in anns or [] if not ({base(n["num"])} | {base(x["src"]) for x in n["text"] if "src" in x}) <= have]
 
 
 def place_leaves(picks, by_id, cands):
@@ -1736,8 +1752,9 @@ def plan_arc(picks, cands):
     return arc, [out[0]] + sorted(out[1:], key=order.index), why
 
 
-def closing(arc, facts):
-    """The page's closing line (spec.end) as a wording: each arc ends differently, a number only from a fact the page declares."""
+def closing(arc, facts, ranked=True):
+    """The page's closing line (spec.end) as a wording: each arc ends differently, a number only from a fact the page declares. The lagging
+    arc's line speaks of ranks: a page with no section of ranks (`ranked` false) says the same of the levels."""
     have = lambda *ks: all(k in facts for k in ks)
     if arc == "happened":
         return wording(T("story.end.happened")) if have("p_past", "goal", "first", "now") else wording(T("story.end.happened_plain"))
@@ -1745,7 +1762,7 @@ def closing(arc, facts):
         if have("need", "past"): return wording(T("story.end.in_time"))
         if have("p_best", "best", "goal"): return wording(T("story.end.in_time_path"))
         return wording(T("story.end.in_time_plain"))
-    return wording(T("story.end.lagging"))
+    return wording(T("story.end.lagging" if ranked else "story.end.lagging_level"))
 
 
 # ---------------------------------------------------------------- compose the picked ones into the page
@@ -1770,14 +1787,33 @@ def compose(r):
                 raise Refused(f"findings: the fact {k} is declared two ways by two findings")
             facts[k] = v
     style = {}
-    for c in chosen:   # each pick's own leaf (its main part, or its fallback) and the extra parts it was given
+    told = set()   # the notes an earlier section printed: a later note that says the same again goes
+    def says(n):
+        """A note as what it says: its number and every entry in its words by the fact each is declared as (two facts declared alike are one
+        value), its literal words as they are; two notes of two sections with one `says` are the same note."""
+        def val(key, depth=0):   # a fact by what it computes: its operands replaced by theirs, down to the rows
+            d = facts.get(key)
+            if not isinstance(d, dict) or depth > 8: return d if d is not None else key
+            return {k: (val(v, depth + 1) if k in ("a", "b") and isinstance(v, str) and v in facts else v) for k, v in d.items()}
+        decl = lambda src: json.dumps(val(re.sub(r"\.[a-z.]+$", "", src[len("fact:"):])), sort_keys=True, default=str) if src.startswith("fact:") else src
+        return (decl(n["num"]), tuple(decl(x["src"]) if "src" in x else x.get("w", json.dumps(x, sort_keys=True)) for x in n["text"]))
+    def fresh(anns):
+        keep = [n for n in anns or [] if says(n) not in told]
+        told.update(says(n) for n in keep)
+        return keep
+    for c in chosen:   # each pick's own leaf (its main part, or its fallback), in the page's order; the extra parts follow every pick's own
         main, extra = placed[c["id"]]
         # the lead's section is headed by its claim's number: a note of that number would only say it again, so it goes
         anns = [n for n in (main.get("anns") or []) if c is not chosen[0] or n["num"] != c["claim"]["num"]]
+        if c is not chosen[0]: anns = unsaid(anns, c["title"], c["text"])   # a later finding's section prints its title and text
+        anns = fresh(anns)
         leaves[main["layer"]] = {**main["data"], "notes": anns} if anns else main["data"]  # the notes are the story's (story.py reads them; the leaf ignores them)
         for m in [main, *extra]:
             for leaf, kv in (m.get("style") or {}).items(): style[leaf] = {**style.get(leaf, {}), **kv}
-        for m in extra: leaves[m["layer"]] = {**m["data"], "notes": m["anns"]} if m.get("anns") else m["data"]
+    for c in chosen:
+        for m in placed[c["id"]][1]:
+            ann = fresh(unsaid(m.get("anns"), m["title"], m["text"]))
+            leaves[m["layer"]] = {**m["data"], "notes": ann} if ann else m["data"]
     first = chosen[0]
     # a strip of more than LABEL_ALL_MAX points names only the members the lead finding is about (its "about"), the rest unlabelled:
     # any leaf whose knobs take a lead set (the strip's lead_set) and whose rows are that many
@@ -1830,7 +1866,7 @@ def compose(r):
     leaves[NOTES] = {"title": ST("story.notes.title"), "items": items}
     sections.append({"id": "notes", "layer": NOTES})
     return {"facts": facts, "sections": sections, "leaves": leaves, "style": style, "title": wording(first["title"]), "dek": wording(first["text"]),
-            "end": closing(arc, facts), "arc": {"id": arc, "picks": picks, "why": arc_why}}
+            "end": closing(arc, facts, any(c["id"] in RANK_ANGLES for c in chosen)), "arc": {"id": arc, "picks": picks, "why": arc_why}}
 
 
 def as_fill(page):
