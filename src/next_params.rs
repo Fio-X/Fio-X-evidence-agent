@@ -1494,7 +1494,9 @@ pub fn fill(
                 // A table of the EU as a whole (geo EU27_2020 only, the trade tables): the region is that one code.
                 vec![EU_AGGREGATE.to_string()]
             } else if region {
-                let whole = [EU_AGGREGATE].into_iter().filter(|c| draft.with_whole && held(c));
+                let whole = [EU_AGGREGATE]
+                    .into_iter()
+                    .filter(|c| draft.with_whole && held(c));
                 let mut members = keep(&mut EU27.iter().copied());
                 members.extend(whole.map(str::to_string));
                 members
@@ -3075,12 +3077,25 @@ mod tests {
         // aggregate, at the program's own years: the target's year names no window
         let whole = Draft {
             with_whole: true,
-            named_years: question_years("欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远", 2026),
+            named_years: question_years(
+                "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远",
+                2026,
+            ),
             ..draft.clone()
         };
         assert_eq!(whole.named_years, None);
-        let filled = fill(&whole, 1, &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 1)]), &[Place::Region], 2026).unwrap();
-        assert_eq!(filter(&filled, "geo").unwrap(), ["BE", "DE", "EL", "EU27_2020"]);
+        let filled = fill(
+            &whole,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 1)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
+        assert_eq!(
+            filter(&filled, "geo").unwrap(),
+            ["BE", "DE", "EL", "EU27_2020"]
+        );
         assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
     }
 
@@ -3091,8 +3106,14 @@ mod tests {
         for q in ["离 2030 年目标还有多远", "2030年和2050年的目标"] {
             assert_eq!(question_years(q, 2026), None, "{q}");
         }
-        assert_eq!(question_years("近十年的变化，离 2030 年目标还有多远", 2026), Some(NamedYears::Last(10)));
-        assert_eq!(question_years("2015 年以来离 2030 年目标还差多少", 2026), Some(NamedYears::Span(2015, 2030)));
+        assert_eq!(
+            question_years("近十年的变化，离 2030 年目标还有多远", 2026),
+            Some(NamedYears::Last(10))
+        );
+        assert_eq!(
+            question_years("2015 年以来离 2030 年目标还差多少", 2026),
+            Some(NamedYears::Span(2015, 2030))
+        );
     }
 
     #[test]

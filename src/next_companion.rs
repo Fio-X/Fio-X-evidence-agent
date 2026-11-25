@@ -1613,11 +1613,31 @@ mod tests {
     #[test]
     fn a_story_page_fetches_the_one_series_links_of_its_chain() {
         let index = chain_index(&[]);
-        let tables = |main: &str| -> Vec<String> { chain_links(&index, main).into_iter().map(|l| l.table).collect() };
-        assert_eq!(tables("sdg_07_40"), ["nrg_ti_gas", "nrg_inf_epcrw", "nrg_bal_peh", "env_air_gge", "nrg_pc_204"]);
-        assert_eq!(tables("une_rt_a"), ["lfsi_emp_a", "nama_10_gdp", "ilc_peps01n"]);
+        let tables = |main: &str| -> Vec<String> {
+            chain_links(&index, main)
+                .into_iter()
+                .map(|l| l.table)
+                .collect()
+        };
+        assert_eq!(
+            tables("sdg_07_40"),
+            [
+                "nrg_ti_gas",
+                "nrg_inf_epcrw",
+                "nrg_bal_peh",
+                "env_air_gge",
+                "nrg_pc_204"
+            ]
+        );
+        assert_eq!(
+            tables("une_rt_a"),
+            ["lfsi_emp_a", "nama_10_gdp", "ilc_peps01n"]
+        );
         assert!(tables("demo_pjan").is_empty());
-        assert!(chains().iter().flat_map(|c| &c.links).all(|l| crate::next_pack::unit_short(&l.unit).is_some()));
+        assert!(chains()
+            .iter()
+            .flat_map(|c| &c.links)
+            .all(|l| crate::next_pack::unit_short(&l.unit).is_some()));
     }
 
     #[test]

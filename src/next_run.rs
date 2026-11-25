@@ -1344,7 +1344,12 @@ fn shape_for(
         (Err(why), Some(w)) => (why, w),
         (all, _) => return all,
     };
-    let rest: Vec<String> = recipe.eats.iter().filter(|e| **e != w.condition).cloned().collect();
+    let rest: Vec<String> = recipe
+        .eats
+        .iter()
+        .filter(|e| **e != w.condition)
+        .cloned()
+        .collect();
     let mut s = shape_of(&rest, tables, catalogue)?;
     if s.countries.len() < w.members {
         return Err(format!(
@@ -1843,7 +1848,13 @@ fn has_target(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> 
         .iter()
         .map(String::as_str)
         .chain((!s.hub.is_empty()).then_some(s.hub.as_str()))
-        .chain(s.dims.get(&s.place).into_iter().flatten().map(String::as_str))
+        .chain(
+            s.dims
+                .get(&s.place)
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        )
         .collect();
     let mut best: Option<(String, String, String)> = None;
     for (id, rows) in &tables[1..] {
@@ -3558,7 +3569,12 @@ fn scope_of(shape: &Shape, picks: &Picks, catalogue: &dyn Catalogue) -> Option<S
     if picks.ranked.is_empty() {
         return None;
     }
-    smallest_whole(shape.dims.get(&shape.place)?, &shape.countries, &picks.ranked, catalogue)
+    smallest_whole(
+        shape.dims.get(&shape.place)?,
+        &shape.countries,
+        &picks.ranked,
+        catalogue,
+    )
 }
 
 /// The one rule that picks a page's whole (the short notes' scope and the story page's whole alike): among the main's places
@@ -3574,7 +3590,9 @@ fn smallest_whole(
         .filter(|c| !countries.contains(c))
         .filter_map(|c| {
             let members = catalogue.members(c).ok()?;
-            need.iter().all(|r| members.contains(r)).then(|| (members.len(), c.clone()))
+            need.iter()
+                .all(|r| members.contains(r))
+                .then(|| (members.len(), c.clone()))
         })
         .min()
         .map(|(_, c)| c)
@@ -3665,28 +3683,38 @@ fn recipe_request(
     };
     // a recipe that runs against a target (has_target): the knowledge group's target rows for the main, by their table, after
     // every other table, read like any table's rows
-    let target_rows: BTreeMap<String, Vec<Value>> = match recipe.eats.iter().any(|e| e == HAS_TARGET) {
-        true => catalogue
-            .targets(&main.id)
-            .into_iter()
-            .fold(BTreeMap::new(), |mut by, r| {
-                by.entry(r["table"].as_str().unwrap_or_default().to_string())
-                    .or_insert_with(Vec::new)
-                    .push(r);
-                by
-            }),
-        false => BTreeMap::new(),
-    };
+    let target_rows: BTreeMap<String, Vec<Value>> =
+        match recipe.eats.iter().any(|e| e == HAS_TARGET) {
+            true => catalogue
+                .targets(&main.id)
+                .into_iter()
+                .fold(BTreeMap::new(), |mut by, r| {
+                    by.entry(r["table"].as_str().unwrap_or_default().to_string())
+                        .or_insert_with(Vec::new)
+                        .push(r);
+                    by
+                }),
+            false => BTreeMap::new(),
+        };
     let shape_over = |main_rows: &[Value]| {
         let mut tables: Vec<(&str, &[Value])> = vec![(main.id.as_str(), main_rows)];
         tables.extend(companion.map(|(id, _)| (id.as_str(), &comp_rows[..])));
         tables.extend(block_rows.iter().map(|(id, rows)| (*id, &rows[..])));
-        tables.extend(target_rows.iter().map(|(id, rows)| (id.as_str(), &rows[..])));
+        tables.extend(
+            target_rows
+                .iter()
+                .map(|(id, rows)| (id.as_str(), &rows[..])),
+        );
         let shape = shape_for(recipe, &tables, catalogue).map_err(shape_err)?;
         // a relation the recipe takes only without its condition (knobs.json recipes[].without.relations): with the condition met
         // the recipe answers its own relation alone. Only such a relation is refused here: a relation no recipe answers is
         // tried as kept none (leaf_request), and a recipe's own relation is its own
-        let only_without = |kept: &String| recipe.without.as_ref().is_some_and(|w| w.relations.contains(kept));
+        let only_without = |kept: &String| {
+            recipe
+                .without
+                .as_ref()
+                .is_some_and(|w| w.relations.contains(kept))
+        };
         match (main.relation.map(|r| format!("{r:?}")), &recipe.relation) {
             (Some(kept), Some(answers))
                 if &kept != answers && only_without(&kept) && shape.passed_over.is_none() =>
@@ -3996,7 +4024,11 @@ fn recipe_request(
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
-    if recipe.layers.iter().any(|l| l == "map" || l == "bubbles" || l == "member_map") {
+    if recipe
+        .layers
+        .iter()
+        .any(|l| l == "map" || l == "bubbles" || l == "member_map")
+    {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue
@@ -4106,7 +4138,9 @@ fn recipe_request(
         ) else {
             return Err((
                 "fill",
-                format!("the target row of {table} at {place} {year} names no source line and clause"),
+                format!(
+                    "the target row of {table} at {place} {year} names no source line and clause"
+                ),
             ));
         };
         lines.push(line.to_string());
@@ -4122,8 +4156,14 @@ fn recipe_request(
             Some(_) => "fill",
             None => "shape",
         };
-        let mut input = story_input(&shape, shape.target.as_ref(), whole.as_deref(), (&main_rows, &target_rows), &title)
-            .map_err(|why| (stage, why))?;
+        let mut input = story_input(
+            &shape,
+            shape.target.as_ref(),
+            whole.as_deref(),
+            (&main_rows, &target_rows),
+            &title,
+        )
+        .map_err(|why| (stage, why))?;
         with_chain(&mut input, chain);
         // a point inside each member's country (the knowledge group's iso3, the visual group's pinned label points), for the
         // findings' map angle; a member with no point leaves the map out, never a point guessed
@@ -4153,7 +4193,11 @@ fn recipe_request(
 
 /// A recipe's findings minimum when it went without `passed` (knobs.json recipes[].without): Err "not this shape" when the
 /// findings child's candidates (`found`) are fewer.
-fn findings_minimum(passed: &str, w: &crate::next_leaf::Without, found: &Value) -> Result<(), String> {
+fn findings_minimum(
+    passed: &str,
+    w: &crate::next_leaf::Without,
+    found: &Value,
+) -> Result<(), String> {
     let n = found["candidates"].as_array().map_or(0, Vec::len);
     match n < w.findings {
         true => Err(format!(
@@ -4174,7 +4218,14 @@ fn story_candidates(
     let mut asked = input.clone();
     asked["mode"] = json!("candidates");
     let runtime = run_dir.join("runtime");
-    match crate::next_flow::visual_call(calls, "story", Request::Story { request: &asked, runtime: &runtime }) {
+    match crate::next_flow::visual_call(
+        calls,
+        "story",
+        Request::Story {
+            request: &asked,
+            runtime: &runtime,
+        },
+    ) {
         Ok(Reply::Story(reply)) => Ok(reply),
         Ok(_) => unreachable!("the visual group answered story with another reply"),
         Err(why) => Err(format!("story findings: {why}")),
@@ -4242,19 +4293,27 @@ fn chain_add(
         let Some(short) = next_pack::unit_short(&link.unit) else {
             return;
         };
-        let mut filter: Map<String, Value> = link.filter.iter().map(|(d, v)| (d.clone(), json!(v))).collect();
+        let mut filter: Map<String, Value> = link
+            .filter
+            .iter()
+            .map(|(d, v)| (d.clone(), json!(v)))
+            .collect();
         filter.insert(place_dim.to_string(), json!(whole));
         let held: Vec<Value> = rows
             .into_iter()
             .filter(|r| filter.iter().all(|(d, v)| r["dims"][d.as_str()] == *v))
             .collect();
         let years: Vec<&str> = held.iter().filter_map(|r| r["time"].as_str()).collect();
-        let yearly = years.iter().all(|t| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()));
+        let yearly = years
+            .iter()
+            .all(|t| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()));
         let once = years.iter().collect::<BTreeSet<_>>().len() == years.len();
         if held.is_empty() || !yearly || !once {
             return;
         }
-        let end = next_pack::unit_number_suffix(&link.unit).map(suffix).unwrap_or_default();
+        let end = next_pack::unit_number_suffix(&link.unit)
+            .map(suffix)
+            .unwrap_or_default();
         for dec in 0..3 {
             out.fmts.insert(
                 format!("{}_d{dec}", link.id),
@@ -4309,7 +4368,10 @@ fn story_input(
                 .get(table)
                 .into_iter()
                 .flatten()
-                .filter(|r| r["time"].as_str() == Some(year) && r["dims"][&shape.place].as_str() == Some(place))
+                .filter(|r| {
+                    r["time"].as_str() == Some(year)
+                        && r["dims"][&shape.place].as_str() == Some(place)
+                })
                 .collect::<Vec<_>>();
             let [row] = rows.as_slice() else {
                 return Err(format!(
@@ -4339,7 +4401,10 @@ fn story_input(
         .ok_or_else(|| format!("story: unit {} has no short form", shape.unit))?;
     // the decimals the main's values hold, at most one (two when every value is under 10): a story's numbers are read, not
     // looked up (the sample page prints a share at one place)
-    let values: Vec<&str> = main_rows.iter().filter_map(|r| r["value"].as_str()).collect();
+    let values: Vec<&str> = main_rows
+        .iter()
+        .filter_map(|r| r["value"].as_str())
+        .collect();
     let small = values
         .iter()
         .all(|v| v.parse::<f64>().is_ok_and(|x| x.abs() < 10.0));
@@ -4350,7 +4415,9 @@ fn story_input(
         .unwrap_or(0)
         .min(if small { 2 } else { 1 });
     let value = shape.unit.to_lowercase();
-    let unit_suffix = next_pack::unit_number_suffix(&shape.unit).map(suffix).unwrap_or_default();
+    let unit_suffix = next_pack::unit_number_suffix(&shape.unit)
+        .map(suffix)
+        .unwrap_or_default();
     // a difference or a pace of a percent is in percentage points (POINTS), of any other unit in the unit itself
     let change_suffix = match unit_suffix.as_str() {
         "%" => POINTS.1.to_string(),
@@ -4363,7 +4430,11 @@ fn story_input(
         "story_year": {"scale": 1, "dec": 0, "suffix": ""},
         "story_times": {"scale": 1, "dec": 1, "suffix": ""},
     });
-    let rows: Vec<Value> = main_rows.iter().cloned().chain(target.map(|(_, _, row)| row.clone())).collect();
+    let rows: Vec<Value> = main_rows
+        .iter()
+        .cloned()
+        .chain(target.map(|(_, _, row)| row.clone()))
+        .collect();
     let mut input = json!({
         "main": {"table": shape.main, "by": shape.place, "whole": place, "members": members, "filter": fixed},
         "rows": rows,
@@ -4372,7 +4443,9 @@ fn story_input(
         "words": {"measure": measure, "unit": short},
     });
     match target {
-        Some((table, year, row)) => input["target"] = json!({"table": table, "filter": row["dims"], "time": year}),
+        Some((table, year, row)) => {
+            input["target"] = json!({"table": table, "filter": row["dims"], "time": year})
+        }
         // no target: the findings that need one (need, path) do not stand; no whole: the main names none
         None if place.is_empty() => {
             if let Some(m) = input["main"].as_object_mut() {
@@ -5443,7 +5516,10 @@ pub const STORY_FINDINGS_EVENT: &str = "next_story_findings";
 /// A refusal the search step held for a target year (scope_refused's target_year, owner 11-22 23:59) settled at the page
 /// step: Ok when nothing is held or the picked fill runs against that very year's target (its findings input names it);
 /// any other fill, or none, stops with the held refusal's own words. A refusal held for no year is the search step's.
-fn held_settled(held: Option<&crate::l5geo::ScopeRefusal>, fill: Option<&Value>) -> Result<(), Stop> {
+fn held_settled(
+    held: Option<&crate::l5geo::ScopeRefusal>,
+    fill: Option<&Value>,
+) -> Result<(), Stop> {
     let Some((r, year)) = held.and_then(|r| r.target_year.map(|y| (r, y.to_string()))) else {
         return Ok(());
     };
@@ -5473,7 +5549,14 @@ async fn story_findings(
     };
     let runtime = recorder.run_dir().join("runtime");
     let child = |request: &Value| -> Result<Value, Stop> {
-        match crate::next_flow::visual_call(calls, "story", Request::Story { request, runtime: &runtime }) {
+        match crate::next_flow::visual_call(
+            calls,
+            "story",
+            Request::Story {
+                request,
+                runtime: &runtime,
+            },
+        ) {
             Ok(Reply::Story(reply)) => Ok(reply),
             Ok(_) => unreachable!("the visual group answered story with another reply"),
             Err(why) => Err(stop("fill", format!("story findings: {why}"))),
@@ -5484,16 +5567,27 @@ async fn story_findings(
     asked["mode"] = json!("candidates");
     asked["question"] = json!(question);
     let found = child(&asked)?;
-    let candidates: Vec<&Value> = found["candidates"].as_array().into_iter().flatten().take(STORY_SHOWN).collect();
+    let candidates: Vec<&Value> = found["candidates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(STORY_SHOWN)
+        .collect();
     let ids: Vec<String> = candidates
         .iter()
         .filter_map(|c| c["id"].as_str().map(str::to_string))
         .collect();
     if ids.len() < 2 || ids.len() != candidates.len() {
-        recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": [], "by": "none"}))?;
+        recorder.program_event(
+            STORY_FINDINGS_EVENT,
+            json!({"found": found, "picks": [], "by": "none"}),
+        )?;
         return Err(stop(
             "fill",
-            format!("story findings: {} finding(s) stand; a story tells two at least", ids.len()),
+            format!(
+                "story findings: {} finding(s) stand; a story tells two at least",
+                ids.len()
+            ),
         ));
     }
     let (picks, by): (Vec<String>, &str) = if ids.len() < crate::next_flow::CLAIMS_MIN {
@@ -5501,10 +5595,15 @@ async fn story_findings(
     } else {
         let mut lines = vec![
             format!("Question: {question}"),
-            "Findings the page's rows hold, worked out and scored by the program, best first:".to_string(),
+            "Findings the page's rows hold, worked out and scored by the program, best first:"
+                .to_string(),
         ];
         for (i, c) in candidates.iter().enumerate() {
-            lines.push(format!("{}. {}", i + 1, c["summary"].as_str().unwrap_or_default()));
+            lines.push(format!(
+                "{}. {}",
+                i + 1,
+                c["summary"].as_str().unwrap_or_default()
+            ));
         }
         lines.push(format!(
             "Pick the findings the page should tell, the one that answers the question first: pick must list {} to {} different finding numbers.",
@@ -5515,13 +5614,26 @@ async fn story_findings(
             groups: vec![ids.len()],
             relations: 1,
         };
-        let picked = match recorder.ask_step(model, &ask, &lines.join("\n"), cancel).await? {
+        let picked = match recorder
+            .ask_step(model, &ask, &lines.join("\n"), cancel)
+            .await?
+        {
             (_, Choice::Claims { picks, .. }) => picks,
             (_, other) => unreachable!("the findings step was answered with {other:?}"),
         };
-        (picked.iter().take(STORY_TOLD).map(|p| ids[p - 1].clone()).collect(), "model")
+        (
+            picked
+                .iter()
+                .take(STORY_TOLD)
+                .map(|p| ids[p - 1].clone())
+                .collect(),
+            "model",
+        )
     };
-    recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": picks, "by": by}))?;
+    recorder.program_event(
+        STORY_FINDINGS_EVENT,
+        json!({"found": found, "picks": picks, "by": by}),
+    )?;
     let mut asked = input.clone();
     asked["mode"] = json!("compose");
     asked["question"] = json!(question);
@@ -5538,7 +5650,9 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
     let only = |v: &Value, keys: &[&str], at: &str| -> Result<(), String> {
         match v.as_object() {
             Some(o) => match o.keys().find(|k| !keys.contains(&k.as_str())) {
-                Some(k) => Err(format!("the child gave {at}.{k}, which is layer 1's or no part of a fill")),
+                Some(k) => Err(format!(
+                    "the child gave {at}.{k}, which is layer 1's or no part of a fill"
+                )),
                 None => Ok(()),
             },
             None => Err(format!("the child gave no object as {at}")),
@@ -5546,22 +5660,38 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
     };
     only(page, &["knobs"], "reply")?;
     only(&page["knobs"], &["spec"], "knobs")?;
-    only(&page["knobs"]["spec"], &crate::next_leaf::STORY_TAKEN, "knobs.spec")?;
+    only(
+        &page["knobs"]["spec"],
+        &crate::next_leaf::STORY_TAKEN,
+        "knobs.spec",
+    )?;
     // the headline words are the findings' own (the lead's conclusion and text, the first finding the model picked): they
     // replace the draft the fill was picked with (and page_words keeps them over the text step's), the rest merges
     let mut given = page["knobs"]["spec"].clone();
     for key in crate::next_leaf::STORY_WORDS {
         if let Some(words) = given.as_object_mut().and_then(|o| o.remove(key)) {
             if !words.as_str().is_some_and(|w| !w.trim().is_empty()) {
-                return Err(format!("the child gave knobs.spec.{key}, which is no wording"));
+                return Err(format!(
+                    "the child gave knobs.spec.{key}, which is no wording"
+                ));
             }
             fill["knobs"]["spec"][key] = words;
         }
     }
     merge_into(&mut fill["knobs"]["spec"], &given, "knobs.spec")?;
-    merge_into(&mut fill["knobs"]["spec"], &json!({"fmts": input["fmt_defs"]}), "knobs.spec")?;
-    merge_into(&mut fill["knobs"], &json!({"members": input["main"]["members"]}), "knobs")?;
-    let rows = fill["rows"].as_array_mut().ok_or("the fill's rows are no list")?;
+    merge_into(
+        &mut fill["knobs"]["spec"],
+        &json!({"fmts": input["fmt_defs"]}),
+        "knobs.spec",
+    )?;
+    merge_into(
+        &mut fill["knobs"],
+        &json!({"members": input["main"]["members"]}),
+        "knobs",
+    )?;
+    let rows = fill["rows"]
+        .as_array_mut()
+        .ok_or("the fill's rows are no list")?;
     for r in input["rows"].as_array().into_iter().flatten() {
         if !rows.iter().any(|x| x["src"] == r["src"]) {
             rows.push(r.clone());
@@ -5578,9 +5708,15 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
     if let Some(order) = fill["order"].as_array() {
         let listed: Vec<&str> = order.iter().filter_map(Value::as_str).collect();
         if let Some(l) = named.iter().find(|l| !listed.contains(l)) {
-            return Err(format!("a section names the layer {l}, which the page's recipe does not list"));
+            return Err(format!(
+                "a section names the layer {l}, which the page's recipe does not list"
+            ));
         }
-        let kept: Vec<Value> = listed.iter().filter(|l| named.contains(l)).map(|l| json!(l)).collect();
+        let kept: Vec<Value> = listed
+            .iter()
+            .filter(|l| named.contains(l))
+            .map(|l| json!(l))
+            .collect();
         fill["order"] = Value::Array(kept);
     }
     Ok(())
@@ -5597,7 +5733,9 @@ fn merge_into(into: &mut Value, from: &Value, at: &str) -> Result<(), String> {
                         a.insert(k.clone(), v.clone());
                     }
                     Some(was) if was == v => {}
-                    Some(was) if was.is_object() && v.is_object() => merge_into(was, v, &format!("{at}.{k}"))?,
+                    Some(was) if was.is_object() && v.is_object() => {
+                        merge_into(was, v, &format!("{at}.{k}"))?
+                    }
                     Some(_) => return Err(format!("{at}.{k} is held another way")),
                 }
             }
@@ -5644,7 +5782,10 @@ fn leaf_request(
     };
     for recipe in recipes_tried(catalogue, (of_blocks, many)) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
-            let also = recipe.without.as_ref().is_some_and(|w| w.relations.contains(kept));
+            let also = recipe
+                .without
+                .as_ref()
+                .is_some_and(|w| w.relations.contains(kept));
             if kept != answers && !also {
                 missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
                 continue;
@@ -6219,7 +6360,11 @@ fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<Str
                     .iter()
                     .map(|(id, file)| (id.as_str(), file.as_str())),
             )
-            .chain(p.chain.iter().map(|c| (c.link.id.as_str(), c.file.as_str())))
+            .chain(
+                p.chain
+                    .iter()
+                    .map(|c| (c.link.id.as_str(), c.file.as_str())),
+            )
     });
     let fetched: Vec<crate::next_gate::Fetch> = files
         .filter_map(|(table, file)| {
@@ -6935,7 +7080,8 @@ pub(crate) async fn page_of_block(
     // a page that runs against a target tells the findings the model picks of the program's (story_findings), before the
     // text step words the page
     if let Ok((_, fill)) = picked.as_mut() {
-        if let Err(stopped) = story_findings(recorder, model, question, fill, &calls, cancel).await {
+        if let Err(stopped) = story_findings(recorder, model, question, fill, &calls, cancel).await
+        {
             if recorder.resume_under_last_accepted() {
                 record_page_calls(recorder, catalogue, calls)?;
             }
@@ -10752,23 +10898,40 @@ mod tests {
         for r in main.iter_mut() {
             r["value"] = json!("20");
         }
-        let target = |main_id: &str, geo: &str, t: &str| {
-            json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "slice": {"unit": "PC"}, "time": t, "value": "42.5"})
-        };
-        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"].map(String::from).to_vec();
+        let target = |main_id: &str, geo: &str, t: &str| json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "slice": {"unit": "PC"}, "time": t, "value": "42.5"});
+        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"]
+            .map(String::from)
+            .to_vec();
         let ok = vec![
             target("ren", "EU27_2020", "2030"),
             target("ren", "EU27_2020", "2040"),
             target("other", "EU27_2020", "2050"),
             target("ren", "US", "2060"),
         ];
-        let shape = shape_of(&eats, &[("ren", &main[..]), ("targets", &ok[..])], &Scoped(true)).unwrap();
+        let shape = shape_of(
+            &eats,
+            &[("ren", &main[..]), ("targets", &ok[..])],
+            &Scoped(true),
+        )
+        .unwrap();
         assert_eq!(
             shape.target,
-            Some(("targets".to_string(), "EU27_2020".to_string(), "2040".to_string()))
+            Some((
+                "targets".to_string(),
+                "EU27_2020".to_string(),
+                "2040".to_string()
+            ))
         );
-        let none = vec![target("ren", "EU27_2020", "2024"), target("other", "EU27_2020", "2030")];
-        let e = shape_of(&eats, &[("ren", &main[..]), ("targets", &none[..])], &Scoped(true)).unwrap_err();
+        let none = vec![
+            target("ren", "EU27_2020", "2024"),
+            target("other", "EU27_2020", "2030"),
+        ];
+        let e = shape_of(
+            &eats,
+            &[("ren", &main[..]), ("targets", &none[..])],
+            &Scoped(true),
+        )
+        .unwrap_err();
         assert!(e.contains("no target row after 2024"), "{e}");
     }
 
@@ -10826,7 +10989,9 @@ mod tests {
         assert!(e.contains("no target row"), "{e}");
         let events = calls.lock().unwrap();
         assert_eq!(events.len(), 3);
-        assert!(events.iter().all(|e| e["group"] == "knowledge" && e["request"] == "targets" && e["ok"] == true));
+        assert!(events
+            .iter()
+            .all(|e| e["group"] == "knowledge" && e["request"] == "targets" && e["ok"] == true));
     }
 
     /// The first recipe, in registry order, whose conditions the tables meet (what the pick tries one after the other), with
@@ -10872,16 +11037,29 @@ mod tests {
         assert_eq!(first, Some("page_story"), "{all:?}");
         let (first, all) = first_shape(&[("ren", &eu[..])], &Scoped(true));
         assert_ne!(first, Some("page_story"), "{all:?}");
-        let why = all.iter().find(|(n, _)| *n == "page_story").unwrap().1.clone().unwrap_err();
+        let why = all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .clone()
+            .unwrap_err();
         assert!(why.contains("no target row after 2024"), "{why}");
         // a target for another table does not make the main a story
-        let other = [json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"})];
+        let other = [
+            json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
         let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &other[..])], &Scoped(true));
         assert_ne!(first, Some("page_story"));
         // review 11-22: a target set on another slice of the table (renewables overall, the main renewables in transport),
         // or a main holding more than one code of a slice's dimension, takes no target
-        for (slice, why) in [(json!({"unit": "PC", "nrg_bal": "REN"}), "nrg_bal absent"), (json!({"unit": "KTOE"}), "other unit")] {
-            let t = [json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": slice, "time": "2030", "value": "42.5"})];
+        for (slice, why) in [
+            (json!({"unit": "PC", "nrg_bal": "REN"}), "nrg_bal absent"),
+            (json!({"unit": "KTOE"}), "other unit"),
+        ] {
+            let t = [
+                json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": slice, "time": "2030", "value": "42.5"}),
+            ];
             let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &t[..])], &Scoped(true));
             assert_ne!(first, Some("page_story"), "{why}");
         }
@@ -10892,7 +11070,9 @@ mod tests {
             r["src"] = json!(format!("{}k", r["src"].as_str().unwrap()));
             r
         }));
-        let t = [json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"})];
+        let t = [
+            json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
         let (first, _) = first_shape(&[("ren", &two[..]), ("targets", &t[..])], &Scoped(true));
         assert_ne!(first, Some("page_story"), "two units");
 
@@ -10903,7 +11083,12 @@ mod tests {
             .collect();
         let (first, all) = first_shape(&[(id, &wb[..])], &WbRanked(Vec::new()));
         assert_eq!(first, Some("one_line"), "{all:?}");
-        assert!(all.iter().find(|(n, _)| *n == "page_story").unwrap().1.is_err());
+        assert!(all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .is_err());
     }
 
     /// Owner 11-22 19:0x (the sample's story put into the program): what a story page's findings step hands the findings child
@@ -10916,7 +11101,12 @@ mod tests {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
         let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
-        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", &places), &years);
+        let mut rows = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &places),
+            &years,
+        );
         let pace = |g: &str| match g {
             "MT" | "LU" => -0.05,
             "SE" => 0.9,
@@ -10931,7 +11121,11 @@ mod tests {
                 _ => 5.0 + 4.0 * places.iter().position(|p| *p == g).unwrap() as f64,
             };
             // the whole's best single year (2020) stands out, as the sample's does
-            let jump = if g == "EU27_2020" && y >= 2020.0 { 1.5 } else { 0.0 };
+            let jump = if g == "EU27_2020" && y >= 2020.0 {
+                1.5
+            } else {
+                0.0
+            };
             r["value"] = json!(format!("{:.1}", start + pace(&g) * (y - 2005.0) + jump));
         }
         let child = crate::next_leaf::Runner::python(
@@ -10944,12 +11138,19 @@ mod tests {
         for (goal, short) in [("60", true), ("35", false)] {
             let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
                 "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": goal});
-            let targets: BTreeMap<String, Vec<Value>> = [("target_ren".to_string(), vec![target.clone()])].into();
+            let targets: BTreeMap<String, Vec<Value>> =
+                [("target_ren".to_string(), vec![target.clone()])].into();
             let with = [target];
-            let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
+            let shape = shape_of(
+                &story.eats,
+                &[("ren", &rows[..]), ("target_ren", &with[..])],
+                &Scoped(true),
+            )
+            .unwrap();
             let at = shape.target.clone().unwrap();
             assert_eq!(at, ("target_ren".into(), "EU27_2020".into(), "2030".into()));
-            let input = story_input(&shape, Some(&at), None, (&rows, &targets), "可再生能源占比").unwrap();
+            let input =
+                story_input(&shape, Some(&at), None, (&rows, &targets), "可再生能源占比").unwrap();
             // owner 11-22 23:59: a forecast held for the target year 2030 is settled by this page and by no other; held for
             // another year, or with no page picked, it stops with the refusal's own words
             let held = |year| crate::l5geo::ScopeRefusal {
@@ -10962,23 +11163,40 @@ mod tests {
             let mut input = input;
             let chain_years: Vec<String> = (2010..=2024).map(|y| y.to_string()).collect();
             let chain_years: Vec<&str> = chain_years.iter().map(String::as_str).collect();
-            let link = |id: &str, unit: &str, filter: &[(&str, &str)]| crate::next_knowledge::ChainCompanion {
-                id: id.into(),
-                tag: id.into(),
-                position: String::new(),
-                kind: crate::next_companion::LinkKind::Flow,
-                measure_zh: "测量".into(),
-                unit: unit.into(),
-                slice: BTreeMap::new(),
-                filter: filter.iter().map(|(d, c)| (d.to_string(), c.to_string())).collect(),
-                overlap: crate::next_companion::ChainOverlap { places: 3, years: 10, first: 2010, last: 2024 },
-                axis: crate::next_companion::Axis::Own,
+            let link = |id: &str, unit: &str, filter: &[(&str, &str)]| {
+                crate::next_knowledge::ChainCompanion {
+                    id: id.into(),
+                    tag: id.into(),
+                    position: String::new(),
+                    kind: crate::next_companion::LinkKind::Flow,
+                    measure_zh: "测量".into(),
+                    unit: unit.into(),
+                    slice: BTreeMap::new(),
+                    filter: filter
+                        .iter()
+                        .map(|(d, c)| (d.to_string(), c.to_string()))
+                        .collect(),
+                    overlap: crate::next_companion::ChainOverlap {
+                        places: 3,
+                        years: 10,
+                        first: 2010,
+                        last: 2024,
+                    },
+                    axis: crate::next_companion::Axis::Own,
+                }
             };
             let valued = |mut rows: Vec<Value>, at: f64| {
                 for (i, r) in rows.iter_mut().enumerate() {
                     // a step at 2020 in each series, the band the chain finds
                     let y: f64 = r["time"].as_str().unwrap()[..4].parse().unwrap();
-                    r["value"] = json!(format!("{:.0}", at + if y >= 2020.0 { at / 3.0 } else { i as f64 % 2.0 }));
+                    r["value"] = json!(format!(
+                        "{:.0}",
+                        at + if y >= 2020.0 {
+                            at / 3.0
+                        } else {
+                            i as f64 % 2.0
+                        }
+                    ));
                 }
                 rows
             };
@@ -10986,26 +11204,82 @@ mod tests {
             let air = [("airpol", "GHG"), ("unit", "MIO_T")];
             let mut chain = ChainIn::default();
             let geos = ["EU27_2020", "DE"];
-            chain_add(&mut chain, &link("gas_t", "MIO_M3", &gas), valued(ring_rows("gas_t", &gas, ("geo", &geos), &chain_years), 300000.0), "geo", "EU27_2020");
+            chain_add(
+                &mut chain,
+                &link("gas_t", "MIO_M3", &gas),
+                valued(
+                    ring_rows("gas_t", &gas, ("geo", &geos), &chain_years),
+                    300000.0,
+                ),
+                "geo",
+                "EU27_2020",
+            );
             let half: Vec<&str> = ["2020-S1", "2020-S2", "2021-S1"].into();
-            chain_add(&mut chain, &link("price_t", "EUR_KWH", &[("unit", "KWH")]), ring_rows("price_t", &[("unit", "KWH")], ("geo", &geos), &half), "geo", "EU27_2020");
-            let mut two = ring_rows("solar_t", &[("unit", "MW"), ("siec", "RA420")], ("geo", &geos), &chain_years);
-            two.extend(ring_rows("solar_t", &[("unit", "MW"), ("siec", "RA300")], ("geo", &geos), &chain_years));
-            chain_add(&mut chain, &link("solar_t", "MW", &[("unit", "MW")]), two, "geo", "EU27_2020");
-            chain_add(&mut chain, &link("air_t", "MIO_T", &air), valued(ring_rows("air_t", &air, ("geo", &geos), &chain_years), 2000.0), "geo", "EU27_2020");
+            chain_add(
+                &mut chain,
+                &link("price_t", "EUR_KWH", &[("unit", "KWH")]),
+                ring_rows("price_t", &[("unit", "KWH")], ("geo", &geos), &half),
+                "geo",
+                "EU27_2020",
+            );
+            let mut two = ring_rows(
+                "solar_t",
+                &[("unit", "MW"), ("siec", "RA420")],
+                ("geo", &geos),
+                &chain_years,
+            );
+            two.extend(ring_rows(
+                "solar_t",
+                &[("unit", "MW"), ("siec", "RA300")],
+                ("geo", &geos),
+                &chain_years,
+            ));
+            chain_add(
+                &mut chain,
+                &link("solar_t", "MW", &[("unit", "MW")]),
+                two,
+                "geo",
+                "EU27_2020",
+            );
+            chain_add(
+                &mut chain,
+                &link("air_t", "MIO_T", &air),
+                valued(
+                    ring_rows("air_t", &air, ("geo", &geos), &chain_years),
+                    2000.0,
+                ),
+                "geo",
+                "EU27_2020",
+            );
             assert_eq!(chain.tables, ["gas_t", "air_t"]);
-            assert_eq!(chain.items[0]["filter"], json!({"siec": "G3000", "unit": "MIO_M3", "geo": "EU27_2020"}));
-            assert_eq!(chain.items[0]["words"], json!({"measure": "测量", "unit": "百万立方米"}));
-            assert_eq!(chain.rows.len(), 2 * chain_years.len(), "the whole's rows only");
+            assert_eq!(
+                chain.items[0]["filter"],
+                json!({"siec": "G3000", "unit": "MIO_M3", "geo": "EU27_2020"})
+            );
+            assert_eq!(
+                chain.items[0]["words"],
+                json!({"measure": "测量", "unit": "百万立方米"})
+            );
+            assert_eq!(
+                chain.rows.len(),
+                2 * chain_years.len(),
+                "the whole's rows only"
+            );
             with_chain(&mut input, chain);
             assert_eq!(input["fmt_defs"]["gas_t_d0"]["suffix"], " 百万立方米");
             let input = input;
             let story_fill = json!({STORY_IN: input.clone()});
             assert!(held_settled(Some(&held(2030)), Some(&story_fill)).is_ok());
             assert!(held_settled(None, Some(&json!({}))).is_ok());
-            for (r, fill) in [(held(2050), Some(&story_fill)), (held(2030), None), (held(2030), Some(&rows[0]))] {
+            for (r, fill) in [
+                (held(2050), Some(&story_fill)),
+                (held(2030), None),
+                (held(2030), Some(&rows[0])),
+            ] {
                 match held_settled(Some(&r), fill) {
-                    Err(Stop::NoTable(why)) => assert!(why.contains("out of scope (forecast"), "{why}"),
+                    Err(Stop::NoTable(why)) => {
+                        assert!(why.contains("out of scope (forecast"), "{why}")
+                    }
                     other => panic!("{other:?}"),
                 }
             }
@@ -11013,12 +11287,27 @@ mod tests {
             assert_eq!(shape.members.len(), places.len());
             assert_eq!(input["main"]["whole"], "EU27_2020");
             assert_eq!(input["main"]["filter"], json!({"freq": "A", "unit": "PC"}));
-            assert!(!input["main"]["members"].as_array().unwrap().iter().any(|m| m == "EU27_2020"));
+            assert!(!input["main"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m == "EU27_2020"));
             // the members' map points, as recipe_request gives the findings' map angle: one inside each member's country
-            let members: Vec<String> = input["main"]["members"].as_array().unwrap().iter().map(|m| m.as_str().unwrap().to_string()).collect();
+            let members: Vec<String> = input["main"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m.as_str().unwrap().to_string())
+                .collect();
             let points = Scoped(true).place_points(&members).unwrap();
             assert_eq!(points.len(), members.len());
-            assert!(points["DE"][0] > 5.0 && points["DE"][0] < 15.0 && points["DE"][1] > 47.0 && points["DE"][1] < 55.0, "{points:?}");
+            assert!(
+                points["DE"][0] > 5.0
+                    && points["DE"][0] < 15.0
+                    && points["DE"][1] > 47.0
+                    && points["DE"][1] < 55.0,
+                "{points:?}"
+            );
             assert_eq!(input["target"]["filter"], json!({"geo": "EU27_2020"}));
             assert_eq!(input["fmt_defs"]["pc"]["dec"], 1);
             // a pace or a difference of a share prints in percentage points
@@ -11026,10 +11315,18 @@ mod tests {
             let mut asked = input.clone();
             asked["mode"] = json!("candidates");
             let found = crate::next_leaf::story(&child, &asked).unwrap();
-            let ids: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+            let ids: Vec<&str> = found["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["id"].as_str())
+                .collect();
             assert!(ids.contains(&"path") && ids.contains(&"spread"), "{found}");
             assert!(ids.contains(&"chain"), "{found}");
-            let picks: Vec<&str> = ["path", "need", "chain"].into_iter().filter(|p| ids.contains(p)).collect();
+            let picks: Vec<&str> = ["path", "need", "chain"]
+                .into_iter()
+                .filter(|p| ids.contains(p))
+                .collect();
             asked["mode"] = json!("compose");
             asked["picks"] = json!(picks);
             let page = crate::next_leaf::story(&child, &asked).unwrap();
@@ -11039,11 +11336,12 @@ mod tests {
             assert_eq!(fill["rows"], input["rows"]);
             let request = fill.clone();
             let (spec, read, _) = crate::next_facts::stored_request(&request);
-            let facts: BTreeMap<String, crate::next_facts::Fact> = crate::next_facts::compute(&spec, &read)
-                .unwrap_or_else(|e| panic!("goal {goal}: {e}"))
-                .into_iter()
-                .map(|f| (f.key.clone(), f))
-                .collect();
+            let facts: BTreeMap<String, crate::next_facts::Fact> =
+                crate::next_facts::compute(&spec, &read)
+                    .unwrap_or_else(|e| panic!("goal {goal}: {e}"))
+                    .into_iter()
+                    .map(|f| (f.key.clone(), f))
+                    .collect();
             // st1 11-23: the header's big numbers print each one's year from the request's ledger
             let all: Vec<crate::next_facts::Fact> = facts.values().cloned().collect();
             let ledger = crate::next_facts::leaf_ledger(&spec, &read, &all).unwrap();
@@ -11051,7 +11349,9 @@ mod tests {
             // reads at a year has no .t.y of its own: its year is its table's period entry)
             fn named(v: &Value, out: &mut Vec<String>) {
                 match v {
-                    Value::String(s) if s.starts_with("fact:") || s.starts_with("period:") => out.push(s.clone()),
+                    Value::String(s) if s.starts_with("fact:") || s.starts_with("period:") => {
+                        out.push(s.clone())
+                    }
                     Value::Array(a) => a.iter().for_each(|x| named(x, out)),
                     Value::Object(o) => o.values().for_each(|x| named(x, out)),
                     _ => {}
@@ -11060,19 +11360,39 @@ mod tests {
             let mut srcs = Vec::new();
             named(&page["knobs"]["spec"]["sections"], &mut srcs);
             named(&page["knobs"]["spec"]["hero"], &mut srcs);
-            let missing: Vec<&String> = srcs.iter().filter(|s| !ledger.contains_key(s.as_str())).collect();
-            assert!(missing.is_empty(), "goal {goal}: not in the ledger {missing:?}");
+            let missing: Vec<&String> = srcs
+                .iter()
+                .filter(|s| !ledger.contains_key(s.as_str()))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "goal {goal}: not in the ledger {missing:?}"
+            );
             assert_eq!(facts["best"].t.as_deref(), Some("2020"));
-            assert_eq!((facts["best"].fmt.as_str(), facts["p_best"].fmt.as_str()), ("story_delta", "pc"));
+            assert_eq!(
+                (facts["best"].fmt.as_str(), facts["p_best"].fmt.as_str()),
+                ("story_delta", "pc")
+            );
             assert_eq!(facts["p_best"].v < facts["goal"].v, short, "goal {goal}");
             assert_eq!(facts.contains_key("gap"), short);
             // every tick the path's leaf names is one next_facts gives its axis fact
             let leaves = &page["knobs"]["spec"]["hero"]["leaves"];
             for (layer, axis) in [("target_path", "path_top"), ("gap_axis", "need_top")] {
                 let named = leaves[layer]["axis"]["ticks"].as_array().unwrap().len();
-                assert_eq!(crate::next_facts::ticks(&facts[axis], &input["fmt_defs"]).unwrap().len(), named, "{layer}");
+                assert_eq!(
+                    crate::next_facts::ticks(&facts[axis], &input["fmt_defs"])
+                        .unwrap()
+                        .len(),
+                    named,
+                    "{layer}"
+                );
             }
-            let layers: Vec<&str> = page["knobs"]["spec"]["sections"].as_array().unwrap().iter().filter_map(|s| s["layer"].as_str()).collect();
+            let layers: Vec<&str> = page["knobs"]["spec"]["sections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|s| s["layer"].as_str())
+                .collect();
             // the header's three big numbers open the story, the thesis right after (76 11-23)
             assert_eq!(layers.get(..2), Some(&["bignums", "thesis_claims"][..]));
             assert_eq!(layers.last(), Some(&"risk_notes"));
@@ -11084,37 +11404,90 @@ mod tests {
             let words = |f: &Value, k: &str| f["knobs"]["spec"][k].as_str().unwrap().to_string();
             let (title, dek) = (words(&drafted, "title"), words(&drafted, "dek"));
             // the arc's closing line replaces a draft the same way (I34), and prints no sentence the headline or dek printed
-            assert_eq!(words(&drafted, "end"), page["knobs"]["spec"]["end"].as_str().unwrap(), "goal {goal}");
-            assert!(!words(&drafted, "end").is_empty() && words(&drafted, "end") != title && words(&drafted, "end") != dek);
-            assert_eq!(title, page["knobs"]["spec"]["title"].as_str().unwrap(), "goal {goal}");
-            assert_eq!(dek, page["knobs"]["spec"]["dek"].as_str().unwrap(), "goal {goal}");
-            page_words(&mut drafted, ("text step title", "text step dek", "text step kicker"));
-            assert_eq!((words(&drafted, "title"), words(&drafted, "dek")), (title.clone(), dek.clone()), "goal {goal}");
+            assert_eq!(
+                words(&drafted, "end"),
+                page["knobs"]["spec"]["end"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            assert!(
+                !words(&drafted, "end").is_empty()
+                    && words(&drafted, "end") != title
+                    && words(&drafted, "end") != dek
+            );
+            assert_eq!(
+                title,
+                page["knobs"]["spec"]["title"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            assert_eq!(
+                dek,
+                page["knobs"]["spec"]["dek"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            page_words(
+                &mut drafted,
+                ("text step title", "text step dek", "text step kicker"),
+            );
+            assert_eq!(
+                (words(&drafted, "title"), words(&drafted, "dek")),
+                (title.clone(), dek.clone()),
+                "goal {goal}"
+            );
             assert_eq!(words(&drafted, "kicker"), "text step kicker");
             let facts_declared = page["knobs"]["spec"]["facts"].as_object().unwrap();
             for (what, text) in [("title", &title), ("dek", &dek)] {
-                assert!(text.contains('{'), "goal {goal}: the {what} prints no number: {text}");
-                for ph in text.split('{').skip(1).filter_map(|t| t.split_once('}')).map(|(k, _)| k) {
+                assert!(
+                    text.contains('{'),
+                    "goal {goal}: the {what} prints no number: {text}"
+                );
+                for ph in text
+                    .split('{')
+                    .skip(1)
+                    .filter_map(|t| t.split_once('}'))
+                    .map(|(k, _)| k)
+                {
                     let key = ph.split('.').next().unwrap();
-                    assert!(key == "name" || facts_declared.contains_key(key), "goal {goal}: the {what}'s {{{ph}}} is no fact");
+                    assert!(
+                        key == "name" || facts_declared.contains_key(key),
+                        "goal {goal}: the {what}'s {{{ph}}} is no fact"
+                    );
                 }
             }
             for sec in page["knobs"]["spec"]["sections"].as_array().unwrap() {
                 for part in ["title", "text"] {
-                    assert!(sec[part].as_str() != Some(title.as_str()) && sec[part].as_str() != Some(dek.as_str()), "goal {goal}: {} {part} repeats the headline", sec["id"]);
+                    assert!(
+                        sec[part].as_str() != Some(title.as_str())
+                            && sec[part].as_str() != Some(dek.as_str()),
+                        "goal {goal}: {} {part} repeats the headline",
+                        sec["id"]
+                    );
                 }
             }
             // a headline that is no wording refuses
             let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
             let mut empty = page.clone();
             empty["knobs"]["spec"]["title"] = json!("  ");
-            assert!(story_page(&mut f, &input, &empty).unwrap_err().contains("knobs.spec.title"), "goal {goal}");
+            assert!(
+                story_page(&mut f, &input, &empty)
+                    .unwrap_err()
+                    .contains("knobs.spec.title"),
+                "goal {goal}"
+            );
             // review 11-22: the child gives facts, sections and leaf data only; rows, formats or any other key it adds refuse,
             // and a fact the fill holds another way is never overwritten
             for (bad, why) in [
-                (json!({"knobs": page["knobs"], "rows": [{"src": "target:x", "value": "99"}]}), "reply.rows"),
-                (json!({"knobs": {"spec": page["knobs"]["spec"], "labels": {"DE": "x"}}}), "knobs.labels"),
-                (json!({"knobs": {"spec": {"fmts": {"pc": {"scale": 100}}}}}), "knobs.spec.fmts"),
+                (
+                    json!({"knobs": page["knobs"], "rows": [{"src": "target:x", "value": "99"}]}),
+                    "reply.rows",
+                ),
+                (
+                    json!({"knobs": {"spec": page["knobs"]["spec"], "labels": {"DE": "x"}}}),
+                    "knobs.labels",
+                ),
+                (
+                    json!({"knobs": {"spec": {"fmts": {"pc": {"scale": 100}}}}}),
+                    "knobs.spec.fmts",
+                ),
             ] {
                 let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
                 let got = story_page(&mut f, &input, &bad).unwrap_err();
@@ -11162,32 +11535,86 @@ mod tests {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
         let narrow = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
-        let wider = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "ES", "NL", "AT", "BE", "EU27_2020"];
+        let wider = [
+            "DE",
+            "FR",
+            "IT",
+            "PL",
+            "SE",
+            "FI",
+            "MT",
+            "LU",
+            "ES",
+            "NL",
+            "AT",
+            "BE",
+            "EU27_2020",
+        ];
         let places: &[&str] = if wide { &wider } else { &narrow };
-        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", places), &years);
+        let mut rows = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", places),
+            &years,
+        );
         for r in rows.iter_mut() {
             let g = r["dims"]["geo"].as_str().unwrap().to_string();
             let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
             let k = places.iter().position(|p| *p == g).unwrap() as f64;
-            let pace = if g == "MT" || g == "LU" { -0.05 } else if wide { 0.2 + (k * 3.0) % 5.0 / 2.0 } else { 0.4 + k / 20.0 };   // wide: paces that make the places swap
+            let pace = if g == "MT" || g == "LU" {
+                -0.05
+            } else if wide {
+                0.2 + (k * 3.0) % 5.0 / 2.0
+            } else {
+                0.4 + k / 20.0
+            }; // wide: paces that make the places swap
             r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
         }
         let story = recipe("page_story");
         let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
             "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": "60"});
-        let targets: BTreeMap<String, Vec<Value>> = [("target_ren".to_string(), vec![target.clone()])].into();
+        let targets: BTreeMap<String, Vec<Value>> =
+            [("target_ren".to_string(), vec![target.clone()])].into();
         let with = [target];
         let shape = match targeted {
-            true => shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap(),
+            true => shape_of(
+                &story.eats,
+                &[("ren", &rows[..]), ("target_ren", &with[..])],
+                &Scoped(true),
+            )
+            .unwrap(),
             false => shape_for(story, &[("ren", &rows[..])], &EuWide).unwrap(),
         };
         assert_eq!(shape.target.is_some(), targeted);
         let picks = picks_of(&story.picks, &shape, &rows, &[]).unwrap();
-        let mut fill = test_fill(story, &shape, &picks, (&rows, &[]), &Scoped(true), ("标题", "导语"), false).unwrap();
-        let mut input = story_input(&shape, shape.target.as_ref(), shape.whole.as_deref(), (&rows, &targets), "可再生能源占比").unwrap();
+        let mut fill = test_fill(
+            story,
+            &shape,
+            &picks,
+            (&rows, &[]),
+            &Scoped(true),
+            ("标题", "导语"),
+            false,
+        )
+        .unwrap();
+        let mut input = story_input(
+            &shape,
+            shape.target.as_ref(),
+            shape.whole.as_deref(),
+            (&rows, &targets),
+            "可再生能源占比",
+        )
+        .unwrap();
         // the members' points, as recipe_request gives them the findings' map and tile angles
-        let members: Vec<String> = input["main"]["members"].as_array().unwrap().iter().map(|m| m.as_str().unwrap().to_string()).collect();
-        if wide { input["points"] = json!(Scoped(true).place_points(&members).unwrap()); }
+        let members: Vec<String> = input["main"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect();
+        if wide {
+            input["points"] = json!(Scoped(true).place_points(&members).unwrap());
+        }
         let child = crate::next_leaf::Runner::python(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
         );
@@ -11196,11 +11623,25 @@ mod tests {
         let found = crate::next_leaf::story(&child, &asked).unwrap();
         let ids: Vec<Value> = match told {
             Some(p) => {
-                let have: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
-                assert!(p.iter().all(|id| have.contains(id)), "the candidates {have:?} lack one of {p:?}");
+                let have: Vec<&str> = found["candidates"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|c| c["id"].as_str())
+                    .collect();
+                assert!(
+                    p.iter().all(|id| have.contains(id)),
+                    "the candidates {have:?} lack one of {p:?}"
+                );
                 p.iter().map(|id| json!(id)).collect()
             }
-            None => found["candidates"].as_array().unwrap().iter().take(STORY_TOLD).map(|c| c["id"].clone()).collect(),
+            None => found["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(STORY_TOLD)
+                .map(|c| c["id"].clone())
+                .collect(),
         };
         asked["mode"] = json!("compose");
         asked["picks"] = json!(ids);
@@ -11214,7 +11655,11 @@ mod tests {
         let (html, ..) = published("page_story", fill, "story page");
         assert!(html.contains("thesis_claims"), "the thesis is on the page");
         for id in told.unwrap_or(&[]) {
-            assert!(html.contains(&format!("data-module-id=\"{id}\"")) || html.contains(&format!("desc-{id}")), "{id} is on the page");
+            assert!(
+                html.contains(&format!("data-module-id=\"{id}\""))
+                    || html.contains(&format!("desc-{id}")),
+                "{id} is on the page"
+            );
         }
         html
     }
@@ -11223,7 +11668,14 @@ mod tests {
     /// the whole; everything else Scoped's.
     struct EuWide;
     impl Catalogue for EuWide {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(
+            &self,
+            _: &str,
+            _: &[String],
+            _: bool,
+            _: Option<i32>,
+            _: Option<i32>,
+        ) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -11235,12 +11687,20 @@ mod tests {
         fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
             Scoped(true).countries(codes)
         }
-        fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+        fn zh_names(
+            &self,
+            scheme: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
             Scoped(true).zh_names(scheme, codes)
         }
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             match aggregate {
-                "EU27_2020" => Ok(["AT", "BE", "DE", "ES", "FI", "FR", "IT", "LU", "MT", "NL", "PL", "SE"].map(String::from).to_vec()),
+                "EU27_2020" => Ok([
+                    "AT", "BE", "DE", "ES", "FI", "FR", "IT", "LU", "MT", "NL", "PL", "SE",
+                ]
+                .map(String::from)
+                .to_vec()),
                 _ => Scoped(true).members(aggregate),
             }
         }
@@ -11270,7 +11730,10 @@ mod tests {
     fn the_story_page_goes_without_a_target_over_eight_members_and_three_findings() {
         let story = recipe("page_story");
         let w = story.without.clone().unwrap();
-        assert_eq!((w.condition.as_str(), w.members, w.findings), (HAS_TARGET, 8, 3));
+        assert_eq!(
+            (w.condition.as_str(), w.members, w.findings),
+            (HAS_TARGET, 8, 3)
+        );
         let child = crate::next_leaf::Runner::python(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
         );
@@ -11282,7 +11745,11 @@ mod tests {
                 let g = r["dims"][by].as_str().unwrap().to_string();
                 let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
                 let k = places.iter().position(|p| *p == g).unwrap() as f64;
-                let pace = if k as usize % 4 == 3 { -0.05 } else { 0.2 + (k * 3.0) % 5.0 / 2.0 };
+                let pace = if k as usize % 4 == 3 {
+                    -0.05
+                } else {
+                    0.2 + (k * 3.0) % 5.0 / 2.0
+                };
                 r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
             }
             rows
@@ -11290,63 +11757,169 @@ mod tests {
         let eu8 = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
         let rows = valued(&eu8[..], "geo", "ren", &[("freq", "A"), ("unit", "PC")][..]);
         let (first, all) = first_recipe(&[("ren", &rows[..])], &EuWide);
-        assert_eq!(first, Some("page_story"), "{:?}", all.iter().map(|(n, r)| (n, r.as_ref().err())).collect::<Vec<_>>());
-        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()].1.as_ref().unwrap();
-        assert_eq!((shape.target.as_ref(), shape.passed_over.as_deref(), shape.whole.as_deref()), (None, Some(HAS_TARGET), Some("EU27_2020")));
-        assert_eq!(shape.members.len(), eu8.len(), "the page names the members and the whole");
-        let input = story_input(shape, None, shape.whole.as_deref(), (&rows, &BTreeMap::new()), "可再生能源占比").unwrap();
-        assert!(input.get("target").is_none() && input["main"]["whole"] == "EU27_2020", "{}", input["main"]);
-        assert_eq!(input["rows"].as_array().unwrap().len(), rows.len(), "the main's rows alone");
+        assert_eq!(
+            first,
+            Some("page_story"),
+            "{:?}",
+            all.iter()
+                .map(|(n, r)| (n, r.as_ref().err()))
+                .collect::<Vec<_>>()
+        );
+        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()]
+            .1
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            (
+                shape.target.as_ref(),
+                shape.passed_over.as_deref(),
+                shape.whole.as_deref()
+            ),
+            (None, Some(HAS_TARGET), Some("EU27_2020"))
+        );
+        assert_eq!(
+            shape.members.len(),
+            eu8.len(),
+            "the page names the members and the whole"
+        );
+        let input = story_input(
+            shape,
+            None,
+            shape.whole.as_deref(),
+            (&rows, &BTreeMap::new()),
+            "可再生能源占比",
+        )
+        .unwrap();
+        assert!(
+            input.get("target").is_none() && input["main"]["whole"] == "EU27_2020",
+            "{}",
+            input["main"]
+        );
+        assert_eq!(
+            input["rows"].as_array().unwrap().len(),
+            rows.len(),
+            "the main's rows alone"
+        );
         // the candidates as recipe_request asks them (through the visual group), at the registry's minimum or above
         let calls = std::sync::Mutex::new(Vec::new());
-        let found = story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
+        let found =
+            story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
         findings_minimum(HAS_TARGET, &w, &found).unwrap();
-        let ids: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
-        assert!(ids.len() >= 3 && !ids.contains(&"need") && !ids.contains(&"path"), "{ids:?}");
+        let ids: Vec<&str> = found["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|c| c["id"].as_str())
+            .collect();
+        assert!(
+            ids.len() >= 3 && !ids.contains(&"need") && !ids.contains(&"path"),
+            "{ids:?}"
+        );
         let mut asked = input.clone();
         asked["mode"] = json!("compose");
-        asked["picks"] = json!(["rank", "spread", "ends"].into_iter().filter(|p| ids.contains(p)).collect::<Vec<_>>());
+        asked["picks"] = json!(["rank", "spread", "ends"]
+            .into_iter()
+            .filter(|p| ids.contains(p))
+            .collect::<Vec<_>>());
         let page = crate::next_leaf::story(&child, &asked).unwrap();
         let spec = &page["knobs"]["spec"];
-        assert_eq!(spec["sections"][2]["id"], "rank", "the lead after the header and the thesis");
-        assert!(spec["facts"].get("goal").is_none() && !spec.to_string().contains("目标"), "{spec}");
+        assert_eq!(
+            spec["sections"][2]["id"], "rank",
+            "the lead after the header and the thesis"
+        );
+        assert!(
+            spec["facts"].get("goal").is_none() && !spec.to_string().contains("目标"),
+            "{spec}"
+        );
         for key in ["title", "dek", "end"] {
-            assert!(spec[key].as_str().is_some_and(|t| !t.trim().is_empty() && !t.contains("{}")), "{key}: {}", spec[key]);
+            assert!(
+                spec[key]
+                    .as_str()
+                    .is_some_and(|t| !t.trim().is_empty() && !t.contains("{}")),
+                "{key}: {}",
+                spec[key]
+            );
         }
         // two findings are under the minimum: not this shape, the count said
         let two = json!({"candidates": [{"id": "rank"}, {"id": "ends"}]});
         let e = findings_minimum(HAS_TARGET, &w, &two).unwrap_err();
-        assert!(e.starts_with("not this shape") && e.contains("2 findings, fewer than 3"), "{e}");
+        assert!(
+            e.starts_with("not this shape") && e.contains("2 findings, fewer than 3"),
+            "{e}"
+        );
 
         // five members: the ordinary page, the story page's why naming the count
         let eu5 = ["DE", "FR", "IT", "PL", "SE", "EU27_2020"];
         let rows5 = valued(&eu5[..], "geo", "ren", &[("freq", "A"), ("unit", "PC")][..]);
         let (first, all) = first_recipe(&[("ren", &rows5[..])], &EuWide);
         assert_eq!(first, Some("change"));
-        let why = all.iter().find(|(n, _)| *n == "page_story").unwrap().1.as_ref().err().unwrap().clone();
-        assert!(why.contains("no target row") && why.contains("holds 5 countries, fewer than 8"), "{why}");
+        let why = all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .as_ref()
+            .err()
+            .unwrap()
+            .clone();
+        assert!(
+            why.contains("no target row") && why.contains("holds 5 countries, fewer than 8"),
+            "{why}"
+        );
 
         // a World Bank table of eight economies, no whole row: the story page, no whole; of seven, not
         let id = "EG.FEC.RNEW.ZS@2";
         let wb8: Vec<&str> = WB_RANKED.iter().map(|(c, _, _)| *c).collect();
         let wb_rows = valued(&wb8[..], "country", id, &[][..]);
         let (first, all) = first_recipe(&[(id, &wb_rows[..])], &WbRanked(Vec::new()));
-        assert_eq!(first, Some("page_story"), "{:?}", all.iter().map(|(n, r)| (n, r.as_ref().err())).collect::<Vec<_>>());
-        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()].1.as_ref().unwrap();
+        assert_eq!(
+            first,
+            Some("page_story"),
+            "{:?}",
+            all.iter()
+                .map(|(n, r)| (n, r.as_ref().err()))
+                .collect::<Vec<_>>()
+        );
+        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()]
+            .1
+            .as_ref()
+            .unwrap();
         assert_eq!((shape.whole.as_ref(), shape.countries.len()), (None, 8));
         let input = story_input(shape, None, None, (&wb_rows, &BTreeMap::new()), "人均值").unwrap();
-        assert!(input["main"].get("whole").is_none() && input.get("target").is_none(), "{}", input["main"]);
-        let found = story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
+        assert!(
+            input["main"].get("whole").is_none() && input.get("target").is_none(),
+            "{}",
+            input["main"]
+        );
+        let found =
+            story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
         findings_minimum(HAS_TARGET, &w, &found).unwrap();
-        let wb7: Vec<Value> = wb_rows.iter().filter(|r| r["dims"]["country"] != wb8[7]).cloned().collect();
+        let wb7: Vec<Value> = wb_rows
+            .iter()
+            .filter(|r| r["dims"]["country"] != wb8[7])
+            .cloned()
+            .collect();
         let (first, _) = first_recipe(&[(id, &wb7[..])], &WbRanked(Vec::new()));
         assert_ne!(first, Some("page_story"));
 
         // with a target nothing is passed over: shape_for is shape_of
-        let target = [json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"})];
+        let target = [
+            json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
         let tables: [(&str, &[Value]); 2] = [("ren", &rows[..]), ("targets", &target[..])];
-        let (a, b) = (shape_for(story, &tables, &EuWide).unwrap(), shape_of(&story.eats, &tables, &EuWide).unwrap());
-        assert_eq!((a.target.clone(), a.passed_over.clone(), a.whole.clone(), a.members.clone()), (b.target, None, None, b.members));
+        let (a, b) = (
+            shape_for(story, &tables, &EuWide).unwrap(),
+            shape_of(&story.eats, &tables, &EuWide).unwrap(),
+        );
+        assert_eq!(
+            (
+                a.target.clone(),
+                a.passed_over.clone(),
+                a.whole.clone(),
+                a.members.clone()
+            ),
+            (b.target, None, None, b.members)
+        );
         assert!(a.target.is_some());
     }
 
@@ -11395,7 +11968,10 @@ mod tests {
             hit: "2030年".into(),
             target_year: Some(2030),
         };
-        assert!(matches!(held_settled(Some(&held), Some(&fill)), Err(Stop::NoTable(_))));
+        assert!(matches!(
+            held_settled(Some(&held), Some(&fill)),
+            Err(Stop::NoTable(_))
+        ));
         let unnamed = test_fill(
             column,
             &shape,
@@ -21944,7 +22520,8 @@ mod tests {
             .filter(|r| ["SE", "BE"].contains(&r["dims"]["geo"].as_str().unwrap()))
             .collect();
         assert_eq!(two.len(), 2);
-        let (_, _, _, _, notes) = cut_page(&[json!({"origin": "download", "file": "data/t.csv"})], &two);
+        let (_, _, _, _, notes) =
+            cut_page(&[json!({"origin": "download", "file": "data/t.csv"})], &two);
         assert_eq!(
             notes,
             [
@@ -28562,19 +29139,37 @@ for line in sys.stdin:
     /// page kept Ranking or Change.
     #[test]
     fn a_ranking_with_no_target_reaches_the_story_page_and_with_a_target_the_column_page() {
-        assert_eq!(recipe("page_story").without.as_ref().map(|w| w.relations.clone()), Some(vec!["Ranking".to_string()]));
+        assert_eq!(
+            recipe("page_story")
+                .without
+                .as_ref()
+                .map(|w| w.relations.clone()),
+            Some(vec!["Ranking".to_string()])
+        );
         let run = tempfile::tempdir().unwrap();
         std::fs::write(run.path().join("sdg.csv"), "").unwrap();
         std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
         let years: Vec<String> = (2015..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
         let eu = |n: usize| {
-            let geo: Vec<&str> = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "LU"][..n].iter().copied().chain(["EU27_2020"]).collect();
-            let mut rows = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &geo), &years);
+            let geo: Vec<&str> = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "LU"][..n]
+                .iter()
+                .copied()
+                .chain(["EU27_2020"])
+                .collect();
+            let mut rows = ring_rows(
+                "sdg",
+                &[("freq", "A"), ("unit", "PC")],
+                ("geo", &geo),
+                &years,
+            );
             for r in rows.iter_mut() {
                 let k = geo.iter().position(|g| r["dims"]["geo"] == *g).unwrap() as f64;
                 let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
-                r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + (0.2 + k % 3.0 / 2.0) * (y - 2015.0)));
+                r["value"] = json!(format!(
+                    "{:.1}",
+                    5.0 + 4.0 * k + (0.2 + k % 3.0 / 2.0) * (y - 2015.0)
+                ));
             }
             rows
         };
@@ -28613,10 +29208,16 @@ for line in sys.stdin:
         for kept in [Relation::Ranking, Relation::Change] {
             let why = reached("sdg", kept, &no_target(8));
             assert!(why.contains(story_reached), "{kept:?}: {why}");
-            assert!(!why.contains("page_story: not this relation"), "{kept:?}: {why}");
+            assert!(
+                !why.contains("page_story: not this relation"),
+                "{kept:?}: {why}"
+            );
         }
         let why = reached("sdg", Relation::Ranking, &no_target(7));
-        assert!(!why.contains(story_reached) && why.contains("holds 7 countries, fewer than 8"), "{why}");
+        assert!(
+            !why.contains(story_reached) && why.contains("holds 7 countries, fewer than 8"),
+            "{why}"
+        );
         assert!(why.contains(column_reached), "{why}");
         let targeted = WithTargets(no_target(8), vec![target]);
         let why = reached("sdg", Relation::Ranking, &targeted);
@@ -28624,7 +29225,10 @@ for line in sys.stdin:
             why.contains("page_story: not this relation: the table step kept Ranking, the recipe answers Change when it runs to its has_target"),
             "{why}"
         );
-        assert!(!why.contains(story_reached) && why.contains(column_reached), "{why}");
+        assert!(
+            !why.contains(story_reached) && why.contains(column_reached),
+            "{why}"
+        );
         let why = reached("sdg", Relation::Change, &targeted);
         assert!(why.contains(story_reached), "{why}");
         // a World Bank table of eight economies, no whole row
@@ -28693,7 +29297,11 @@ for line in sys.stdin:
             why.contains("page_story: not this shape: without has_target the page has no count of its own to say the basis of the group the question names"),
             "{why}"
         );
-        assert!(!why.contains("page_story: shadow/candidate_sheet") && why.contains("change: shadow/candidate_sheet"), "{why}");
+        assert!(
+            !why.contains("page_story: shadow/candidate_sheet")
+                && why.contains("change: shadow/candidate_sheet"),
+            "{why}"
+        );
         let eu = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "EU27_2020"];
         let why = reached("欧盟各国的可再生能源占比", &eu);
         assert!(why.contains("page_story: shadow/candidate_sheet"), "{why}");
@@ -28703,7 +29311,14 @@ for line in sys.stdin:
     /// Fetched with the knowledge group's target rows for the main (Catalogue::targets), as GroupCatalogue hands them in.
     struct WithTargets(Fetched, Vec<Value>);
     impl Catalogue for WithTargets {
-        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(
+            &self,
+            q: &str,
+            t: &[String],
+            m: bool,
+            y: Option<i32>,
+            y0: Option<i32>,
+        ) -> crate::l5geo::Ranking {
             self.0.top5(q, t, m, y, y0)
         }
         fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
@@ -28715,7 +29330,11 @@ for line in sys.stdin:
         fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
             self.0.countries(codes)
         }
-        fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+        fn zh_names(
+            &self,
+            kind: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
             self.0.zh_names(kind, codes)
         }
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
@@ -28724,11 +29343,19 @@ for line in sys.stdin:
         fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
             self.0.table(id)
         }
-        fn series_rows(&self, table: &crate::l5geo::TableMeta, at: &str) -> Result<Vec<Value>, String> {
+        fn series_rows(
+            &self,
+            table: &crate::l5geo::TableMeta,
+            at: &str,
+        ) -> Result<Vec<Value>, String> {
             self.0.series_rows(table, at)
         }
         fn targets(&self, main: &str) -> Vec<Value> {
-            self.1.iter().filter(|r| r["main"] == main).cloned().collect()
+            self.1
+                .iter()
+                .filter(|r| r["main"] == main)
+                .cloned()
+                .collect()
         }
     }
 
@@ -30770,12 +31397,12 @@ for line in sys.stdin:
         }
     }
 
-
     /// I36: an ordinary column page's ends say only how far they are from the year before. The page input still carries the
     /// whole and the registered target when its rows hold them (external_coords: the story pages read them), but the notes
     /// over them are not in the registry: with the whole, with a target, the ends take the notes they had without them.
     #[test]
-    fn column_notes_compare_only_with_the_year_before_whether_or_not_the_input_holds_the_whole_or_the_target() {
+    fn column_notes_compare_only_with_the_year_before_whether_or_not_the_input_holds_the_whole_or_the_target(
+    ) {
         let value = |g: &str, t: &str| match (g, t) {
             ("DE", "2024") => "30",
             ("DE", _) => "28",
@@ -30793,7 +31420,10 @@ for line in sys.stdin:
             &["2023", "2024"],
         );
         for r in main.iter_mut() {
-            let v = value(r["dims"]["geo"].as_str().unwrap(), r["time"].as_str().unwrap());
+            let v = value(
+                r["dims"]["geo"].as_str().unwrap(),
+                r["time"].as_str().unwrap(),
+            );
             r["value"] = json!(v);
         }
         let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "targets_ren", "dims": {"geo": "EU27_2020"},
@@ -30809,9 +31439,19 @@ for line in sys.stdin:
                 calls: &calls,
                 page_in: Some(&page_in),
             };
-            let fill = fill_of(r, &shape, &picks, (main, &[]), &Scoped(true), ("标题", "导语"), false, Some(&asked))
-                .unwrap_or_else(|e| panic!("{label}: {e}"));
-            let words: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+            let fill = fill_of(
+                r,
+                &shape,
+                &picks,
+                (main, &[]),
+                &Scoped(true),
+                ("标题", "导语"),
+                false,
+                Some(&asked),
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let words: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]
+                ["notes"]
                 .as_array()
                 .unwrap_or_else(|| panic!("{label}: no notes"))
                 .iter()
@@ -30820,11 +31460,13 @@ for line in sys.stdin:
                         .as_array()
                         .unwrap()
                         .iter()
-                        .map(|t| match (t["word"].as_str(), t["name"].as_str(), t["src"].as_str()) {
-                            (Some(w), ..) => w.to_string(),
-                            (_, Some(n), _) => format!("name:{n}"),
-                            (_, _, Some(s)) => s.to_string(),
-                            _ => String::new(),
+                        .map(|t| {
+                            match (t["word"].as_str(), t["name"].as_str(), t["src"].as_str()) {
+                                (Some(w), ..) => w.to_string(),
+                                (_, Some(n), _) => format!("name:{n}"),
+                                (_, _, Some(s)) => s.to_string(),
+                                _ => String::new(),
+                            }
                         })
                         .collect::<Vec<_>>()
                         .join("+")
@@ -30833,14 +31475,26 @@ for line in sys.stdin:
             (words, fill)
         };
         let srcs = |fill: &Value| -> Vec<String> {
-            fill["rows"].as_array().unwrap().iter().map(|r| r["src"].as_str().unwrap().to_string()).collect()
+            fill["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["src"].as_str().unwrap().to_string())
+                .collect()
         };
         // the whole at the page's year, a registered target too: neither is named by a note, no row of either is read
         let (words, fill) = notes_of("whole", &main, std::slice::from_ref(&target));
         assert_eq!(words.len(), 2, "whole: {words:?}");
-        assert!(words.iter().all(|w| !w.contains("EU27_2020") && !w.contains("target")), "whole: {words:?}");
         assert!(
-            srcs(&fill).iter().all(|s| !s.contains("EU27_2020") && !s.starts_with("target:")),
+            words
+                .iter()
+                .all(|w| !w.contains("EU27_2020") && !w.contains("target")),
+            "whole: {words:?}"
+        );
+        assert!(
+            srcs(&fill)
+                .iter()
+                .all(|s| !s.contains("EU27_2020") && !s.starts_with("target:")),
             "whole: {:?}",
             srcs(&fill)
         );
@@ -30849,15 +31503,27 @@ for line in sys.stdin:
         no_whole.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
         let (words, fill) = notes_of("target", &no_whole, std::slice::from_ref(&target));
         assert_eq!(words.len(), 2, "target: {words:?}");
-        assert!(words.iter().all(|w| !w.contains("EU27_2020") && !w.contains("target")), "target: {words:?}");
-        assert!(srcs(&fill).iter().all(|s| !s.starts_with("target:")), "target: {:?}", srcs(&fill));
+        assert!(
+            words
+                .iter()
+                .all(|w| !w.contains("EU27_2020") && !w.contains("target")),
+            "target: {words:?}"
+        );
+        assert!(
+            srcs(&fill).iter().all(|s| !s.starts_with("target:")),
+            "target: {:?}",
+            srcs(&fill)
+        );
         // members alone: the year before
         let mut members = main.clone();
         members.retain(|r| r["dims"]["geo"] != "EU27_2020");
         let (words, fill) = notes_of("prev", &members, &[]);
         assert_eq!(
             words,
-            ["column.note.whole_above+column.note.last_year_name", "column.note.whole_above+column.note.last_year_name"],
+            [
+                "column.note.whole_above+column.note.last_year_name",
+                "column.note.whole_above+column.note.last_year_name"
+            ],
             "prev"
         );
         assert!(srcs(&fill).contains(&"series:ren/DE:2023:OBS_VALUE".to_string()));
@@ -30874,27 +31540,51 @@ for line in sys.stdin:
         let main = || group_rows(&["DE", "FR", "IT", "EU27_2020"], &["2023", "2024"]);
         for (name, chart) in [("column", "horizontal_bar"), ("change", "horizontal_bar")] {
             REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![target.clone()]);
-            let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let (fill, _) =
+                group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
             let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
             let spec = &fill["knobs"]["spec"];
-            let lines = spec["source"].as_array().unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
-            assert_eq!(lines.last().unwrap(), "欧盟法规第三条", "{name}: the law's line is last");
-            assert_eq!(spec["tables"]["targets_ren"], json!({"id": "2023/2413"}), "{name}");
+            let lines = spec["source"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
+            assert_eq!(
+                lines.last().unwrap(),
+                "欧盟法规第三条",
+                "{name}: the law's line is last"
+            );
+            assert_eq!(
+                spec["tables"]["targets_ren"],
+                json!({"id": "2023/2413"}),
+                "{name}"
+            );
             // a page whose input holds the whole and the target draws: no note reads them
-            let (html, ..) = group_published_by(fill.clone(), name, "whole and target in the input");
+            let (html, ..) =
+                group_published_by(fill.clone(), name, "whole and target in the input");
             assert!(html.contains(r#"data-layer="leader_notes""#), "{name}");
             // no target registered: the table's own line, no law line, no clause table
             REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
-            let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let (fill, _) =
+                group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
             let fill = fill.unwrap_or_else(|e| panic!("{name} without: {e:?}"));
-            assert!(fill["knobs"]["spec"]["source"].is_string(), "{name}: one line without a target");
-            assert!(fill["knobs"]["spec"]["tables"].get("targets_ren").is_none(), "{name}");
+            assert!(
+                fill["knobs"]["spec"]["source"].is_string(),
+                "{name}: one line without a target"
+            );
+            assert!(
+                fill["knobs"]["spec"]["tables"].get("targets_ren").is_none(),
+                "{name}"
+            );
         }
         // a target row with no source line or clause stops the page, never prints a target with no source
         let mut bare = target.clone();
         bare.as_object_mut().unwrap().remove("source_line");
         REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![bare]);
-        let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), ("column", "horizontal_bar"));
+        let (fill, _) = group_request_by(
+            "各国可再生能源占比",
+            main(),
+            json!([]),
+            ("column", "horizontal_bar"),
+        );
         let err = fill.unwrap_err();
         assert!(err.1.contains("names no source line and clause"), "{err:?}");
         REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());

@@ -127,7 +127,10 @@ pub enum Request<'a> {
     /// The story findings over a story page's rows (the findings child under `runtime`, runtime/leaves_py/findings.py): with
     /// mode "candidates" the scored findings, best first, with the ones left out and why; with mode "compose" and the picks,
     /// the page's facts (declarations layer 1 computes and checks), sections and each section's leaf data. Nothing is written.
-    Story { request: &'a Value, runtime: &'a Path },
+    Story {
+        request: &'a Value,
+        runtime: &'a Path,
+    },
     /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
     /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
     /// (plain data: shape, picks, rows), every select recomputed by the core.
@@ -295,13 +298,15 @@ fn measure_family(tables: &[String]) -> Option<String> {
     let all: Value = serde_json::from_str(MEASURE_FAMILIES).ok()?;
     all["families"].as_array()?.iter().find_map(|fam| {
         let held = fam["tables"].as_array()?;
-        held.iter().filter_map(Value::as_str).any(|h| {
-            let prefix = h.ends_with('_') || h.ends_with('.');
-            tables
-                .iter()
-                .any(|t| if prefix { t.starts_with(h) } else { t == h })
-        })
-        .then(|| fam["id"].as_str().map(String::from))?
+        held.iter()
+            .filter_map(Value::as_str)
+            .any(|h| {
+                let prefix = h.ends_with('_') || h.ends_with('.');
+                tables
+                    .iter()
+                    .any(|t| if prefix { t.starts_with(h) } else { t == h })
+            })
+            .then(|| fam["id"].as_str().map(String::from))?
     })
 }
 
@@ -1652,9 +1657,7 @@ mod tests {
     /// The measure family of a page is the first family that holds one of its tables, by id or by the prefix a family lists.
     #[test]
     fn the_measure_family_of_the_tables_is_the_one_that_holds_them() {
-        let f = |t: &[&str]| {
-            measure_family(&t.iter().map(|x| x.to_string()).collect::<Vec<_>>())
-        };
+        let f = |t: &[&str]| measure_family(&t.iter().map(|x| x.to_string()).collect::<Vec<_>>());
         assert_eq!(f(&["nrg_ind_ren"]).as_deref(), Some("renewable_share"));
         assert_eq!(f(&["sdg", "sdg_07_40"]).as_deref(), Some("renewable_share"));
         assert_eq!(f(&["EG.ELC.RNEW.ZS"]).as_deref(), Some("renewable_share"));

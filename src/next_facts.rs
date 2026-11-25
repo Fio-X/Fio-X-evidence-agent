@@ -340,7 +340,9 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
                 "per_year" | "line_at" if f.reads.len() == 2 && f.n.is_some() => {
                     let years = Exact::int(f.n.unwrap_or(1) as i128);
                     match (of(&f.reads[0]), of(&f.reads[1])) {
-                        (Some(a), Some(b)) if f.op == "per_year" => a.sub(b).and_then(|d| d.div(years)),
+                        (Some(a), Some(b)) if f.op == "per_year" => {
+                            a.sub(b).and_then(|d| d.div(years))
+                        }
                         (Some(a), Some(b)) => b.mul(years).and_then(|d| a.add(d)),
                         _ => None,
                     }
@@ -355,7 +357,9 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
                                 if gap.n <= 0 {
                                     Some(0)
                                 } else if r.n > 0 {
-                                    gap.div(r).map(|q| q.n.div_euclid(q.d) + i128::from(q.n.rem_euclid(q.d) != 0))
+                                    gap.div(r).map(|q| {
+                                        q.n.div_euclid(q.d) + i128::from(q.n.rem_euclid(q.d) != 0)
+                                    })
                                 } else {
                                     None
                                 }
@@ -375,7 +379,10 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
                         let picked: Vec<String> = f
                             .reads
                             .iter()
-                            .filter(|s| rows.iter().any(|r| &r.src == *s && (r.time == later) == later_side))
+                            .filter(|s| {
+                                rows.iter()
+                                    .any(|r| &r.src == *s && (r.time == later) == later_side)
+                            })
                             .cloned()
                             .collect();
                         sum(&picked)
@@ -605,7 +612,11 @@ fn one(
         let (line, under) = match (q["above"].as_f64(), q["below"].as_f64()) {
             (Some(x), None) => (x, false),
             (None, Some(x)) if q["b"].is_null() => (x, true),
-            _ => return Err(format!("{key}: count has no number as above (or below, with no b)")),
+            _ => {
+                return Err(format!(
+                    "{key}: count has no number as above (or below, with no b)"
+                ))
+            }
         };
         let by = match &q["by"] {
             Value::Null => PLACE_DIM.to_string(),
@@ -630,7 +641,12 @@ fn one(
         let num = side("a")?;
         // under a line there is no b: each member's value of a is read over 1
         let (den, side_b) = if under {
-            (num.keys().map(|c| (c.clone(), 1.0)).collect::<BTreeMap<String, f64>>(), "a")
+            (
+                num.keys()
+                    .map(|c| (c.clone(), 1.0))
+                    .collect::<BTreeMap<String, f64>>(),
+                "a",
+            )
         } else {
             (side("b")?, "b")
         };
@@ -1019,7 +1035,9 @@ fn of_facts_over_years(
                 .filter(|_| at.len() == 4)
                 .ok_or_else(|| format!("{key}: at ({at}) is not a year"))?;
             if ya <= ys {
-                return Err(format!("{key}: line_at needs at ({ya}) after the start ({ys})"));
+                return Err(format!(
+                    "{key}: line_at needs at ({ya}) after the start ({ys})"
+                ));
             }
             f.v = s + r * (ya - ys) as f64;
             f.n = Some((ya - ys) as usize);
@@ -1040,13 +1058,21 @@ fn of_facts_over_years(
                 // a quotient a float puts a hair over a whole number (0.3 / 0.1) is that number; exact_values works the
                 // year out again from the exact values and its year wins
                 let whole = q.round();
-                (if (q - whole).abs() <= 1e-9 * whole.abs().max(1.0) { whole } else { q.ceil() }) as i64
+                (if (q - whole).abs() <= 1e-9 * whole.abs().max(1.0) {
+                    whole
+                } else {
+                    q.ceil()
+                }) as i64
             } else {
-                return Err(format!("{key}: at a rate of {r} a year the start never reaches the target"));
+                return Err(format!(
+                    "{key}: at a rate of {r} a year the start never reaches the target"
+                ));
             };
             let y = ys as i64 + k;
             if y > 2100 {
-                return Err(format!("{key}: the target is reached only in {y}, past 2100"));
+                return Err(format!(
+                    "{key}: the target is reached only in {y}, past 2100"
+                ));
             }
             f.v = y as f64;
             f.n = Some(k as usize);
@@ -1111,7 +1137,9 @@ fn over_periods(
                     let y = p.get(0..4)?.parse::<i32>().ok()?;
                     match p.len() {
                         4 => Some((y, 'Y', 0)),
-                        7 if &p[4..5] == "-" && p[5..].bytes().all(|b| b.is_ascii_digit()) => Some((y, 'M', p[5..].parse().ok()?)),
+                        7 if &p[4..5] == "-" && p[5..].bytes().all(|b| b.is_ascii_digit()) => {
+                            Some((y, 'M', p[5..].parse().ok()?))
+                        }
                         7 if &p[4..6] == "-Q" => Some((y, 'Q', p[6..].parse().ok()?)),
                         7 if &p[4..6] == "-S" => Some((y, 'S', p[6..].parse().ok()?)),
                         _ => None,
@@ -1173,29 +1201,30 @@ fn over_periods(
             let members = members(key, spec)?;
             let by = word(key, &q["by"], "by")?;
             let picked = select(key, rows, q)?;
-            let at = |time: &str, reads: &mut Vec<String>| -> Result<BTreeMap<String, f64>, String> {
-                let mut m = BTreeMap::new();
-                for r in picked.iter().filter(|r| r.time == time) {
-                    let code = r
-                        .dims
-                        .get(&by)
-                        .ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
-                    if members.contains(code) {
-                        *m.entry(code.clone()).or_insert(0.0) += finite(key, r)?;
-                        reads.push(r.src.clone());
+            let at =
+                |time: &str, reads: &mut Vec<String>| -> Result<BTreeMap<String, f64>, String> {
+                    let mut m = BTreeMap::new();
+                    for r in picked.iter().filter(|r| r.time == time) {
+                        let code = r
+                            .dims
+                            .get(&by)
+                            .ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
+                        if members.contains(code) {
+                            *m.entry(code.clone()).or_insert(0.0) += finite(key, r)?;
+                            reads.push(r.src.clone());
+                        }
                     }
-                }
-                let gone: Vec<&str> = members
-                    .iter()
-                    .filter(|g| !m.contains_key(*g))
-                    .map(String::as_str)
-                    .collect();
-                if gone.is_empty() {
-                    Ok(m)
-                } else {
-                    Err(format!("{key}: no row at {time} for {}", gone.join(", ")))
-                }
-            };
+                    let gone: Vec<&str> = members
+                        .iter()
+                        .filter(|g| !m.contains_key(*g))
+                        .map(String::as_str)
+                        .collect();
+                    if gone.is_empty() {
+                        Ok(m)
+                    } else {
+                        Err(format!("{key}: no row at {time} for {}", gone.join(", ")))
+                    }
+                };
             if op == "spread" {
                 let time = word(key, &q["time"], "time")?;
                 let m = at(&time, &mut f.reads)?;
@@ -1206,14 +1235,15 @@ fn over_periods(
             } else {
                 let (from, to) = (word(key, &q["from"], "from")?, word(key, &q["to"], "to")?);
                 let part = word(key, &q["part"], "part")?;
-                let k = q["k"]
-                    .as_u64()
-                    .filter(|k| *k > 0)
-                    .ok_or_else(|| format!("{key}: group_change has no whole number above 0 as k"))?
-                    as usize;
+                let k = q["k"].as_u64().filter(|k| *k > 0).ok_or_else(|| {
+                    format!("{key}: group_change has no whole number above 0 as k")
+                })? as usize;
                 let (a, b) = (at(&from, &mut f.reads)?, at(&to, &mut f.reads)?);
                 if k > a.len() {
-                    return Err(format!("{key}: k ({k}) is more than the {} members", a.len()));
+                    return Err(format!(
+                        "{key}: k ({k}) is more than the {} members",
+                        a.len()
+                    ));
                 }
                 // highest first; a tie keeps code order (BTreeMap order), stable
                 let mut ranked: Vec<(&String, f64)> = a.iter().map(|(c, v)| (c, *v)).collect();
@@ -1516,7 +1546,11 @@ fn fixed(x: f64, dec: usize, sep: bool) -> String {
             }
         }
     }
-    let sign = if x.is_sign_negative() && digits.iter().any(|d| *d != 0) { "-" } else { "" };
+    let sign = if x.is_sign_negative() && digits.iter().any(|d| *d != 0) {
+        "-"
+    } else {
+        ""
+    };
     let cut = digits.len() - dec;
     let mut int: String = digits[..cut].iter().map(|d| char::from(b'0' + d)).collect();
     if sep {
@@ -1828,7 +1862,9 @@ fn value_year(f: &Fact, rows: &[Row]) -> Option<String> {
         .collect();
     let read = rows.iter().filter(|r| f.reads.contains(&r.src)).count();
     match years.into_iter().collect::<Vec<_>>()[..] {
-        [y] if read == f.reads.len() && y.len() == 4 && y.bytes().all(|b| b.is_ascii_digit()) => Some(y.to_string()),
+        [y] if read == f.reads.len() && y.len() == 4 && y.bytes().all(|b| b.is_ascii_digit()) => {
+            Some(y.to_string())
+        }
         _ => None,
     }
 }
@@ -2552,12 +2588,19 @@ mod tests {
         assert_eq!(f["line"].reads, ["fact:now", "fact:past"]);
         assert_eq!(f["best"].t.as_deref(), Some("2020"));
         assert_eq!(text(&f["best"], &json!({}), false).unwrap(), "2.1");
-        assert_eq!(f["best"].reads, ["series:r/EU:2019:v", "series:r/EU:2020:v"]);
+        assert_eq!(
+            f["best"].reads,
+            ["series:r/EU:2019:v", "series:r/EU:2020:v"]
+        );
         assert_eq!((f["when"].v, f["when"].n), (2033.0, Some(9)));
         assert_eq!(f["when"].exact, Some(Exact::int(2033)));
         assert_eq!(f["best"].exact, Exact::new(21, 10));
         // a gap the rate covers exactly is that many years, not one more (review 11-22: 0.3 / 0.1 is 3.0000000000000004)
-        let edge = [row("r", "EU", "2020", 0.6), row("r", "EU", "2021", 0.7), row("t", "EU", "2030", 1.0)];
+        let edge = [
+            row("r", "EU", "2020", 0.6),
+            row("r", "EU", "2021", 0.7),
+            row("t", "EU", "2030", 1.0),
+        ];
         let e = by_key(
             &spec(
                 json!({
@@ -2572,8 +2615,18 @@ mod tests {
         );
         assert_eq!((e["when"].v, e["when"].n), (2024.0, Some(3)));
         // a month missing between two rows is no step
-        let months = [row("m", "EU", "2024-01", 1.0), row("m", "EU", "2024-03", 9.0), row("m", "EU", "2024-04", 10.0)];
-        let m = by_key(&spec(json!({"s": {"op": "step_max", "table": "m", "fmt": "x"}}), None), &months);
+        let months = [
+            row("m", "EU", "2024-01", 1.0),
+            row("m", "EU", "2024-03", 9.0),
+            row("m", "EU", "2024-04", 10.0),
+        ];
+        let m = by_key(
+            &spec(
+                json!({"s": {"op": "step_max", "table": "m", "fmt": "x"}}),
+                None,
+            ),
+            &months,
+        );
         assert_eq!((m["s"].t.as_deref(), m["s"].v), (Some("2024-04"), 1.0));
         assert_eq!(text(&f["grow"], &json!({}), false).unwrap(), "5%");
         let refused = |patch: Value, why: &str| {
@@ -2584,9 +2637,18 @@ mod tests {
             let e = compute(&spec(q, None), &rows).unwrap_err();
             assert!(e.contains(why), "{e}");
         };
-        refused(json!({"past": {"op": "per_year", "a": "was", "b": "now", "fmt": "x"}}), "after b");
-        refused(json!({"past": {"op": "per_year", "a": "best", "b": "was", "fmt": "x"}}), "no one time");
-        refused(json!({"line": {"op": "line_at", "start": "now", "rate": "past", "at": "2020", "fmt": "x"}}), "after the start");
+        refused(
+            json!({"past": {"op": "per_year", "a": "was", "b": "now", "fmt": "x"}}),
+            "after b",
+        );
+        refused(
+            json!({"past": {"op": "per_year", "a": "best", "b": "was", "fmt": "x"}}),
+            "no one time",
+        );
+        refused(
+            json!({"line": {"op": "line_at", "start": "now", "rate": "past", "at": "2020", "fmt": "x"}}),
+            "after the start",
+        );
         refused(
             json!({"best": {"op": "minus", "a": "was", "b": "now", "fmt": "x"}}),
             "never reaches",
@@ -2598,11 +2660,21 @@ mod tests {
     #[test]
     fn crossings_spreads_and_group_changes_read_every_member() {
         let mut rows = vec![];
-        for (g, a, b) in [("A", 40.0, 60.0), ("B", 30.0, 35.0), ("C", 10.0, 30.0), ("D", 2.0, 6.0)] {
+        for (g, a, b) in [
+            ("A", 40.0, 60.0),
+            ("B", 30.0, 35.0),
+            ("C", 10.0, 30.0),
+            ("D", 2.0, 6.0),
+        ] {
             rows.push(row("r", g, "2005", a));
             rows.push(row("r", g, "2024", b));
         }
-        for (t, w, c) in [("2018", 10.0, 20.0), ("2019", 12.0, 15.0), ("2020", 14.0, 12.0), ("2021", 13.0, 14.0)] {
+        for (t, w, c) in [
+            ("2018", 10.0, 20.0),
+            ("2019", 12.0, 15.0),
+            ("2020", 14.0, 12.0),
+            ("2021", 13.0, 14.0),
+        ] {
             rows.push(row("w", "EU", t, w));
             rows.push(row("c", "EU", t, c));
         }
@@ -2617,14 +2689,31 @@ mod tests {
             Some(members),
         );
         let f = by_key(&s, &rows);
-        assert_eq!((f["cross"].t.as_deref(), f["cross"].v), (Some("2020"), 14.0));
-        assert_eq!(f["cross"].reads, ["series:w/EU:2020:v", "series:c/EU:2020:v"]);
+        assert_eq!(
+            (f["cross"].t.as_deref(), f["cross"].v),
+            (Some("2020"), 14.0)
+        );
+        assert_eq!(
+            f["cross"].reads,
+            ["series:w/EU:2020:v", "series:c/EU:2020:v"]
+        );
         let mean = (60.0 + 35.0 + 30.0 + 6.0) / 4.0;
-        let sd = ([60.0, 35.0, 30.0, 6.0f64].iter().map(|v| (v - mean).powi(2)).sum::<f64>() / 4.0).sqrt();
+        let sd = ([60.0, 35.0, 30.0, 6.0f64]
+            .iter()
+            .map(|v| (v - mean).powi(2))
+            .sum::<f64>()
+            / 4.0)
+            .sqrt();
         assert!((f["sd"].v - sd).abs() < 1e-12);
         assert_eq!(f["sd"].reads.len(), 4);
-        assert_eq!((f["lo"].v, f["lo"].who.clone()), (12.0, vec!["C".to_string(), "D".to_string()]));
-        assert_eq!((f["hi"].v, f["hi"].who.clone()), (12.5, vec!["A".to_string(), "B".to_string()]));
+        assert_eq!(
+            (f["lo"].v, f["lo"].who.clone()),
+            (12.0, vec!["C".to_string(), "D".to_string()])
+        );
+        assert_eq!(
+            (f["hi"].v, f["hi"].who.clone()),
+            (12.5, vec!["A".to_string(), "B".to_string()])
+        );
         // a member with no row is not skipped
         rows.retain(|r| !(r.dims["geo"] == "D" && r.time == "2024"));
         let e = compute(&s, &rows).unwrap_err();
@@ -2852,14 +2941,21 @@ mod tests {
         assert_eq!((f[0].v, f[0].who.clone()), (1.0, vec!["AA".to_string()]));
         // under a line: no b, each member's own value of a under `below`; a member with no row of a fails, never skipped
         let under = |q: Value| compute(&spec(json!({"c": q}), Some(&["BB", "AA"])), &rows);
-        let fu = under(json!({"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0})).unwrap();
+        let fu = under(json!({"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0}))
+            .unwrap();
         assert_eq!((fu[0].v, fu[0].who.clone()), (1.0, vec!["BB".to_string()]));
         let eu = compute(
-            &spec(json!({"c": {"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0}}), Some(&["BB", "AA", "CC"])),
+            &spec(
+                json!({"c": {"op": "count", "a": {"table": "ru"}, "time": "2020", "below": 5.0}}),
+                Some(&["BB", "AA", "CC"]),
+            ),
             &rows,
         )
         .unwrap_err();
-        assert!(eu.contains("c: count has no row of a at 2020 for CC"), "{eu}");
+        assert!(
+            eu.contains("c: count has no row of a at 2020 for CC"),
+            "{eu}"
+        );
         assert!(under(json!({"op": "count", "a": {"table": "ru"}, "b": {"table": "all"}, "time": "2020", "below": 5.0}))
             .unwrap_err()
             .contains("count has no number as above"));
@@ -3082,7 +3178,11 @@ mod tests {
             time: time.into(),
             value: 1.0,
         };
-        let rows = [row("series:t/EU:2024:OBS_VALUE", "2024"), row("target:eu-2030", "2030"), row("series:t/DE:2023:OBS_VALUE", "2023")];
+        let rows = [
+            row("series:t/EU:2024:OBS_VALUE", "2024"),
+            row("target:eu-2030", "2030"),
+            row("series:t/DE:2023:OBS_VALUE", "2023"),
+        ];
         let value = |reads: &[&str]| Fact {
             key: "now".into(),
             op: "value".into(),
@@ -3094,11 +3194,35 @@ mod tests {
             reads: reads.iter().map(|r| r.to_string()).collect(),
             exact: None,
         };
-        assert_eq!(value_year(&value(&["series:t/EU:2024:OBS_VALUE"]), &rows).as_deref(), Some("2024"));
-        assert_eq!(value_year(&value(&["target:eu-2030"]), &rows).as_deref(), Some("2030"));
-        assert_eq!(value_year(&value(&["series:t/EU:2024:OBS_VALUE", "series:t/DE:2023:OBS_VALUE"]), &rows), None);
-        assert_eq!(value_year(&value(&["series:t/FR:2024:OBS_VALUE"]), &rows), None);
-        assert_eq!(value_year(&Fact { op: "minus".into(), ..value(&["series:t/EU:2024:OBS_VALUE"]) }, &rows), None);
+        assert_eq!(
+            value_year(&value(&["series:t/EU:2024:OBS_VALUE"]), &rows).as_deref(),
+            Some("2024")
+        );
+        assert_eq!(
+            value_year(&value(&["target:eu-2030"]), &rows).as_deref(),
+            Some("2030")
+        );
+        assert_eq!(
+            value_year(
+                &value(&["series:t/EU:2024:OBS_VALUE", "series:t/DE:2023:OBS_VALUE"]),
+                &rows
+            ),
+            None
+        );
+        assert_eq!(
+            value_year(&value(&["series:t/FR:2024:OBS_VALUE"]), &rows),
+            None
+        );
+        assert_eq!(
+            value_year(
+                &Fact {
+                    op: "minus".into(),
+                    ..value(&["series:t/EU:2024:OBS_VALUE"])
+                },
+                &rows
+            ),
+            None
+        );
     }
 
     /// each rechecked from the rows; a part the period lacks is no entry.

@@ -325,7 +325,8 @@ pub fn leaves() -> &'static Leaves {
                     w => {
                         let n = |k: &str| {
                             w[k].as_u64()
-                                .expect("knobs.json: a recipe's without minimum is a whole number") as usize
+                                .expect("knobs.json: a recipe's without minimum is a whole number")
+                                as usize
                         };
                         Some(Without {
                             condition: word(&w["condition"]).to_string(),
@@ -335,7 +336,11 @@ pub fn leaves() -> &'static Leaves {
                                 .as_array()
                                 .expect("knobs.json: a recipe's without relations is a list")
                                 .iter()
-                                .map(|r| r.as_str().expect("knobs.json: a relation is a name").to_string())
+                                .map(|r| {
+                                    r.as_str()
+                                        .expect("knobs.json: a relation is a name")
+                                        .to_string()
+                                })
                                 .collect(),
                         })
                     }
@@ -926,10 +931,16 @@ fn take(
         .collect();
     for t in &words {
         if t.text.trim().is_empty() || t.text.chars().any(char::is_numeric) {
-            bad.push(format!("{layer}: the word laid over {:?} is empty or holds a digit", t.text));
+            bad.push(format!(
+                "{layer}: the word laid over {:?} is empty or holds a digit",
+                t.text
+            ));
         }
     }
-    let texts: Vec<Text> = reported.iter().map(|t| as_text(t, None, &mut bad)).collect();
+    let texts: Vec<Text> = reported
+        .iter()
+        .map(|t| as_text(t, None, &mut bad))
+        .collect();
     // The texts reported are the texts drawn: a <text> left out of the report would escape the checks below.
     let mut drawn = drawn_texts(svg);
     let mut said: Vec<(String, String)> = texts
@@ -944,7 +955,9 @@ fn take(
         ));
     }
     if texts.iter().any(|t| t.src == WORDS_OVER) {
-        bad.push(format!("{layer}: an svg text names itself a word laid over the picture"));
+        bad.push(format!(
+            "{layer}: an svg text names itself a word laid over the picture"
+        ));
     }
     let texts: Vec<Text> = texts.into_iter().chain(words).collect();
     let lines: Vec<Vec<(f64, f64)>> = reply["lines"]
@@ -3192,7 +3205,11 @@ mod tests {
         );
         let baked = bake(&real, &page, "", 1440).unwrap();
         let typed = baked.type_measured.as_ref().expect("the bake's type");
-        assert_eq!((&typed["texts"], &typed["unmeasured"]), (&json!(2), &json!(0)), "{typed}");
+        assert_eq!(
+            (&typed["texts"], &typed["unmeasured"]),
+            (&json!(2), &json!(0)),
+            "{typed}"
+        );
     }
 
     #[test]
@@ -3575,9 +3592,16 @@ mod tests {
     /// st1 11-23: a word a story layer lays over its picture as html, inside the panel and over nothing, is taken.
     #[test]
     fn a_word_laid_over_a_picture_that_fits_is_taken() {
-        for done in both(&[layer("echo", "notes", json!({"words": [text("", 10.0, 30.0)]}))]) {
+        for done in both(&[layer(
+            "echo",
+            "notes",
+            json!({"words": [text("", 10.0, 30.0)]}),
+        )]) {
             let (panel, _) = done.unwrap();
-            assert!(panel.texts.iter().any(|t| t.src == WORDS_OVER && t.text == "德国"));
+            assert!(panel
+                .texts
+                .iter()
+                .any(|t| t.src == WORDS_OVER && t.text == "德国"));
         }
     }
 
@@ -3592,12 +3616,30 @@ mod tests {
             ),
             (json!({"texts": [text("", 10.0, 30.0)]}), "has no src"),
             // the words a story layer lays over its picture as html are checked as its texts are, with no src and no digit
-            (json!({"words": [text("", 890.0, 30.0)]}), "outside the panel"),
-            (json!({"words": [text("", 10.0, 54.0)]}), "sits on a line of base"),
-            (json!({"texts": [text("name:x/DE", 100.0, 30.0)], "words": [text("", 110.0, 32.0)]}), "overlaps"),
-            (json!({"words": [json!({"text": "2030 年", "x": 10, "y": 30, "size": 12})]}), "holds a digit"),
-            (json!({"words": [json!({"text": " ", "x": 10, "y": 30, "size": 12})]}), "is empty"),
-            (json!({"texts": [text(WORDS_OVER, 10.0, 30.0)]}), "names itself a word laid over"),
+            (
+                json!({"words": [text("", 890.0, 30.0)]}),
+                "outside the panel",
+            ),
+            (
+                json!({"words": [text("", 10.0, 54.0)]}),
+                "sits on a line of base",
+            ),
+            (
+                json!({"texts": [text("name:x/DE", 100.0, 30.0)], "words": [text("", 110.0, 32.0)]}),
+                "overlaps",
+            ),
+            (
+                json!({"words": [json!({"text": "2030 年", "x": 10, "y": 30, "size": 12})]}),
+                "holds a digit",
+            ),
+            (
+                json!({"words": [json!({"text": " ", "x": 10, "y": 30, "size": 12})]}),
+                "is empty",
+            ),
+            (
+                json!({"texts": [text(WORDS_OVER, 10.0, 30.0)]}),
+                "names itself a word laid over",
+            ),
             (
                 json!({"texts": [text("name:x/DE", 10.0, 54.0)]}),
                 "sits on a line of base",

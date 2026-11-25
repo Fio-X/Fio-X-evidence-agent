@@ -98,7 +98,12 @@ fn reads_absent(v: &J, page_in: &J) -> bool {
 /// lacks (reads_absent).
 fn present_candidates(c: &J, page_in: &J) -> J {
     match c {
-        J::Arr(a) => J::Arr(a.iter().filter(|x| !reads_absent(x, page_in)).cloned().collect()),
+        J::Arr(a) => J::Arr(
+            a.iter()
+                .filter(|x| !reads_absent(x, page_in))
+                .cloned()
+                .collect(),
+        ),
         J::Obj(m) => J::Obj(
             m.iter()
                 .map(|(k, x)| (k.clone(), present_candidates(x, page_in)))
@@ -6554,7 +6559,6 @@ mod tests {
         );
     }
 
-
     /// A select with a when_held path is made only when the page input holds that path and it is not empty; a page without it
     /// never reads the path (the whole's select on a page with no whole).
     #[test]
@@ -6562,9 +6566,18 @@ mod tests {
         let p = |t: &str| core::parse(t).unwrap();
         let page = p(r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": ""}}"#);
         assert!(path_held(&J::str("$shape.whole"), &page));
-        assert!(!path_held(&J::str("$shape.prev"), &page), "an empty value is not held");
-        assert!(!path_held(&J::str("$shape.target.place"), &page), "an absent path is not held");
-        assert!(!path_held(&J::str("shape.whole"), &page), "a text that is no $path is not held");
+        assert!(
+            !path_held(&J::str("$shape.prev"), &page),
+            "an empty value is not held"
+        );
+        assert!(
+            !path_held(&J::str("$shape.target.place"), &page),
+            "an absent path is not held"
+        );
+        assert!(
+            !path_held(&J::str("shape.whole"), &page),
+            "a text that is no $path is not held"
+        );
     }
 
     /// A first_holding candidate that reads an optional coordinate the page input lacks (shape.whole, a key or a value) is
@@ -6573,17 +6586,26 @@ mod tests {
     #[test]
     fn a_candidate_reading_an_absent_coordinate_is_left_out_and_any_other_absent_path_refuses() {
         let p = |t: &str| core::parse(t).unwrap();
-        let cands = p(r#"{"hi": [{"text": [{"name": "$shape.whole"}]}, {"facts": {"x": {"filter": {"$shape.place": "{code}"}, "time": "$shape.prev"}}}, {"text": []}],
-            "lo": [{"when": [{"table": "$shape.target.table"}]}, {"text": []}]}"#);
+        let cands = p(
+            r#"{"hi": [{"text": [{"name": "$shape.whole"}]}, {"facts": {"x": {"filter": {"$shape.place": "{code}"}, "time": "$shape.prev"}}}, {"text": []}],
+            "lo": [{"when": [{"table": "$shape.target.table"}]}, {"text": []}]}"#,
+        );
         let bare = p(r#"{"shape": {"place": "geo"}}"#);
         let kept = present_candidates(&cands, &bare);
         assert_eq!(kept.g("hi").arr().len(), 1);
         assert_eq!(kept.g("lo").arr().len(), 1);
-        let full = p(r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": "2023", "target": {"table": "t", "time": "2030", "place": "EU27_2020"}}}"#);
+        let full = p(
+            r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": "2023", "target": {"table": "t", "time": "2030", "place": "EU27_2020"}}}"#,
+        );
         assert_eq!(present_candidates(&cands, &full), cands);
         assert!(sub(&p(r#"{"a": "$shape.whole"}"#), &full).is_ok());
         let e = sub(&p(r#"{"a": "$shape.hub"}"#), &bare).unwrap_err();
         assert!(e.contains("the page input has no hub"), "{e}");
-        assert!(present_candidates(&p(r#"[{"a": "$shape.hub"}]"#), &bare).arr().len() == 1);
+        assert!(
+            present_candidates(&p(r#"[{"a": "$shape.hub"}]"#), &bare)
+                .arr()
+                .len()
+                == 1
+        );
     }
 }

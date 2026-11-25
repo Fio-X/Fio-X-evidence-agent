@@ -307,7 +307,10 @@ pub enum Request<'a> {
         rows: &'a BTreeMap<String, Vec<CompanionRow>>,
     },
     /// The links of the main's event chain a story page fetches (next_companion::chain_links), in the chain's order.
-    ChainLinks { catalogue: &'a Opened, main: &'a str },
+    ChainLinks {
+        catalogue: &'a Opened,
+        main: &'a str,
+    },
     /// The chain links kept (next_companion::chain_companions): `rows` holds the fetched rows of the main and of each link
     /// fetched, `on_page` the tables the page already has; each link not kept comes back with why.
     ChainCompanions {
@@ -1003,8 +1006,10 @@ fn read_code_names(text: &str) -> Result<BTreeMap<String, BTreeMap<String, Strin
 /// name as the UN prints it and its members in the order asked; the countries an override moved (the UN's sub-region and
 /// the one it was placed in, by name); the codes with no iso3 or no sub-region.
 fn m49_groups(codes: &[String]) -> Result<Value, String> {
-    let m49: Value = serde_json::from_str(M49_REGIONS).map_err(|e| format!("m49-regions.json: {e}"))?;
-    let over: Value = serde_json::from_str(M49_OVERRIDES).map_err(|e| format!("m49-overrides.json: {e}"))?;
+    let m49: Value =
+        serde_json::from_str(M49_REGIONS).map_err(|e| format!("m49-regions.json: {e}"))?;
+    let over: Value =
+        serde_json::from_str(M49_OVERRIDES).map_err(|e| format!("m49-overrides.json: {e}"))?;
     let iso3_of = iso3_table()?;
     let sub_of: BTreeMap<&str, &str> = m49["countries"]
         .as_array()
@@ -1018,10 +1023,15 @@ fn m49_groups(codes: &[String]) -> Result<Value, String> {
             .map(str::to_string)
             .ok_or_else(|| format!("m49-regions.json names no sub-region {id}"))
     };
-    let (mut at, mut missing): (Vec<(String, String, String)>, Vec<String>) = (Vec::new(), Vec::new());
+    let (mut at, mut missing): (Vec<(String, String, String)>, Vec<String>) =
+        (Vec::new(), Vec::new());
     for code in codes.iter().map(|c| c.trim()) {
         let three = code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase());
-        let iso3 = if three { Some(code) } else { iso3_of.get(code).map(String::as_str) };
+        let iso3 = if three {
+            Some(code)
+        } else {
+            iso3_of.get(code).map(String::as_str)
+        };
         match iso3.and_then(|i| Some((i, *sub_of.get(i)?))) {
             Some((i, sub)) if !at.iter().any(|(c, _, _)| c == code) => {
                 at.push((code.to_string(), i.to_string(), sub.to_string()))
@@ -1036,7 +1046,9 @@ fn m49_groups(codes: &[String]) -> Result<Value, String> {
         let (Some(iso3), Some(to)) = (o["iso3"].as_str(), o["sub_region"].as_str()) else {
             return Err("m49-overrides.json: an override names no iso3 or sub_region".into());
         };
-        let Some(k) = at.iter().position(|(_, i, _)| i == iso3) else { continue };
+        let Some(k) = at.iter().position(|(_, i, _)| i == iso3) else {
+            continue;
+        };
         let from = at[k].2.clone();
         let alone = at.iter().filter(|(_, _, s)| *s == from).count() == 1;
         if from == to || (o["when_alone"].as_bool() == Some(true) && !alone) {
@@ -1048,7 +1060,11 @@ fn m49_groups(codes: &[String]) -> Result<Value, String> {
     let subs: BTreeSet<&str> = at.iter().map(|(_, _, s)| s.as_str()).collect();
     let mut groups = Vec::new();
     for sub in subs {
-        let members: Vec<&str> = at.iter().filter(|(_, _, s)| s == sub).map(|(c, _, _)| c.as_str()).collect();
+        let members: Vec<&str> = at
+            .iter()
+            .filter(|(_, _, s)| s == sub)
+            .map(|(c, _, _)| c.as_str())
+            .collect();
         groups.push(json!({"id": sub, "name_zh": name_of(sub)?, "members": members}));
     }
     Ok(json!({"groups": groups, "moved": moved, "missing": missing}))
@@ -1640,8 +1656,34 @@ mod tests {
     #[test]
     fn eu_members_group_by_m49_sub_region_with_greece_and_cyprus_in_southern_europe() {
         let eu = [
-            "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU",
-            "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK", "EU27_2020",
+            "AT",
+            "BE",
+            "BG",
+            "CY",
+            "CZ",
+            "DE",
+            "DK",
+            "EE",
+            "EL",
+            "ES",
+            "FI",
+            "FR",
+            "HR",
+            "HU",
+            "IE",
+            "IT",
+            "LT",
+            "LU",
+            "LV",
+            "MT",
+            "NL",
+            "PL",
+            "PT",
+            "RO",
+            "SE",
+            "SI",
+            "SK",
+            "EU27_2020",
         ];
         let codes: Vec<String> = eu.iter().map(|c| c.to_string()).collect();
         let Ok(Reply::M49Groups(got)) = call(Request::M49Groups { codes: &codes }) else {
@@ -1652,12 +1694,26 @@ mod tests {
             .unwrap()
             .iter()
             .map(|g| {
-                let members = g["members"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-                (g["id"].as_str().unwrap(), (g["name_zh"].as_str().unwrap(), members))
+                let members = g["members"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect();
+                (
+                    g["id"].as_str().unwrap(),
+                    (g["name_zh"].as_str().unwrap(), members),
+                )
             })
             .collect();
-        assert_eq!(groups.keys().copied().collect::<Vec<_>>(), ["039", "151", "154", "155"]);
-        assert_eq!(groups["039"].1, ["CY", "EL", "ES", "HR", "IT", "MT", "PT", "SI"]);
+        assert_eq!(
+            groups.keys().copied().collect::<Vec<_>>(),
+            ["039", "151", "154", "155"]
+        );
+        assert_eq!(
+            groups["039"].1,
+            ["CY", "EL", "ES", "HR", "IT", "MT", "PT", "SI"]
+        );
         assert_eq!(groups["154"].1, ["DK", "EE", "FI", "IE", "LT", "LV", "SE"]);
         assert_eq!(groups["155"].1, ["AT", "BE", "DE", "FR", "LU", "NL"]);
         assert_eq!(groups["151"].1, ["BG", "CZ", "HU", "PL", "RO", "SK"]);
@@ -1672,16 +1728,24 @@ mod tests {
     /// A World Bank table's iso3 codes keep the UN's grouping: Cyprus beside Turkey stays in Western Asia (the override
     /// applies only to a country alone in its sub-region), each continent's sub-regions apart, an aggregate missing.
     #[test]
-    fn world_bank_codes_group_by_the_continents_sub_regions_and_cyprus_stays_with_others_of_its_own() {
-        let codes: Vec<String> = ["USA", "CAN", "BRA", "MEX", "CHN", "JPN", "IND", "TUR", "CYP", "DEU", "NGA", "WLD"]
-            .iter()
-            .map(|c| c.to_string())
-            .collect();
+    fn world_bank_codes_group_by_the_continents_sub_regions_and_cyprus_stays_with_others_of_its_own(
+    ) {
+        let codes: Vec<String> = [
+            "USA", "CAN", "BRA", "MEX", "CHN", "JPN", "IND", "TUR", "CYP", "DEU", "NGA", "WLD",
+        ]
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
         let Ok(Reply::M49Groups(got)) = call(Request::M49Groups { codes: &codes }) else {
             panic!("no groups")
         };
         let of = |id: &str| {
-            got["groups"].as_array().unwrap().iter().find(|g| g["id"] == id).map(|g| g["members"].clone())
+            got["groups"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|g| g["id"] == id)
+                .map(|g| g["members"].clone())
         };
         assert_eq!(of("021"), Some(json!(["USA", "CAN"])));
         assert_eq!(of("419"), Some(json!(["BRA", "MEX"])));

@@ -2643,7 +2643,11 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ),
     // the strip's piece set in the page palette's colours
     ("visual.strip_palette", "", &["visual::illus_strip"]),
-    ("visual.hero_pieces", "", &["visual::illus_hero", "visual::pick_set"]),
+    (
+        "visual.hero_pieces",
+        "",
+        &["visual::illus_hero", "visual::pick_set"],
+    ),
     // the map label points the binary embeds: each on the globe, else the table is refused
     ("visual.label_points", "", &["visual::label_points"]),
     // a fill of a registered recipe: no stray knob, every named row a name row with a text, every map point a table's

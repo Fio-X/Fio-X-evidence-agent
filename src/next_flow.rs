@@ -3901,8 +3901,10 @@ pub(crate) fn knowledge_call<'a>(
             "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
         Ok(Reply::HubOrigin(found)) => json!(format!("{found:?}")),
         Ok(Reply::ChainLinks(links)) => json!(links.iter().map(|l| &l.table).collect::<Vec<_>>()),
-        Ok(Reply::ChainCompanions(found, dropped)) => json!({"kept": found.iter().map(|c| &c.id).collect::<Vec<_>>(),
-            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
+        Ok(Reply::ChainCompanions(found, dropped)) => {
+            json!({"kept": found.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()})
+        }
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -5784,21 +5786,35 @@ async fn chain_tables<R: ToolRunner + Send + ?Sized>(
         Ok(found) => {
             rows.insert(main.to_string(), found);
         }
-        Err(why) => entries.push(json!({"table": main, "outcome": format!("main rows unread: {why}")})),
+        Err(why) => {
+            entries.push(json!({"table": main, "outcome": format!("main rows unread: {why}")}))
+        }
     }
     record_group_calls(recorder, catalogue)?;
-    let links = if rows.contains_key(main) { links } else { Vec::new() };
+    let links = if rows.contains_key(main) {
+        links
+    } else {
+        Vec::new()
+    };
     for link in &links {
         let started = Instant::now();
-        let limit = COMPANION_FETCH_LIMIT.min(COMPANION_STAGE_LIMIT.saturating_sub(began.elapsed()));
+        let limit =
+            COMPANION_FETCH_LIMIT.min(COMPANION_STAGE_LIMIT.saturating_sub(began.elapsed()));
         let outcome: Result<(), String> = match catalogue.table(&link.table) {
             _ if limit.is_zero() => Err("the chain stage is out of time".into()),
             None => Err("not in the catalogue".into()),
             Some(meta) => match chain_args(main_args, &meta, &link.slice) {
                 None => Err("cannot be fixed to the main's places".into()),
                 Some(args) => {
-                    let (called, stopped) =
-                        timed_prepare(recorder, tools, catalogue, Value::Object(args), cancel, limit).await?;
+                    let (called, stopped) = timed_prepare(
+                        recorder,
+                        tools,
+                        catalogue,
+                        Value::Object(args),
+                        cancel,
+                        limit,
+                    )
+                    .await?;
                     record_group_calls(recorder, catalogue)?;
                     let file = called
                         .details
@@ -5820,8 +5836,10 @@ async fn chain_tables<R: ToolRunner + Send + ?Sized>(
                 }
             },
         };
-        entries.push(json!({"table": link.table, "seconds": started.elapsed().as_secs_f64(),
-            "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}));
+        entries.push(
+            json!({"table": link.table, "seconds": started.elapsed().as_secs_f64(),
+            "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}),
+        );
     }
     let (kept, dropped) = catalogue.chain_companions(main, on_page, &rows);
     record_group_calls(recorder, catalogue)?;
@@ -5859,8 +5877,15 @@ fn chain_args(
         .find(|f| f["dimension"] == next_params::GEO_DIM)?;
     let (_, codes) = table.dims.iter().find(|(d, _)| d == next_params::GEO_DIM)?;
     let mut places: Vec<String> = Vec::new();
-    for code in place["values"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-        if let Some(own) = own_code(next_params::GEO_DIM, code, codes).filter(|c| !places.contains(c)) {
+    for code in place["values"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if let Some(own) =
+            own_code(next_params::GEO_DIM, code, codes).filter(|c| !places.contains(c))
+        {
             places.push(own);
         }
     }
@@ -5868,7 +5893,11 @@ fn chain_args(
         return None;
     }
     let mut filters = vec![json!({"dimension": next_params::GEO_DIM, "values": places})];
-    filters.extend(slice.iter().map(|(dim, codes)| json!({"dimension": dim, "values": codes})));
+    filters.extend(
+        slice
+            .iter()
+            .map(|(dim, codes)| json!({"dimension": dim, "values": codes})),
+    );
     args.insert("filters".into(), Value::Array(filters));
     if let Some(years) = main.get("years") {
         args.insert("years".into(), years.clone());
@@ -7012,8 +7041,10 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         // fetches and never read them)
         if held_for.is_some() {
             let on_page: Vec<&str> = tables.iter().map(|(id, _, _, _)| id.as_str()).collect();
-            chain_files =
-                chain_tables(recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel).await?;
+            chain_files = chain_tables(
+                recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel,
+            )
+            .await?;
         }
     }
     let mut lines = vec![format!("Question: {question}")];
@@ -10412,9 +10443,16 @@ mod tests {
         };
         let secs = std::time::Duration::from_secs;
         // 1. a 500 and then the source answers: one retry after 10 s, the status in the event
-        let (drove, took) =
-            timed(vec![failed("returned HTTP 500 (1/3)"), json!({"mode": "no_candidates"})]).await;
-        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 500 (1/3)"),
+            json!({"mode": "no_candidates"}),
+        ])
+        .await;
+        assert!(
+            matches!(drove.result, Err(Stop::TooFewClaims { .. })),
+            "{:?}",
+            drove.result
+        );
         assert_eq!(drove.tools.args.len(), 2);
         assert_eq!(waits(&drove), [(json!(10_000), json!(500))]);
         assert_eq!(took, secs(10));
@@ -10453,7 +10491,10 @@ mod tests {
                 "{first}: {:?}",
                 drove.result
             );
-            assert_eq!(waits(&drove), [(json!(2_000), Value::Null), (json!(4_000), Value::Null)]);
+            assert_eq!(
+                waits(&drove),
+                [(json!(2_000), Value::Null), (json!(4_000), Value::Null)]
+            );
             assert_eq!(took, secs(6), "{first}");
         }
         // 4. each wait follows the failure before it: a 503, then a timeout, then the source answers
