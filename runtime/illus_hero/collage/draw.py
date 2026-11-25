@@ -126,6 +126,16 @@ def accent_places(kq, q, sl, cfg):
     return "".join("r" if i in red else "g" for i in range(q))
 
 
+def far_counts(n, cfg):
+    """How many far figures each layer draws for a picture of n figures: per_figure x n x ramp, the ramp rising from 0 at n = ramp[0] to 1 at
+    n = ramp[1] (so no backdrop for a short queue, and no jump at any n), shared over the layers in the ratio of their n (largest remainder).
+    The far crowd never outnumbers per_figure x the counted figures, so the queue stays what the eye counts."""
+    F = cfg["far"]; a, b = F["ramp"]; total = round(F["per_figure"] * n * max(0.0, min(1.0, (n - a) / (b - a))))
+    w = [L["n"] for L in F["layers"]]; raw = [total * x / sum(w) for x in w]; out = [int(r) for r in raw]
+    for i in sorted(range(len(w)), key=lambda i: (out[i] - raw[i], i))[:total - sum(out)]: out[i] += 1
+    return out
+
+
 def far_slots(layer, rng):
     """One layer of the far view (collage_renderer.far.layers): its n places (height, centre x, foot y, end fade), spread evenly over x[0]..x[1]
     of the width with a seeded jitter of the spacing, the height and the foot (so no row has one straight foot line); the end fade falls from
@@ -185,9 +195,10 @@ def draw(codes, k, n, width, accent, cfg, kn):
     by_id = {p["id"]: p for p in index["pieces"]}
     scale = width / float(CW); tiers = sorted(index["tiers"].items(), key=lambda t: t[1])
     hero = None
-    if k >= 1:     # the hero: the first red_ok figure whose clothing reads as one strong block, else the first red_ok one
-        ok = [f for f in order if figs[f]["red_ok"]]
-        hero = next((f for f in ok if figs[f]["solidity"] >= cfg["hero_solidity"]), ok[0])
+    if k >= 1:     # the hero: the first figure on the pack's hero list (pack.json hero_ok: its mask checked by eye) whose clothing reads as one strong block
+        ok = [f for f in order if figs[f]["red_ok"] and figs[f].get("hero_ok") and figs[f]["solidity"] >= cfg["hero_solidity"]]
+        if not ok: raise PackError("collage: the pack has no hero figure (no red_ok figure with hero_ok and solidity at least hero_solidity)")
+        hero = ok[0]
         order.remove(hero)
     q = n - (1 if hero else 0)
     sl = queue_slots(q, kn, cfg)
@@ -266,7 +277,8 @@ def draw(codes, k, n, width, accent, cfg, kn):
                        f'<path d="M0 0H{num(w)}V{num(hb)}H0Z" fill="{tone(paper, 1 - (1 - L["fill"]) * e)}" mask="url(#clg-f{j})"/>'
                        f'<g opacity="{num(L["ink"] * e)}"><image href="{href(f"{fid}.{t}.lines")}" {size}/></g></g>'); j += 1
         far_layers.append(cnt)
-    for L in F["layers"]: far_layer(L)
+    for L, m in zip(F["layers"], far_counts(n, cfg)):
+        if m: far_layer(dict(L, n=m))
     qfill = tone(paper, kn["queue_fill"])
     for j, i in enumerate(draw_order):
         h, x, y = sl[i]

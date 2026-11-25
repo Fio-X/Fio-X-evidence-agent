@@ -99,7 +99,7 @@ class Wiring(unittest.TestCase):
             for share, n, k in ((0.284, 8, 2), (0.25, 10, 2)):
                 svg, w, h, secs, name, comp = R.build_scene(styled(prop_req(share, n, k), st))
                 self.assertEqual((comp["lit"], comp["objects"], comp["style"], name), (k, n, st, "people.proportion"), (st, share))
-                self.assertEqual(lit_in(svg, "#b8433a"), k); self.assertEqual(hero_grammar_faults(svg), [])
+                self.assertEqual(lit_in(svg, R.page_accent()), k); self.assertEqual(hero_grammar_faults(svg), [])   # no accent asked: the page's
 
     def test_a_proportion_whose_declared_count_or_total_is_not_recomputed_is_refused(self):
         with self.assertRaisesRegex(R.Refused, "declared.count 3 is not the 2 of 10"): R.build_scene(prop_req(0.25, 10, 3))

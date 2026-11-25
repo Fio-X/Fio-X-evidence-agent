@@ -35,7 +35,7 @@ def members_of(sub):
 def cols(): return R.page_colours(["--accent", "--bar", "--t-title"])
 
 
-def primary(): return R.TOPICS["scenes"]["energy"]["accent"]
+def primary(): return R.page_accent()
 
 
 def hero_grammar_faults(svg):

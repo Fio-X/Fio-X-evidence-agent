@@ -1,6 +1,6 @@
 """The illustration node's child (the visual group's IllusHero request runs it: src/next_visual.rs illus_hero).
 One JSON line in, one line out, as leaves_js/illus_strip.cjs:
-  in : {"tags": [wind|solar|hydro|coal|gas|grid, ...], "hero": "wind"|"gas", "width": 600..2000, "ground": "warm"|"cool"|{dark,mid,light,line}, "accent": "#rrggbb",
+  in : {"tags": [wind|solar|hydro|coal|gas|grid, ...], "hero": "wind"|"gas", "width": 600..2000, "ground": "warm"|"cool"|{dark,mid,light,line}, "accent": "#rrggbb"|"var(--accent)" (default the page's),
         "lead": story angle?, "composition": {focus_scale, reading_order, relief, smoke, seed}?, "parts": {part_id: {knob: value}}?}
         (anything node.json declares as a knob; unknown names and out-of-range values are refused). Two optional fields bind the picture to the page's
         finding and its topic (node.json topics): "family" (the measure family id of the page's table) and "subject" ({"members": [{"code", "value"}], "rule": {"op", "ref"|"k"},
@@ -24,6 +24,7 @@ from decimal import Decimal, ROUND_HALF_EVEN
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)      # (python -I puts no script directory on the path)
 import frame as FR  # noqa: E402
+from one_accent import one_accent  # noqa: E402
 REG = json.load(open(os.path.join(HERE, "node.json")))
 TAG_ORDER = ["hydro", "solar", "wind", "coal", "gas", "grid"]
 BLENDER_DEADLINE = 40.0     # seconds for the Blender process; the whole picture must be back inside 55 s (the caller's deadline is 60)
@@ -73,8 +74,7 @@ def validate(inp):
     else:
         if set(g) != {"dark", "mid", "light", "line"}: refuse("ground colours need dark, mid, light, line")
         pal = g
-    acc = inp.get("accent", c["accent"])
-    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    acc = accent_of(inp)
     lead = inp.get("lead")
     if lead is not None and lead not in REG["stories"]["angles"]: refuse(f"lead {lead!r} is no story angle; known: {sorted(REG['stories']['angles'])}")
     pid = {p["id"]: p for p in REG["parts"]}; over = inp.get("parts", {})
@@ -420,8 +420,7 @@ def compose_subject(inp, renderer="3d"):
     else:
         if set(g) != {"dark", "mid", "light", "line"}: refuse("ground colours need dark, mid, light, line")
         pal = g
-    acc = inp.get("accent", sc["accent"])
-    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    acc = accent_of(inp)
     fs = None
     if "figure_style" in sc:
         fs = inp.get("people_style", sc["figure_style"]["default"])
@@ -539,6 +538,20 @@ def page_colours(names):
     return got
 
 
+def page_accent():
+    """The page's accent (tokens.css --accent): the one red of the page, its picture's too."""
+    return page_colours(["--accent"])["--accent"]
+
+
+def accent_of(inp):
+    """The picture's accent: the request's "accent" as the page colour name var(--accent) (what the piece sets send) or as a #rrggbb,
+    and the page's own accent when the request gives none; no topic keeps a colour of its own (one accent per page)."""
+    acc = inp.get("accent", "var(--accent)")
+    if acc == "var(--accent)": return page_accent()
+    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb or var(--accent)")
+    return acc.lower()
+
+
 def build_line(inp):
     """The same reply the 3D path gives, drawn by runtime/illus_hero/line (pure SVG in the page's colour variables, no Blender). The composition is
     resolve's own (renderer 'line': the ranking's head and tail of the registry); a layout or a unit the line drawing does not draw is `unavailable` (the page's strip stands in), a wrong request is refused, nothing is sent to 3D."""
@@ -556,13 +569,13 @@ def build_line(inp):
     inner = d["inner"]; cols = page_colours(sorted(set(re.findall(r"var\((--[a-z0-9-]+)\)", inner))))
     inner = re.sub(r"var\((--[a-z0-9-]+)\)", lambda m: cols[m.group(1)], inner)
     k = width / float(LD.CW); h = round(LD.CH * k, 2)
-    return f'<g transform="scale({k:.5f})">{inner}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+    return f'<g transform="scale({k:.5f})">{one_accent(inner, cols.get("--accent") or page_accent())}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
 def build_people(inp):
     """The same reply the line path gives, drawn by runtime/illus_hero/people: the composition is resolve's own (renderer 'people'); a layout the
     people drawing does not place is `unavailable` (the page's strip stands in), a wrong request is refused. Colours: the page's own tokens
-    (accent, bar, title ink) resolved to hex here, the lit figures' primary is the topic's accent from the registry."""
+    (bar, title ink) resolved to hex here; the lit figures' primary and accent are the picture's accent (accent_of: the page's); one_accent greys every other strong colour."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
@@ -571,10 +584,10 @@ def build_people(inp):
     import draw as PD
     kind = resolved[0]["scene"].split(".")[1]
     if kind not in PD.KINDS: raise Unavailable(f"people: the {kind!r} layout is not drawn by the people renderer")      # the page's strip stands in
-    topic = topic_of(inp.get("family")); primary = TOPICS["scenes"][topic]["accent"]
-    d = PD.draw(resolved, page_colours(["--accent", "--bar", "--t-title"]), primary)
+    acc = accent_of(inp)
+    d = PD.draw(resolved, {**page_colours(["--accent", "--bar", "--t-title"]), "--accent": acc}, acc)
     k = width / float(PD.CW); h = round(d["h"] * k, 2)
-    return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+    return f'<g transform="scale({k:.5f})">{one_accent(d["inner"], acc)}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
 # ---------------------------------------------------------------- the collage (topics.collage_renderer: runtime/illus_hero/collage/draw.py)
@@ -597,9 +610,8 @@ def collage_knobs(inp):
 
 
 def collage_accent(inp, topic):
-    """The accent of a collage proportion request (compose_subject checks a tally's): the request's, else the topic's; hex only."""
-    acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
-    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    """The accent of a collage proportion request (compose_subject checks a tally's): accent_of (the page's accent unless the request names a hex)."""
+    acc = accent_of(inp)
     return acc
 
 
@@ -611,7 +623,7 @@ def build_collage(inp):
     lit_codes, by compose_subject's check of the request). N off collage_renderer.figures, or any other layout, is `unavailable` (the page's strip
     stands in). Its layout knobs are collage_knobs (defaults and ranges in composition_knobs; off range refused; the other renderers' knobs refused).
     The pack missing or damaged is `unavailable`; a reply over max_svg_bytes is `unavailable`. Colours: hex only (the page's check): the request's
-    accent, else the topic's."""
+    accent, else the page's (accent_of)."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
@@ -698,12 +710,11 @@ def ranked_items(sub, kind):
 
 def scene_knobs(inp, topic):
     """(accent, composition knobs) of a scene request that compose_subject does not check (a proportion, a rank, a pair): the knobs registered
-    and the scene renderer's, the reading order one of its values, the accent hex (the topic's when none is given)."""
+    and the scene renderer's, the reading order one of its values, the accent hex (accent_of: the page's when none is given)."""
     ck = REG["composition_knobs"]; comp_in = dict(inp.get("composition", {})); check_knobs(comp_in, "scene")
     c = {k: s.get("default") for k, s in ck.items()}; c.update(comp_in)
     if c["reading_order"] not in ck["reading_order"]["values"]: refuse("reading_order must be left_to_right or right_to_left")
-    acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
-    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    acc = accent_of(inp)
     return acc, c
 
 
@@ -751,7 +762,7 @@ def build_scene(inp):
     members in order_members order (the lit first), lit by lit_codes (the tally's own recount; compose_subject checks the request as for any
     renderer), a proportion subject's first K of N (proportion_flags), or a rank or pair subject's members highest first, each lit where it
     stands, the middle folded into one gap marker (ranked_items; request order: given, the reply's gaps the markers sent). The node draws the flags it is given; its reply's lit and total must
-    be the recomputed ones, or the request is refused. Colours: hex only (the page's check): the page's ink and paper tokens, the request's accent."""
+    be the recomputed ones, or the request is refused. Colours: hex only (the page's check): the page's ink and paper tokens, the request's accent (accent_of); one_accent leaves it the reply's only strong colour."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
     if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
@@ -795,7 +806,7 @@ def build_scene(inp):
     name = f"{topic}.{kind}"
     comp = dict(scene=name, renderer="scene", style=style, scene_layout=scene, layout=f"{scene}-{k}of{n}" + (f"-{omitted}folded" if omitted else ""), objects=n, lit=k, omitted=omitted,
                 dropped=[str(d) for d in dropped])
-    return f'<g transform="scale({sk:.5f})">{body}</g>', float(width), h, {"scene": secs, "total": round(time.time() - t0, 2)}, name, comp
+    return f'<g transform="scale({sk:.5f})">{one_accent(body, acc.lower())}</g>', float(width), h, {"scene": secs, "total": round(time.time() - t0, 2)}, name, comp
 
 
 def serve():

@@ -10,7 +10,7 @@ image packages blocked: the run needs the standard library only) and another mem
 (a Python mirror of next_leaf.rs hero_faults: g, path, image, defs, mask, linearGradient, stop; hex colours; png/jpeg data URLs), holds no text,
 and its accent figures (accent blocks under a clothing mask) are the declared count, its figures (outline masks) the member count; the svg is at
 most 3 MB, the pack at most 6 MB and each piece at most 150 KB; every piece's sha256 is the pack's, every figure has a CC0/PDM licence row; at least 25 figures wear
-the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 30 px at the largest tier.
+the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 32 px at the largest tier.
 Run: python3 -I -B scripts/test_illus_collage.py"""
 import csv
 import hashlib
@@ -153,8 +153,8 @@ def accent_figures(svg, accent):
     return len(set(reds)), len(set(figs))
 
 
-STRAIGHT_PX = 30        # the longest straight run allowed on a clothing mask's edge inside the figure, at the largest tier (480 px high)
-STRAIGHT_TOL = 0.8      # px off the chord that still counts as straight
+STRAIGHT_PX = 32        # the longest straight run allowed on a clothing mask's edge inside the figure, at the largest tier (480 px high)
+STRAIGHT_TOL = 0.6      # px off the chord that still counts as straight (a rasterised polygon side stays within about half a pixel)
 NB8 = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)]
 
 
@@ -220,25 +220,39 @@ def contours(m):
     return out
 
 
+def straight_runs(run, tol):
+    """Douglas-Peucker split of an ordered run of edge pixels: the chord lengths of the pieces whose pixels all lie within tol px of their
+    chord. Unlike growing a chord until the first pixel strays (which a pixel staircase stops early), the split finds every straight piece."""
+    import math
+    out = []; stack = [(0, len(run) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (y0, x0), (y1, x1) = run[a], run[b]; L = math.hypot(y1 - y0, x1 - x0)
+        if b - a < 2: out.append(L); continue
+        if L == 0: dev = [math.hypot(y - y0, x - x0) for y, x in run[a + 1:b]]
+        else: dev = [abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / L for y, x in run[a + 1:b]]
+        k = max(range(len(dev)), key=dev.__getitem__)
+        if dev[k] <= tol: out.append(L)
+        else: stack += [(a, a + 1 + k), (a + 1 + k, b)]
+    return out
+
+
 def longest_straight(cloth, sil, tol=STRAIGHT_TOL, margin=2):
     """The longest straight run (px, chord length) of a clothing mask's edge where the edge lies inside the figure (over `margin` px inside
     its filled outline): a polygon side cutting across the clothing shows up here, the figure's own outline does not."""
-    import math
     f = filled(sil); h, w = len(f), len(f[0])
     inside = lambda y, x: all(0 <= y + dy < h and 0 <= x + dx < w and f[y + dy][x + dx] for dy in range(-margin, margin + 1) for dx in range(-margin, margin + 1))
     best = 0.0
     for pts in contours(cloth):
-        flags = [inside(*q) for q in pts]; n = len(pts); i = 0
+        flags = [inside(*q) for q in pts]; n = len(pts)
+        if not all(flags):                      # start at a point on the outline, so a run inside never wraps round the start
+            s = flags.index(False); pts = pts[s:] + pts[:s]; flags = flags[s:] + flags[:s]
+        i = 0
         while i < n:
             if not flags[i]: i += 1; continue
             j = i
             while j + 1 < n and flags[j + 1]: j += 1
-            run = pts[i:j + 1]
-            for a in range(len(run)):
-                for b in range(a + 2, len(run)):
-                    (y0, x0), (y1, x1) = run[a], run[b]; L = math.hypot(y1 - y0, x1 - x0)
-                    if max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / L for y, x in run[a + 1:b]) > tol: break
-                    best = max(best, L)
+            best = max([best] + straight_runs(pts[i:j + 1], tol))
             i = j + 1
     return best
 
@@ -425,7 +439,24 @@ class Collage(unittest.TestCase):
             if m.group(1) == "clg-ch": self.assertIsNone(m.group(2))                                                  # the hero's accent at full strength
             else: self.assertLess(float(m.group(3)), 1.0)                                                             # the queue's lighter
 
-    def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
+    def test_the_far_crowd_is_scaled_to_n_and_absent_for_a_short_queue(self):
+        """Drawn people = the N counted figures + the far crowd; the far crowd is at most per_figure x N, none below ramp[0] figures, and it
+        grows with N without a jump (the ramp), so a short queue is not lost in an uncounted crowd."""
+        F = R.CR["far"]; c = F["per_figure"]; prev = None
+        for n in (10, 14, 15, 16, 20, 24, 30):
+            for width in (1440, 1140):
+                svg, w, h, secs, scene, comp = R.build_collage(top_req(n, min(3, n - 1), width=width))
+                drawn = (1 if comp["hero"] else 0) + comp["queue"] + comp["far"]
+                self.assertEqual((1 if comp["hero"] else 0) + comp["queue"], n)
+                self.assertLessEqual(drawn, c * n + n, (n, width)); self.assertLessEqual(comp["far"], sum(comp["far_layers"]) if comp["far_layers"] else 0)
+                if n <= F["ramp"][0]: self.assertEqual(comp["far"], 0, (n, width)); self.assertNotIn('id="clg-f', svg)
+                self.assertEqual(svg, R.build_collage(top_req(n, min(3, n - 1), width=width))[0])          # same bytes twice
+            want = round(c * n * max(0.0, min(1.0, (n - F["ramp"][0]) / (F["ramp"][1] - F["ramp"][0]))))
+            self.assertLessEqual(comp["far"], want); self.assertGreaterEqual(comp["far"], want - 6, n)         # a few end places fade out entirely
+            if prev is not None: self.assertLessEqual(want - prev[1], c * (n - prev[0]) * (1 + n / (F["ramp"][1] - F["ramp"][0])) + 1, n)   # no jump: at most the ramp's slope
+            prev = (n, want)
+
+
         ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
         self.assertEqual(set(mine), {"hero_h", "hero_x", "hero_foot", "queue_gap", "queue_far_h", "queue_far_x", "queue_far_foot", "queue_ink", "queue_fill"})
         for name in mine:
@@ -439,9 +470,9 @@ class Collage(unittest.TestCase):
         a = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.6}})
         self.assertEqual((a[5]["hero_h"], b[5]["hero_h"]), (0.5, 0.6)); self.assertNotEqual(a[0], b[0])
 
-    def test_colours_are_the_request_accent_else_the_topics(self):
+    def test_colours_are_the_request_accent_else_the_pages(self):
         svg = R.build_collage({k: v for k, v in top_req(10, 3).items() if k != "accent"})[0]
-        self.assertEqual(accent_figures(svg, R.TOPICS["scenes"]["labour"]["accent"]), (3, 10))
+        self.assertEqual(accent_figures(svg, R.page_accent()), (3, 10))
         svg = R.build_collage({**top_req(10, 3), "accent": "#123456"})[0]; self.assertEqual(accent_figures(svg, "#123456"), (3, 10))
         paper = json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"]; ck = R.REG["composition_knobs"]
         tone = lambda f: "#" + "".join(f"{round(int(paper[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))
@@ -558,6 +589,19 @@ class Pack(unittest.TestCase):
         for f in reds:
             for t in ("l", "m", "s"): self.assertIn(f"{f}.{t}.cloth", ids)
 
+    def test_the_hero_is_always_a_figure_on_the_hero_list(self):
+        figs = {f["id"]: f for f in self.index["figures"]}
+        heroes = [i for i, f in figs.items() if f.get("hero_ok")]
+        self.assertGreater(len(heroes), 0)
+        for i in heroes: self.assertTrue(figs[i]["red_ok"] and figs[i]["solidity"] >= R.CR["hero_solidity"], i)
+        seen = set()
+        for n in range(3, 31):
+            for k in range(1, n + 1):                   # K below N by the top rule, K = N by a rule every member passes
+                req = top_req(n, k) if k < n else {**top_req(n, 1), "subject": {**top_req(n, 1)["subject"], "rule": {"op": "gt", "ref": -1}, "declared": {"count": n, "total": n}}}
+                h = R.build_collage(req)[5]["hero"]; seen.add(h)
+                self.assertIn(h, heroes, (n, k))
+        self.assertGreater(len(seen), 1)                 # the seed spreads the hero over the list
+
     def test_no_accent_mask_edge_has_a_long_straight_cut(self):
         """Inside the figure, every red_ok clothing mask's edge follows the engraving: no straight run longer than STRAIGHT_PX px at the
         largest tier (480 px high), decoded from the pack with the standard library."""
@@ -575,6 +619,9 @@ class Pack(unittest.TestCase):
         disc = [[1 if (y - 100) ** 2 + (x - 60) ** 2 < 45 ** 2 else 0 for x in range(120)] for y in range(200)]
         self.assertLess(longest_straight(disc, sil), STRAIGHT_PX)                       # and passes a curved edge
         self.assertEqual(longest_straight(box, box), 0)                                 # and ignores the figure's own outline
+        fx = os.path.join(HERE, "fixtures", "collage_masks")                          # the 856579_1 mask of an earlier pack: a straight side along the jug,
+        old = [png_bits(open(os.path.join(fx, f"856579_1-d75a305f.l.{k}.png"), "rb").read()) for k in ("cloth", "sil")]   # a flat step, a straight shoulder
+        self.assertGreater(longest_straight(*old), 50)
 
     def test_the_pack_holds_no_local_path_or_non_english_text(self):
         for name in ("pack.json", "LICENSES.tsv", "draw.py"):

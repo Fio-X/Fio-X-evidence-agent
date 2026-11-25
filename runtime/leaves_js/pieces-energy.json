@@ -135,7 +135,7 @@
   }
  ],
  "hero": {
-  "what": "the opening picture of a page of these tables: Blender's low-poly scene painted by runtime/illus_hero (its parts, layout and ranges are data in its node.json); `tables` gives each table the semantic tags of the parts drawn, `hero` the part in the foreground, `ground` the paper (warm or cool), `accent` the one accent colour (green marks renewable equipment)",
+  "what": "the opening picture of a page of these tables: Blender's low-poly scene painted by runtime/illus_hero (its parts, layout and ranges are data in its node.json); `tables` gives each table the semantic tags of the parts drawn, `hero` the part in the foreground, `ground` the paper (warm or cool), `accent` the page accent by its colour name (run_hero resolves var(--accent) from the page palette: one accent per page)",
   "tables": {
    "nrg_ind_ren": [
     "wind",
@@ -153,7 +153,7 @@
   },
   "hero": "wind",
   "ground": "warm",
-  "accent": "#1a9a6c"
+  "accent": "var(--accent)"
  },
  "strip_topics": {
   "doc": "The strip follows the page's topic and its data: `family` (the measure family id of the page's table, the ids of runtime/pi/assets/measure-families.json) names a topic here, a family not listed is the neutral topic; `count` (the number of members the page's rows hold) sets how many pieces stand (about one a `per` members, between `min` and the topic's own list) and, with the topic, which piece leads and the pen's seed. A request with neither draws `pieces` as before.",

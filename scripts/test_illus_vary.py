@@ -145,9 +145,11 @@ class TopicScenes(unittest.TestCase):
         src = open(os.path.join(HERO, "scene_node.py")).read()
         self.assertRegex(src, r'"thing": \(') ; self.assertRegex(src, r'"lit": \(')
 
-    def test_accents_are_the_topics_own_unless_given(self):
+    def test_accents_are_the_pages_unless_given(self):
+        # one accent per page: no topic keeps a colour of its own; the page colour name and no accent both give the page's
         a = R.resolve(req("em_tally"))[2]; b = R.resolve(req("st4"))[2]; c = R.resolve(req("st4", accent="#123456"))[2]
-        self.assertEqual(b, "#1a9a6c"); self.assertNotEqual(a, b); self.assertEqual(c, "#123456")
+        d = R.resolve(req("st4", accent="var(--accent)"))[2]
+        self.assertEqual(b, R.page_accent()); self.assertEqual(a, b); self.assertEqual(d, b); self.assertEqual(c, "#123456")
 
     def test_the_strip_and_the_hero_share_one_family_map(self):
         # a collage topic's strip is its renderer_else_topic's (labour: the people strip)

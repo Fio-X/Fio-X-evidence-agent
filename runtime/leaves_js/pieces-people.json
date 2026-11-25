@@ -139,7 +139,7 @@
   }
  ],
  "hero": {
-  "what": "the opening picture of a page of these tables: one figure per member (node.json scenes.people.renderer = scene: the scene renderer runtime/illus_hero/scene for a tally, runtime/illus_hero/people, its renderer_else, for the other layouts), composed from the finding's rows; it needs no hero parts, so `tables` gives each table an empty tag list; `hero` is not read on that path; `ground` the paper, `accent` the people topic's own accent",
+  "what": "the opening picture of a page of these tables: one figure per member (node.json scenes.people.renderer = scene: the scene renderer runtime/illus_hero/scene for a tally, runtime/illus_hero/people, its renderer_else, for the other layouts), composed from the finding's rows; it needs no hero parts, so `tables` gives each table an empty tag list; `hero` is not read on that path; `ground` the paper, `accent` the page's accent by its colour name (run_hero resolves var(--accent) from the page palette)",
   "tables": {
    "une_rt_a": [],
    "une_rt_m": [],
@@ -160,6 +160,6 @@
   },
   "hero": "figures",
   "ground": "warm",
-  "accent": "#b8433a"
+  "accent": "var(--accent)"
  }
 }
