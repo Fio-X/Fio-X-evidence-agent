@@ -3,7 +3,8 @@ names one member and prints its value (the rank's "the highest is X: 10.5%", the
 kept as it was, a key "proportion": {share, figures 30, declared {count K, total 30}}, K = 30 x share half to even; on any other measure, or a
 claim that names no member, more than one, or prints no value (a position, a change), the subject is the angle's own alone. Two shapes (an
 unemployment-like rate, a per-capita money measure); the child (runtime/illus_hero/run_hero.py) recounts it and draws it with the real scene
-node where the topic's renderer is the scene renderer (people), and draws the angle's own subject elsewhere (energy).
+node where the topic's renderer is the scene renderer (people), with the collage on the unemployment family's topic (labour), and draws the
+angle's own subject elsewhere (energy).
 Run: python3 -I -B scripts/test_story_proportion.py"""
 import copy
 import json
@@ -124,14 +125,21 @@ class Proportion(unittest.TestCase):
     @unittest.skipUnless(child_reads_nested(), "run_hero does not yet read the proportion beside the old subject")
     def test_the_child_draws_the_subject_with_the_real_scene_node(self):
         """The picture request as layer 1 sends it (next_visual illus_hero: the lead, the subject, the family): on a people topic the child
-        takes the proportion to the scene renderer, recounts K, and the node draws K lit of 30 (the grid); on an energy topic it draws the
-        angle's own subject with its own renderer."""
+        takes the proportion to the scene renderer, recounts K, and the node draws K lit of 30 (the grid); on the unemployment family's topic
+        (labour) the collage draws it, K of 30 in the accent, the same recount refusing; on an energy topic it draws the angle's own subject
+        with its own renderer."""
         sub = lead_subject(rate_request(10.5), ["rank", "ends"])
         energy = {"tags": [], "hero": "wind", "width": 1140, "ground": "warm", "accent": "#b8433a", "lead": "rank", "family": "renewable_share", "subject": sub}
         self.assertNotEqual(R.renderer_of(energy), "scene")
         for top, k in ((10.5, 3), (25.0, 8)):
             sub = lead_subject(rate_request(top), ["rank", "ends"])
             req = {"tags": [], "hero": "wind", "width": 1140, "ground": "warm", "accent": "#b8433a", "lead": "rank", "family": "unemployment", "subject": copy.deepcopy(sub)}
+            self.assertEqual(R.renderer_of(req), "collage")
+            svg, w, h, secs, name, comp = R.build_collage(req)
+            self.assertEqual((comp["lit"], comp["objects"], name, comp["renderer"]), (k, 30, "labour.proportion", "collage"), top)
+            bad = {**req, "subject": {**sub, "proportion": {**sub["proportion"], "declared": {"count": k + 1, "total": 30}}}}
+            with self.assertRaisesRegex(R.Refused, "half to even"): R.build_collage(bad)
+            req = {**req, "family": "pop65"}
             self.assertEqual(R.renderer_of(req), "scene")
             svg, w, h, secs, name, comp = R.build_scene(req)
             self.assertEqual((comp["lit"], comp["objects"], name), (k, 30, "people.proportion"), top)

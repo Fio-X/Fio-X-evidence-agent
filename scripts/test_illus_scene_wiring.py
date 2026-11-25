@@ -154,10 +154,11 @@ class Wiring(unittest.TestCase):
         self.assertEqual(R.renderer_of({"family": "asylum", "lead": "members", "subject": rule_req()["subject"]}), "3d")
         with self.assertRaises(R.Unavailable): R.build_scene({**rule_req(), "lead": "path"})
         self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "labour": "ink", "trade": "geo", "migration": "ink", "tech": "iso", "neutral": "ink"})
-        # the unemployment family (labour): its tally is the collage, its proportion the scene renderer's, as the people topic routes them
+        # the unemployment family (labour): its tally and its proportion are the collage's, its other layouts routed as the people topic's
         self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "members", "subject": rule_req()["subject"]}), "collage")
-        self.assertEqual(R.renderer_of({"family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}), "scene")
-        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "members", "subject": {**rule_req()["subject"], "proportion": prop(0.3, 30, 9)}}), "scene")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "members", "subject": {**rule_req()["subject"], "proportion": prop(0.3, 30, 9)}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "pop65", "subject": {"proportion": prop(0.3, 30, 9)}}), "scene")
 
     def test_economy_tallies_and_rankings_are_geo_scenes_and_their_paths_keep_3d(self):
         sub = rule_req()["subject"]
@@ -283,9 +284,12 @@ class ProportionBeside(unittest.TestCase):
         self.assertEqual(json.dumps(a, sort_keys=True), json.dumps(b, sort_keys=True))
         with self.assertRaisesRegex(R.Unavailable, "only a proportion"): R.without_ignored_proportion({**prop_req(0.3, 30, 9), "family": "renewable_share"})
         self.assertEqual(list(serve({**prop_req(0.3, 30, 9), "family": "renewable_share"})), ["unavailable"])
-        people = {**tags, "family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}
+        people = {**tags, "family": "pop65", "subject": {"proportion": prop(0.3, 30, 9)}}
         self.assertIs(R.without_ignored_proportion(people), people)
         r = child(people); self.assertEqual((r["composition"]["scene_layout"], r["composition"]["lit"], r["composition"]["objects"]), ("grid", 9, 30))
+        labour = {**tags, "family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}      # the unemployment family's proportion: the collage
+        self.assertIs(R.without_ignored_proportion(labour), labour)
+        r = child(labour); self.assertEqual((r["scene"], r["composition"]["renderer"], r["composition"]["lit"], r["composition"]["objects"]), ("labour.proportion", "collage", 9, 30))
         # a subject with its own form keeps it, the proportion dropped
         own = {**rule_req(), "family": "renewable_share"}; own["subject"]["proportion"] = prop(0.3, 30, 9)
         self.assertNotIn("proportion", R.without_ignored_proportion(own)["subject"])

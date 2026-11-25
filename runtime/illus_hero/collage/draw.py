@@ -1,19 +1,24 @@
 """The collage drawing of the opening picture (run_hero.py build_collage; node.json topics.collage_renderer and the composition knobs whose
-renderers are [collage]): N engraving cut-outs (pack.bin, indexed by pack.json, built once by scripts/build_collage_pack.py). A long queue
-recedes in perspective to the right over grey paper and one flat light-grey ground, a mid-grey band; K of the N wear the accent on their
-clothing under the engraving lines, and the front-most of the K is the near hero, large in the left-front third, the darkest and clearest
-figure. Standard library only and no pixel work: the picture is layered SVG over the 1440x560 frame, every raster a PNG or JPEG data URL
-taken from the pack as it is.
+renderers are [collage]): N engraving cut-outs (pack.bin, indexed by pack.json, built once by scripts/build_collage_pack.py) in one queue
+on a whole sheet of paper. The queue's front figure is the hero, large in the left-front third, the darkest and clearest figure; the rest
+of the queue stands right behind it and recedes up and to the right, near-large to far-small in one continuous sweep, every figure by
+one depth rule. K of the N wear the accent on their clothing under the engraving lines; the hero is the front-most of the K. Standard
+library only and no pixel work: the picture is layered SVG over the 1440x560 frame, every raster a PNG or JPEG data URL taken from the
+pack as it is.
 
-Layers, back to front: the paper (<image>), the ground (one flat <path>); then per figure, farthest first: its foot shadow (<image>), a block
-cut to its outline (a <path> under a <mask> of the 1-bit outline: the queue's in queue_fill grey, the hero's in the paper colour), for an
-accent figure an accent block cut to its clothing (a <path> under a <mask> of the 1-bit clothing), and its lines (<image>: ink over
-transparency, so the block or the accent shows between the lines; the queue's at queue_ink, the hero's at full ink); last the grain (a
+Layers, back to front: the paper (<image>, one sheet: no ground band); then per figure, farthest first: its soft foot shadow (<image>), a
+block cut to its outline (a <path> under a <mask> of the 1-bit outline: the queue's in queue_fill grey, the hero's in the paper at hero_fill),
+for an accent figure an accent block cut to its clothing (a <path> under a <mask> of the 1-bit clothing), and its lines (<image>: ink over
+transparency, so the block or the accent shows between the lines; the queue's at queue_ink, its accent figures' at red_ink, the hero's at
+full ink); last the grain (a
 <path> under a <mask> of the grain JPEG). Place and size come only from an outer <g transform="translate(x,y)"> and the <image> width and
 height, as the page's hero check (next_leaf.rs hero_faults) allows.
 
+Only the figures with a hand-set clothing mask wear the accent (pack.json red_ok); when K is more than there are, they come round again
+in the same seeded order (composition: red_repeats), never two of the same in one group.
+
 Same request, same bytes: the figures and their places come from random.Random seeded with the sha256 of the canonical JSON of the sorted
-member codes, K, N, the width, the knobs and the pack's sha256; no clock, no hash(), no unseeded random."""
+member codes (for a proportion its share), K, N, the width, the knobs and the pack's sha256; no clock, no hash(), no unseeded random."""
 import base64
 import hashlib
 import json
@@ -63,7 +68,7 @@ def num(v):
 
 
 def tone(paper, level):
-    """The paper colour darkened to `level` (1 = the paper): the ground and the queue's blocks stay in the paper's own warm grey."""
+    """The paper colour darkened to `level` (1 = the paper): the queue's blocks stay in the paper's own warm grey."""
     return "#" + "".join(f"{max(0, min(255, round(int(paper[i:i + 2], 16) * level))):02x}" for i in (1, 3, 5))
 
 
@@ -73,32 +78,33 @@ def seed_of(codes, k, n, width, knobs, pack_sha):
 
 
 def depth_rule(kn):
-    """(horizon y, k): every figure's height is k x (its foot y - the horizon), k set by the hero (its height over its feet's depth)."""
-    yh = kn["horizon"] * CH
-    return yh, kn["hero_h"] * CH / (kn["hero_foot"] * CH - yh)
+    """(the hero's foot (x, y), the far end's foot (x, y), hy): every figure's feet lie on the line from the hero's feet to the far end's, and its
+    height is hy(foot y) = k x (foot y - yh), the one linear depth rule through the hero (hero_h at hero_foot) and the far end (queue_far_h at
+    queue_far_foot)."""
+    hH, fH = kn["hero_h"] * CH, kn["queue_far_h"] * CH
+    h0 = (kn["hero_x"] * CW, kn["hero_foot"] * CH); f0 = (kn["queue_far_x"] * CW, kn["queue_far_foot"] * CH)
+    k = (hH - fH) / (h0[1] - f0[1]); yh = h0[1] - hH / k
+    return h0, f0, (lambda y: k * (y - yh))
 
 
 def queue_slots(q, kn, cfg):
-    """The q queue places, near to far: (height, centre x, foot y). The feet run on the line from the near end (queue_near_x, the foot of a
-    queue_near_h figure by the depth rule) to the far end (queue_far_x, the foot of a queue_far_h figure); the spacing factor is the largest
-    on fac (bisected) that keeps the last centre at or left of the far end."""
-    Q = cfg["queue"]; asp = Q["aspect"]; yh, k = depth_rule(kn)
-    x0, xe = kn["queue_near_x"] * CW, kn["queue_far_x"] * CW
-    y0, ye = yh + kn["queue_near_h"] * CH / k, yh + kn["queue_far_h"] * CH / k
-    hy = lambda y: k * (y - yh)
-    yp = lambda x: y0 - (y0 - ye) * (x - x0) / (xe - x0)
+    """The q queue places behind the hero, near to far: (height, centre x, foot y). The first stands queue_gap x the hero's height right of
+    the hero; each next one a spacing factor x the mean width of the two further on, the factor the largest on fac (bisected) that keeps the
+    last centre at or left of the far end."""
+    Q = cfg["queue"]; asp = Q["aspect"]; (hx, hy0), (fx, fy), hy = depth_rule(kn)
+    yp = lambda x: hy0 - (hy0 - fy) * (x - hx) / (fx - hx)
+    first = hx + kn["queue_gap"] * kn["hero_h"] * CH
 
     def build(fac):
-        sl = []; x = x0
+        sl = []; cx = first
         for _ in range(q):
-            h = hy(yp(x)); cx = x + asp * h * 0.5; y = yp(cx); h = hy(y)
-            sl.append((h, cx, y)); nxt = asp * hy(yp(cx + Q["probe"]))
-            x = cx + fac * 0.5 * (asp * h + nxt)
+            y = yp(cx); h = hy(y); sl.append((h, cx, y))
+            cx = cx + fac * 0.5 * asp * (h + hy(yp(cx + Q["probe"])))
         return sl
     lo, hi = Q["fac"]
     for _ in range(25):
         f = (lo + hi) / 2
-        if q and build(f)[-1][1] > xe: hi = f
+        if q and build(f)[-1][1] > fx: hi = f
         else: lo = f
     return build(lo)
 
@@ -106,8 +112,9 @@ def queue_slots(q, kn, cfg):
 def accent_places(kq, q, n, sl, cfg):
     """The queue places (0 = nearest) whose figures wear the accent (kq of them; the hero is not in the queue). When the accent share K / N
     is at most stretch_share: spread evenly over the clear places (not the queue's first and last figure, at least red_min_h high), then the
-    others. Above it: one stretch from the near end, groups of at most `group` with one grey figure between groups (the scene renderer's queue
-    rule), the short group farthest; when the grey figures run out the farthest groups close up; a spare grey figure stands first.
+    others. Above it: one stretch from the near end, right behind the hero, groups of at most `group` with one grey figure between groups (the
+    scene renderer's queue rule), the short group farthest; when the grey figures run out the farthest groups close up; the spare grey figures
+    stand after the stretch.
     Returns the flags near to far ('r' accent, 'g' grey)."""
     if kq <= 0: return "g" * q
     if (kq + 1) / n <= cfg["stretch_share"]:
@@ -118,8 +125,7 @@ def accent_places(kq, q, n, sl, cfg):
     G = cfg["group"]; groups = [G] * (kq // G) + ([kq % G] if kq % G else [])
     seps = min(len(groups) - 1, q - kq)
     runs = groups[:seps] + [sum(groups[seps:])]             # the groups past the last grey figure close up
-    lead = "g" if q - kq - seps > 0 else ""
-    flags = lead + "g".join("r" * r for r in runs)
+    flags = "g".join("r" * r for r in runs)
     return flags + "g" * (q - len(flags))
 
 
@@ -162,7 +168,7 @@ def draw(codes, k, n, width, accent, cfg, kn):
     figs = {f["id"]: f for f in index["figures"] if f["usable"]}
     order = sorted(figs); rng.shuffle(order)
     if n > len(order): raise PackError(f"collage: {n} figures asked, the pack holds {len(order)}")
-    if k > sum(1 for f in figs.values() if f["red_ok"]): raise PackError(f"collage: {k} accent figures asked, the pack holds fewer")
+    if k and not any(f["red_ok"] for f in figs.values()): raise PackError("collage: the pack holds no figure with a clothing mask")
     by_id = {p["id"]: p for p in index["pieces"]}
     scale = width / float(CW); tiers = sorted(index["tiers"].items(), key=lambda t: t[1])
     hero = None
@@ -186,9 +192,10 @@ def draw(codes, k, n, width, accent, cfg, kn):
     for i in range(q):
         if flags[i] == "g": chosen[i] = plain.pop(0)
     taken = set(f for f in chosen if f)
-    pool = [f for f in order if figs[f]["red_ok"] and f not in taken]
+    reds = [f for f in order if figs[f]["red_ok"] and f not in taken]      # the accent figures' turn order (the hero already out of it)
+    pool = list(reds); recent = []
     # the hero stands in front of everything; the queue's accent figures are chosen front to back against what stands in front of them
-    hh = kn["hero_h"] * CH; hx, hy = kn["hero_x"] * CW, kn["hero_foot"] * CH
+    hh = kn["hero_h"] * CH; (hx, hy), _, _ = depth_rule(kn)
     cover = Cover(cfg["cover_cell"]); seen = {}
     if hero:
         g = figs[hero]["grid"]; cover.paint(box_of(hh, hx, hy, hero)[0], grid_bits(g["sil"], g["w"], g["h"]), g["w"], g["h"])
@@ -196,18 +203,19 @@ def draw(codes, k, n, width, accent, cfg, kn):
     for i in reversed(draw_order):
         h, x, y = sl[i]
         if chosen[i] is None:
+            if not pool:          # more accent figures than masked ones: they come round again, none twice within one group
+                pool = [f for f in reds if f not in recent[-cfg["group"]:]] or list(reds or [hero])
             best = None
             for fid in pool:
                 g = figs[fid]["grid"]; box, _ = box_of(h, x, y, fid)
                 v, tot = cover.visible(box, grid_bits(g["cloth"], g["w"], g["h"]), g["w"], g["h"])
                 if tot and v >= cfg["red_visible"]: best = (v, fid); break
                 if best is None or v > best[0]: best = (v, fid)
-            chosen[i] = best[1]; pool.remove(best[1]); seen[i] = round(best[0], 3)
+            chosen[i] = best[1]; pool.remove(best[1]); recent.append(best[1]); seen[i] = round(best[0], 3)
         g = figs[chosen[i]]["grid"]
         cover.paint(box_of(h, x, y, chosen[i])[0], grid_bits(g["sil"], g["w"], g["h"]), g["w"], g["h"])
-    paper = index["paper"]; fl = cfg["far_light"]; yh, _ = depth_rule(kn)
-    out = [f'<image href="{href("paper")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/>',
-           f'<path d="M0 {num(yh)}H{CW}V{CH}H0Z" fill="{tone(index["paper"], kn["ground_grey"])}"/>']
+    paper = index["paper"]; fl = cfg["far_light"]
+    out = [f'<image href="{href("paper")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/>']
     shadow = href("shadow"); used = []
 
     def figure(tag, fid, h, x, y, red, fill, ink, again=0.0):
@@ -228,14 +236,16 @@ def draw(codes, k, n, width, accent, cfg, kn):
     qfill = tone(paper, kn["queue_fill"])
     for j, i in enumerate(draw_order):
         h, x, y = sl[i]
-        figure(str(j), chosen[i], h, x, y, flags[i] == "r", qfill, kn["queue_ink"] * (fl[0] + fl[1] * min(1.0, h / fl[2])))
-    hero_box = figure("h", hero, hh, hx, hy, True, paper, 1.0, cfg["hero_ink_again"]) if hero else None
+        ink = cfg["red_ink"] if flags[i] == "r" else kn["queue_ink"]      # the engraving stays legible over the accent
+        figure(str(j), chosen[i], h, x, y, flags[i] == "r", qfill, ink * (fl[0] + fl[1] * min(1.0, h / fl[2])))
+    hero_box = figure("h", hero, hh, hx, hy, True, tone(paper, cfg["hero_fill"]), 1.0, cfg["hero_ink_again"]) if hero else None
     out.append(f'<defs><mask id="clg-grain"><image href="{href("grain")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/></mask></defs>'
                f'<path d="M0 0H{CW}V{CH}H0Z" fill="#000000" opacity="{num(index["grain_opacity"])}" mask="url(#clg-grain)"/>')
     comp = dict(layout=f"collage-{k}of{n}", objects=n, lit=k, omitted=0, queue=q, queue_flags=flags, pieces=used,
                 hero=hero, hero_h=round(hh / CH, 4) if hero else None, hero_foot=round(hy, 2) if hero else None,
                 hero_box=[round(v, 2) for v in hero_box] if hero else None, queue_feet=[round(s[2], 2) for s in sl],
-                queue_heights=[round(s[0], 2) for s in sl],
+                queue_heights=[round(s[0], 2) for s in sl], queue_x=[round(s[1], 2) for s in sl], queue_ids=list(chosen),
                 red=sorted([chosen[i] for i in range(q) if flags[i] == "r"] + ([hero] if hero else [])),
                 red_visible_min=min(seen.values()) if seen else None)
+    comp["red_repeats"] = len(comp["red"]) - len(set(comp["red"]))
     return {"inner": "".join(out), "composition": comp}

@@ -3028,9 +3028,17 @@ mod tests {
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{family}: {e:?}"));
             assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{family}");
         }
-        // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion
+        // the labour topic's proportion (the unemployment family, 30 figures, 10.5% -> 3 lit): the collage too
+        {
+            let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"proportion": {"share": 0.105, "figures": 30, "declared": {"count": 3, "total": 30}}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("collage proportion: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "collage proportion");
+            assert_eq!(got.scene, "labour.proportion");
+        }
+        // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion (a people topic)
         for (style, share, figures, count) in [("ink", 0.3, 30, 9), ("geo", 0.284, 8, 2)] {
-            let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a", "composition": {"style": style},
+            let ask = json!({"family": "pop65", "width": 1140.0, "accent": "#b8433a", "composition": {"style": style},
                              "subject": {"proportion": {"share": share, "figures": figures, "declared": {"count": count, "total": figures}}}});
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {figures}: {e:?}"));
             assert_eq!(

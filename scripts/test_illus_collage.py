@@ -1,8 +1,11 @@
 """The collage version of the story hero (runtime/illus_hero/collage, run_hero.py build_collage; node.json topics.collage_renderer): engraving
-cut-outs in a perspective queue, K of N in the accent. Data shapes: 27 members lit by a rule (the people-style request of test_illus_scene_wiring),
-the em_tally and pop_tally fixtures under the unemployment family, 3 members with 1 lit, 30 with 12 lit, 12 with 5 lit. Checked: the unemployment
-family's tally is the collage and its other requests keep the people topic's routing; N outside 3..30 and a layout other than the tally are
-`unavailable`; a missing or wrong declared count or total is refused; the same request gives the same bytes (through the real child, with the
+cut-outs in one perspective queue whose front figure is the hero, K of N in the accent. Data shapes: 27 members lit by a rule (the people-style
+request of test_illus_scene_wiring), the em_tally and pop_tally fixtures under the unemployment family, 3 members with 1 lit, 30 with 12 lit,
+12 with 5 lit, and proportions of 30 figures (shares 0.105, 0.3, 0.43). Checked: the unemployment family's tally and proportion are the collage
+and its other requests keep the people topic's routing; N outside 3..30 and a layout other than the tally are `unavailable`; a missing or wrong
+declared count or total is refused (a proportion's exactly as proportion_flags refuses it); the hero stands at the queue's near end and the
+queue recedes from right behind it in one sweep on the depth rule, on a whole sheet of paper (no ground band); only the hand-masked figures wear
+the accent and come round again, never twice in one group, when K is more; the same request gives the same bytes (through the real child, with the
 image packages blocked: the run needs the standard library only) and another member list another picture; the reply is in the hero grammar
 (a Python mirror of next_leaf.rs hero_faults: g, path, image, defs, mask, linearGradient, stop; hex colours; png/jpeg data URLs), holds no text,
 and its accent figures (accent blocks under a clothing mask) are the declared count, its figures (outline masks) the member count; the svg is at
@@ -46,6 +49,11 @@ def top_req(n, k, width=1140, pre="M", **extra):
 def zero_req(n=10):
     ms = [{"code": f"Z{i:02d}", "value": float(i)} for i in range(n)]
     return {"family": "unemployment", "lead": "members", "width": 1140, "accent": ACCENT, "subject": {"members": ms, "rule": {"op": "gt", "ref": 99.0}, "declared": {"count": 0, "total": n}}}
+
+
+def prop_req(share, n=30, count=None, total=None, width=1140, **extra):
+    dec = {"count": count, "total": n if total is None else total}
+    return {"family": "unemployment", "width": width, "accent": ACCENT, "subject": {"proportion": {"share": share, "figures": n, "declared": dec}}, **extra}
 
 
 def spec_req(name):
@@ -166,7 +174,10 @@ class Collage(unittest.TestCase):
         ms = people_req()["subject"]["members"]
         for lead in ("rank", "ends"): self.assertEqual(R.renderer_of({"family": "unemployment", "lead": lead, "subject": {"members": ms}}), "scene", lead)
         self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "path", "subject": {"path": {}}}), "people")
-        self.assertEqual(R.renderer_of({"family": "unemployment", "subject": {"proportion": {}}}), "scene")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "subject": {"proportion": {}}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "rank", "subject": {"members": ms, "proportion": {}}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "pop65", "subject": {"proportion": {}}}), "scene")
+        self.assertTrue(R.takes_proportion(prop_req(0.105, count=3)))
         self.assertEqual(R.renderer_of({"family": "pop65", "lead": "members", "subject": people_req()["subject"]}), "scene")
         self.assertEqual([t for t, s in R.TOPICS["scenes"].items() if s["renderer"] == "collage"], ["labour"])
 
@@ -191,6 +202,38 @@ class Collage(unittest.TestCase):
                     good.replace('transform="translate(1,2)"', 'transform="translate(1, 2)"'), good.replace("#aabbcc", "red"), good + "<text>1</text>", good.replace("<g ", "<rect/><g ")):
             self.assertNotEqual(hero_faults(bad), [], bad[:80])
 
+    def test_a_proportion_is_drawn_by_the_collage_with_its_k_of_n(self):
+        for share, k in ((0.105, 3), (0.3, 9), (0.43, 13), (0.0, 0)):
+            svg, w, h, secs, scene, comp = R.build_collage(prop_req(share, count=k))
+            self.assertEqual(scene, "labour.proportion"); self.assertEqual(comp["renderer"], "collage")
+            self.assertEqual(accent_figures(svg, ACCENT), (k, 30), share); self.assertEqual(hero_faults(svg), [], share)
+            self.assertEqual((comp["lit"], comp["objects"], len(comp["red"])), (k, 30, k), share)
+            self.assertEqual(comp["hero"] is not None, k >= 1, share)
+            if k: self.assertIn(comp["hero"], comp["red"]); self.assertEqual(comp["queue_flags"].count("r"), k - 1)
+        flags = R.build_collage(prop_req(0.3, count=9))[5]["queue_flags"]      # K / N = 0.3 = stretch_share: spread single figures, not the stretch
+        self.assertEqual(9 / 30 > R.CR["stretch_share"], False); self.assertEqual(flags[0] + flags[-1], "gg"); self.assertTrue(all(len(r) == 1 for r in re.findall(r"r+", flags)), flags)
+        flags = R.build_collage(prop_req(0.43, count=13))[5]["queue_flags"]     # above it: groups of 5 from right behind the hero
+        self.assertEqual(re.findall(r"r+", flags), ["rrrrr", "rrrrr", "rr"]); self.assertTrue(flags.startswith("r"), flags)
+        r = child(prop_req(0.105, count=3)); self.assertEqual(r["scene"], "labour.proportion"); self.assertEqual(accent_figures(r["svg"], ACCENT), (3, 30))
+        self.assertEqual(r["svg"], R.build_collage(prop_req(0.105, count=3))[0])
+        self.assertNotEqual(R.build_collage(prop_req(0.43, count=13))[0], R.build_collage(prop_req(0.4333, count=13))[0])    # the share seeds it
+
+    def test_a_proportion_with_a_wrong_or_missing_declared_is_refused_and_n_off_range_unavailable(self):
+        good = prop_req(0.105, count=3)
+        for dec in (None, {"count": 3}, {"total": 30}, {"count": 4, "total": 30}, {"count": 3, "total": 29}):
+            req = json.loads(json.dumps(good)); p = req["subject"]["proportion"]
+            if dec is None: p.pop("declared")
+            else: p["declared"] = dec
+            with self.assertRaises(R.Refused, msg=str(dec)): R.build_collage(req)
+            self.assertEqual(list(child(req)), ["refused"], dec)
+        for n, k in ((31, 16), (60, 30), (2, 1)):          # a proportion the scene renderer would draw (1..60) but off the collage's 3..30
+            with self.assertRaisesRegex(R.Unavailable, f"{n} figures"): R.build_collage(prop_req(0.5, n=n, count=k))
+        self.assertEqual(list(child(prop_req(0.5, n=31, count=16))), ["unavailable"])
+        for n in (0, 61, 3.0):
+            with self.assertRaises(R.Refused, msg=str(n)): R.build_collage(prop_req(0.5, n=n, count=0))
+        with self.assertRaisesRegex(R.Refused, "only the scene renderer"): R.build_collage({**good, "composition": {"style": "ink"}})
+        with self.assertRaisesRegex(R.Refused, "accent"): R.build_collage({**good, "accent": "red"})
+
     def test_the_accent_figures_stand_in_view(self):
         for name in ("people27", "em_tally", "pop_tally", "n30k12", "n12k5_wide"):
             self.assertGreaterEqual(self.out[name][5]["red_visible_min"], R.CR["red_visible"], name)
@@ -209,6 +252,16 @@ class Collage(unittest.TestCase):
             self.assertLess(comp["hero_box"][0] + comp["hero_box"][2] / 2, 1440 / 3, name)   # in the left-front third
             self.assertEqual(comp["queue_flags"].count("r"), k - 1, name); self.assertEqual(comp["queue"], comp["objects"] - 1, name)
             self.assertLess(svg.index('id="clg-sh"'), svg.index('id="clg-grain"')); self.assertGreater(svg.index('id="clg-sh"'), svg.rindex('id="clg-s', 0, svg.index('id="clg-sh"')))
+            if comp["queue"] < 2: continue
+            hb = comp["hero_box"]; hx = hb[0] + hb[2] / 2; qx, qy, qh = comp["queue_x"], comp["queue_feet"], comp["queue_heights"]
+            kn = {n: s["default"] for n, s in R.REG["composition_knobs"].items() if s.get("renderers") == ["collage"]}
+            self.assertAlmostEqual(qx[0] - hx, kn["queue_gap"] * hb[3], delta=0.6, msg=name)      # the queue's first figure right behind the hero
+            self.assertLess(qx[0] - 0.5 * R.CR["queue"]["aspect"] * qh[0], hb[0] + hb[2], name)    # touching it: no gap between hero and queue
+            self.assertGreater(qh[0], 0.8 * hb[3], name)                                            # the hero is the queue's front figure, enlarged
+            self.assertTrue(all(a < b for a, b in zip(qx, qx[1:])) and all(a > b for a, b in zip(qh, qh[1:])) and all(a > b for a, b in zip(qy, qy[1:])), name)   # one sweep: right, smaller, higher
+            line = lambda x: comp["hero_foot"] + (kn["queue_far_foot"] * 560 - comp["hero_foot"]) * (x - hx) / (kn["queue_far_x"] * 1440 - hx)
+            self.assertTrue(all(abs(y - line(x)) < 0.6 for x, y in zip(qx, qy)), name)               # every foot on the line from the hero's feet to the far end
+            self.assertLessEqual(qx[-1], kn["queue_far_x"] * 1440 + 0.6, name)
 
     def test_three_shapes_k3_k13_k29_counts_groups_and_hero(self):
         G = R.CR["group"]
@@ -219,25 +272,32 @@ class Collage(unittest.TestCase):
             runs = [len(r) for r in re.findall(r"r+", flags)]
             if k / 30 > R.CR["stretch_share"]:
                 greys = flags.count("g"); want = -(-(k - 1) // G)
-                self.assertRegex(flags, r"^g?r", k)                                             # one stretch from the near end
-                self.assertRegex(flags.lstrip("g"), r"^(r+g)*r+g*$", k)                          # its groups split by one grey figure each
-                self.assertNotIn("gg", flags.lstrip("g").rstrip("g"), k)
+                self.assertRegex(flags, r"^r", k)                                               # one stretch from the near end, right behind the hero
+                self.assertRegex(flags, r"^(r+g)*r+g*$", k)                                     # its groups split by one grey figure each
+                self.assertNotIn("gg", flags.rstrip("g"), k)
                 self.assertEqual(len(runs), min(want, 1 + greys), k)
                 self.assertTrue(all(r <= G for r in runs[:-1]), (k, runs))
                 if len(runs) == want: self.assertTrue(all(r <= G for r in runs), (k, runs))
             else:
                 self.assertEqual(flags[0] + flags[-1], "gg", k); self.assertTrue(all(r == 1 for r in runs), (k, runs))   # spread, single figures
         self.assertEqual(re.findall(r"r+", R.build_collage(top_req(30, 13))[5]["queue_flags"]), ["rrrrr", "rrrrr", "rr"])
+        comp = R.build_collage(top_req(30, 29))[5]; masked = sum(f["red_ok"] for f in Pack.index_of()["figures"])
+        self.assertGreater(29, masked); self.assertEqual(comp["red_repeats"], 29 - len(set(comp["red"]))); self.assertGreater(comp["red_repeats"], 0)
+        ids, flags = comp["queue_ids"], comp["queue_flags"]
+        red = [f for f, c in zip(ids, flags) if c == "r"]   # the masked figures come round again, never twice within any `group` accent figures in a row
+        for i in range(len(red) - G + 1): self.assertEqual(len(set(red[i:i + G])), G, red[i:i + G])
+        self.assertNotIn(comp["hero"], ids[:R.CR["group"]])
 
     def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
         ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
-        self.assertTrue({"hero_h", "hero_x", "horizon", "queue_near_h", "queue_far_h", "queue_ink", "queue_fill", "ground_grey"} <= set(mine))
+        self.assertEqual(set(mine), {"hero_h", "hero_x", "hero_foot", "queue_gap", "queue_far_h", "queue_far_x", "queue_far_foot", "queue_ink", "queue_fill"})
         for name in mine:
             spec = ck[name]; self.assertTrue(spec["min"] <= spec["default"] <= spec["max"], name)
             for bad in (spec["min"] - 0.01, spec["max"] + 0.01, "big", True):
                 with self.assertRaises(R.Refused, msg=f"{name}={bad}"): R.build_collage({**top_req(10, 3), "composition": {name: bad}})
         with self.assertRaisesRegex(R.Refused, "unknown composition knob"): R.build_collage({**top_req(10, 3), "composition": {"hero_size": 0.5}})
-        with self.assertRaisesRegex(R.Refused, "below hero_h"): R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5, "queue_near_h": 0.5}})
+        self.assertLess(ck["queue_far_h"]["max"], ck["hero_h"]["min"]); self.assertLess(ck["queue_far_foot"]["max"], ck["hero_foot"]["min"]); self.assertLess(ck["hero_x"]["max"], ck["queue_far_x"]["min"])   # the far end always smaller, higher, right
+        with self.assertRaises(R.Refused): R.build_collage({**prop_req(0.105, count=3), "composition": {"queue_gap": 0.9}})
         with self.assertRaisesRegex(R.Refused, "only the collage"): R.build_scene({"family": "pop65", "lead": "members", "width": 1140, "subject": people_req()["subject"], "composition": {"hero_h": 0.55}})
         a = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.6}})
         self.assertEqual((a[5]["hero_h"], b[5]["hero_h"]), (0.5, 0.6)); self.assertNotEqual(a[0], b[0])
@@ -249,8 +309,10 @@ class Collage(unittest.TestCase):
         paper = json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"]; ck = R.REG["composition_knobs"]
         tone = lambda f: "#" + "".join(f"{round(int(paper[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))
         fills = set(re.findall(r'fill="(#[0-9a-f]{6})"', self.out["n30k12"][0]))
-        self.assertEqual(fills, {ACCENT, paper, "#000000", tone(ck["ground_grey"]["default"]), tone(ck["queue_fill"]["default"])})     # one accent, the rest the paper's greys
-        self.assertEqual(svg.count('<path d="M0 '), svg.count("<path "))       # the ground is one flat block, every path a box
+        self.assertEqual(fills, {ACCENT, "#000000", tone(R.CR["hero_fill"]), tone(ck["queue_fill"]["default"])})     # one accent, the rest the paper's greys
+        self.assertEqual(svg.count('<path d="M0 0H'), svg.count("<path "))       # every path a figure's box
+        self.assertEqual(svg.count('<path d="M0 0H1440V560H0Z"'), 1)              # the grain the only full-frame one: no ground band, one sheet of paper
+        self.assertNotRegex(svg, r'<path d="M0 [1-9]')
 
     def test_n_outside_3_to_30_or_another_layout_is_unavailable(self):
         with self.assertRaisesRegex(R.Unavailable, "31 members"): R.build_collage(top_req(31, 5))
@@ -289,6 +351,10 @@ class Collage(unittest.TestCase):
 
 
 class Pack(unittest.TestCase):
+    @staticmethod
+    def index_of():
+        return json.loads(text(os.path.join(COLLAGE, "pack.json")))
+
     @classmethod
     def setUpClass(cls):
         cls.index = json.loads(text(os.path.join(COLLAGE, "pack.json")))
@@ -322,7 +388,10 @@ class Pack(unittest.TestCase):
                 if f["red_ok"]: self.assertIn(f"{f['id']}.{t}.cloth", ids)
             self.assertTrue(rows[f["id"]]["source_url"].startswith("https://www.metmuseum.org/art/collection/search/"), f["id"])
         for name in ("LICENCE-met-openaccess-README.txt", "LICENSE-CC0-1.0-legalcode.txt"): self.assertTrue(os.path.getsize(os.path.join(COLLAGE, name)) > 1000, name)
-        self.assertGreaterEqual(sum(f["red_ok"] for f in self.index["figures"]), 30)     # enough accent figures for 30 members
+        hand = set(re.findall(r'^    "(\d+_\d)": dict\(poly=', text(os.path.join(ROOT, "scripts", "build_collage_pack.py")), re.M))
+        self.assertGreaterEqual(len(hand), 12)
+        self.assertEqual({f["id"][len("met_gam_"):] for f in self.index["figures"] if f["red_ok"]}, hand)     # only the hand-masked figures wear the accent
+        self.assertEqual({p["figure"] for p in self.index["pieces"] if p["kind"] == "cloth"}, {"met_gam_" + h for h in hand})
 
     def test_no_accent_mask_is_a_flat_horizontal_cut(self):
         """The top edge of every red_ok figure's clothing mask follows the shoulders: its start row varies across the mask's columns (not over
