@@ -1806,6 +1806,23 @@ class LowestOfGroupAndMoversHeadline(unittest.TestCase):
         self.assertEqual(seen, {True, False})   # one shape's biggest mover rose, the other's fell
 
 
+def with_whole(mk, whole, name, scale=None):
+    """A shape's request given a whole series: `scale` times the members' simple mean each year (None: the members' mean itself)."""
+    def go(*a):
+        req, names = mk(*a)
+        main, by = req["main"], req["main"]["by"]
+        mine = [r for r in req["rows"] if r["table"] == main["table"] and r["dims"][by] != main.get("whole")]
+        years = sorted({r["time"] for r in mine})
+        rows = [r for r in req["rows"] if not (r["table"] == main["table"] and r["dims"][by] == main.get("whole"))]
+        for y in years:
+            vs = [float(r["value"]) for r in mine if r["time"] == y]
+            v = sum(vs) / len(vs) * (scale or 1.0)
+            rows.append({**row(main["table"], main.get("filter", {}), by, whole, int(y), v), "value": v})
+        members = main.get("members") or sorted({r["dims"][by] for r in mine})
+        return {**req, "rows": rows, "main": {**main, "whole": whole, "members": members}}, {**names, whole: name}
+    return go
+
+
 def flipped_eu27():
     """The twenty-seven with every path reversed (most fall) but one member that rises: the members' mean falls."""
     fl = {c: (b, a) for c, (a, b) in EU27.items()}
@@ -1814,8 +1831,10 @@ def flipped_eu27():
 
 
 class MoverNotesCompare(unittest.TestCase):
-    """The movers section's notes on a Eurostat percent shape and a World Bank value shape: a mover's note whose members' mean went
-    the other way says the mean's change the other way, never a multiple of it. Each stated number is recomputed from the rows."""
+    """The movers section's notes on a Eurostat percent shape and a World Bank value shape. The whole's note sets the whole's change
+    against the members' mean change: more or less the same way by N (op minus of the two sizes), or, when the mean went the other
+    way, the mean's own change; the plain note where the gap prints 0. A mover's note whose members' mean went the other way says the
+    mean's change the other way, never a multiple of it. Each stated number is recomputed from the rows."""
 
     def notes(self, mk):
         req, names = mk()
@@ -1830,6 +1849,27 @@ class MoverNotesCompare(unittest.TestCase):
         words = {n["num"]: "".join(x.get("w", "") for x in n["text"]) for n in composed["leaves"]["change_dots"]["notes"]}
         srcs = {n["num"]: [x["src"][5:] for x in n["text"] if "src" in x] for n in composed["leaves"]["change_dots"]["notes"]}
         return composed, facts, at, (y0, y1), whole, mch, words, srcs
+
+    def test_the_whole_is_set_against_the_members_mean_change(self):
+        seen = set()
+        for mk, want in ((percent(eu27_request), "less"), (with_whole(wb12_request, "WLD", "世界", 1.3), None),
+                         (with_whole(lambda: percent(flipped_eu27)(), "EU27_2020", "欧盟", 1.0), "plain"),
+                         (lambda: percent(flipped_eu27)(), "opp")):
+            composed, facts, at, (y0, y1), whole, mch, words, srcs = self.notes(mk)
+            w, wd = words["fact:mv_dw"], at[whole][y1] - at[whole][y0]
+            if want == "plain":   # the whole is the members' mean: the gap prints 0, the old words stand
+                self.assertEqual(w, re.sub(r"\{[^}]*\}", "", FN.WD.WORDS["story.note.mv.whole_up" if wd > 0 else "story.note.mv.whole_down"])); seen.add(want); continue
+            self.assertIn("平均", w); self.assertTrue("比" in w or "反而" in w, w)
+            if (wd > 0) != (mch > 0):
+                self.assertIn("反而", w); self.assertAlmostEqual(facts[srcs["fact:mv_dw"][0]]["v"], abs(mch), places=6); seen.add("opp")
+                continue
+            gap = abs(wd) - abs(mch)
+            self.assertIn("多" if gap > 0 else "少", w)
+            self.assertAlmostEqual(facts["mv_gw"]["v"], abs(gap), places=6)
+            self.assertAlmostEqual(facts[srcs["fact:mv_dw"][0]]["v"], abs(mch), places=6)
+            self.assertEqual(composed["facts"]["mv_gw"]["op"], "minus")
+            seen.add("more" if gap > 0 else "less")
+        self.assertEqual(seen, {"less", "more", "plain", "opp"})
 
     def test_a_mover_whose_mean_went_the_other_way_gets_no_multiple(self):
         seen = set()

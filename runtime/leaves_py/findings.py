@@ -1101,11 +1101,21 @@ def angle_movers(q):
         key = "mv_mup" if up else "mv_mdn"
         facts = {**avg, key: {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}}
         return to_average(q, f, base, name, abs(ch[code]), mch if up else -mch, key, facts, len(members), c=code)
+    def whole_note(up):  # the whole's change (fact mv_dw) against the members' mean change: how much more or less the same way, else
+        # (the mean went the other way) the mean's own change; the plain note where no mean stands or the gap prints as 0
+        base = "story.note.mv.whole_up" if up else "story.note.mv.whole_down"
+        if not mean_moved: return note("mv_dw", base, w=whole)
+        if (mch > 0) != up: return note("mv_dw", f"{base}_opp", w=whole, m=mean_key(not up))
+        gap = abs(q.wseries[y1][0] - q.wseries[y0][0]) - abs(mch)
+        if printed(q, abs(gap), q.change) == 0: return note("mv_dw", base, w=whole)
+        key = mean_key(up)
+        f["mv_gw"] = {"op": "minus", "a": "mv_dw" if gap > 0 else key, "b": key if gap > 0 else "mv_dw", "fmt": q.change}
+        return note("mv_dw", f"{base}_{'more' if gap > 0 else 'less'}", w=whole, m=key, d="mv_gw")
     other_up = amount(other, "mv_do")
     kind = {(True, True): "up_least", (True, False): "down_most", (False, False): "down_least", (False, True): "up_most"}[(ch[big] > 0, other_up)]
     anns = [vs_avg(other, "mv_do", f"story.note.mv.{kind}", other_up)]
     if whole:
-        anns.append(note("mv_dw", "story.note.mv.whole_up" if amount(whole, "mv_dw") else "story.note.mv.whole_down", w=whole))
+        anns.append(whole_note(amount(whole, "mv_dw")))
     else:
         lead = max(q.panel, key=lambda c: (q.panel[c][y0][0], c))
         if lead in kept and lead not in (big, other) and ch[lead] != 0:
