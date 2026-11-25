@@ -25,7 +25,8 @@ from test_illus_people import hero_grammar_faults  # noqa: E402
 STUB = os.path.join(HERE, "fixtures", "illus_scene", "scene_stub.mjs")
 REAL = os.path.join(ROOT, "runtime", "illus_hero", "scene", "scene.mjs")
 STYLES = ["ink", "iso", "geo"]
-# 27 EU-like unemployment rates (made-up values in the range of the 2023 figures), the mean the line, those above it lit
+# 27 EU-like unemployment rates (made-up values in the range of the 2023 figures), the mean the line, those above it lit; sent under a people-topic
+# family (pop65): the unemployment family's own tally is the collage's (labour topic, test_illus_collage.py), its other layouts routed as people's
 RATES = [5.9, 4.4, 4.3, 5.1, 3.0, 6.4, 4.4, 11.1, 12.2, 7.4, 6.1, 7.6, 6.1, 6.5, 6.9, 5.2, 4.1, 3.5, 3.6, 5.1, 2.8, 6.5, 5.6, 3.7, 3.5, 7.2, 7.7]
 CODES = ["AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK"]
 MEAN = round(sum(RATES) / len(RATES), 9)
@@ -34,7 +35,7 @@ ABOVE = sum(1 for v in RATES if v > MEAN)
 
 def rule_req(**extra):
     sub = {"members": [{"code": c, "value": v} for c, v in zip(CODES, RATES)], "rule": {"op": "gt", "ref": MEAN}, "declared": {"count": ABOVE, "total": 27}}
-    return {"family": "unemployment", "lead": "members", "width": 1140, "ground": "warm", "accent": "#b8433a", "subject": sub, **extra}
+    return {"family": "pop65", "lead": "members", "width": 1140, "ground": "warm", "accent": "#b8433a", "subject": sub, **extra}
 
 
 def prop(share, n, count, total=None):
@@ -43,7 +44,7 @@ def prop(share, n, count, total=None):
 
 
 def prop_req(share, n, count, total=None, **extra):
-    return {"family": "unemployment", "width": 1140, "subject": {"proportion": prop(share, n, count, total)}, **extra}
+    return {"family": "pop65", "width": 1140, "subject": {"proportion": prop(share, n, count, total)}, **extra}
 
 
 def styled(r, style): return {**r, "composition": {**r.get("composition", {}), "style": style}}
@@ -152,7 +153,12 @@ class Wiring(unittest.TestCase):
         self.assertEqual(R.renderer_of({"family": "co2", "lead": "members", "subject": rule_req()["subject"]}), "3d")
         self.assertEqual(R.renderer_of({"family": "asylum", "lead": "members", "subject": rule_req()["subject"]}), "3d")
         with self.assertRaises(R.Unavailable): R.build_scene({**rule_req(), "lead": "path"})
-        self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "trade": "geo", "migration": "ink", "tech": "iso", "neutral": "ink"})
+        self.assertEqual({t: s["style"] for t, s in R.TOPICS["scenes"].items()}, {"energy": "iso", "emissions": "iso", "people": "ink", "labour": "ink", "trade": "geo", "migration": "ink", "tech": "iso", "neutral": "ink"})
+        # the unemployment family (labour): its tally and its proportion are the collage's, its other layouts routed as the people topic's
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "members", "subject": rule_req()["subject"]}), "collage")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "unemployment", "lead": "members", "subject": {**rule_req()["subject"], "proportion": prop(0.3, 30, 9)}}), "collage")
+        self.assertEqual(R.renderer_of({"family": "pop65", "subject": {"proportion": prop(0.3, 30, 9)}}), "scene")
 
     def test_economy_tallies_and_rankings_are_geo_scenes_and_their_paths_keep_3d(self):
         sub = rule_req()["subject"]
@@ -168,7 +174,7 @@ class Wiring(unittest.TestCase):
 
 
 def rank_req(lead="rank", n=27, **extra):
-    return {"family": "unemployment", "lead": lead, "width": 1140, "accent": "#b8433a", "subject": {"members": [{"code": c, "value": v} for c, v in zip(CODES[:n], RATES[:n])]}, **extra}
+    return {"family": "pop65", "lead": lead, "width": 1140, "accent": "#b8433a", "subject": {"members": [{"code": c, "value": v} for c, v in zip(CODES[:n], RATES[:n])]}, **extra}
 
 
 def sequence(svg):
@@ -278,9 +284,12 @@ class ProportionBeside(unittest.TestCase):
         self.assertEqual(json.dumps(a, sort_keys=True), json.dumps(b, sort_keys=True))
         with self.assertRaisesRegex(R.Unavailable, "only a proportion"): R.without_ignored_proportion({**prop_req(0.3, 30, 9), "family": "renewable_share"})
         self.assertEqual(list(serve({**prop_req(0.3, 30, 9), "family": "renewable_share"})), ["unavailable"])
-        people = {**tags, "family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}
+        people = {**tags, "family": "pop65", "subject": {"proportion": prop(0.3, 30, 9)}}
         self.assertIs(R.without_ignored_proportion(people), people)
         r = child(people); self.assertEqual((r["composition"]["scene_layout"], r["composition"]["lit"], r["composition"]["objects"]), ("grid", 9, 30))
+        labour = {**tags, "family": "unemployment", "subject": {"proportion": prop(0.3, 30, 9)}}      # the unemployment family's proportion: the collage
+        self.assertIs(R.without_ignored_proportion(labour), labour)
+        r = child(labour); self.assertEqual((r["scene"], r["composition"]["renderer"], r["composition"]["lit"], r["composition"]["objects"]), ("labour.proportion", "collage", 9, 30))
         # a subject with its own form keeps it, the proportion dropped
         own = {**rule_req(), "family": "renewable_share"}; own["subject"]["proportion"] = prop(0.3, 30, 9)
         self.assertNotIn("proportion", R.without_ignored_proportion(own)["subject"])

@@ -1402,6 +1402,11 @@
     "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the scene renderer the opening illustration child starts (scripts/embed_illus_scene.mjs): a folder of the run bundle, no content of its own."
    },
    {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/collage/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the collage drawing the opening illustration child loads (its code, its pack index and its pack of engraving cut-outs): a folder of the run bundle, no content of its own."
+   },
+   {
     "kind": "materialized_runtime",
     "exact": "runtime/process.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
@@ -2210,6 +2215,26 @@
     "kind": "materialized_runtime",
     "exact": "runtime/illus_hero/scene/scene.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child's collage drawing (each file in it has its own exact row). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/draw.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/pack.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing's pack index (scripts/build_collage_pack.py). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/pack.bin",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing's pack of engraving cut-outs (one file; scripts/build_collage_pack.py). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
     "kind": "materialized_runtime",

@@ -18,7 +18,9 @@ const ask = (o = {}) => ({ set, width: 1140, ink: "var(--t-title)", accent: "var
 const T = set.strip_topics;
 
 // the family map is the hero's, and covers every measure family there is
-assert.deepEqual(T.families, node.topics.families);
+// a collage topic's strip is its renderer_else_topic's (labour, the unemployment family: the people strip)
+const routed = Object.fromEntries(Object.entries(node.topics.families).map(([f, t]) => [f, node.topics.scenes[t].renderer === "collage" ? node.topics.scenes[t].renderer_else_topic : t]));
+assert.deepEqual(T.families, routed);
 assert.deepEqual(fams.map((f) => f.id).filter((id) => !(id in T.families)), []);
 assert.equal(T.neutral, node.topics.neutral);
 for (const [topic, list] of Object.entries(T.pieces)) for (const p of list) assert.equal(typeof lib[p.name], "function", `${topic}: ${p.name} is not a piece`);

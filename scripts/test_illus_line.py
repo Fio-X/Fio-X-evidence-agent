@@ -143,7 +143,7 @@ class DefaultPath(unittest.TestCase):
 
     def test_the_registry_names_the_renderer_of_every_topic(self):
         sc = R.TOPICS["scenes"]
-        self.assertEqual({k: v["renderer"] for k, v in sc.items()}, {"energy": "line", "emissions": "3d", "people": "scene", "trade": "scene", "migration": "3d", "tech": "scene", "neutral": "3d"})
+        self.assertEqual({k: v["renderer"] for k, v in sc.items()}, {"energy": "line", "emissions": "3d", "people": "scene", "labour": "collage", "trade": "scene", "migration": "3d", "tech": "scene", "neutral": "3d"})
         for n in NAMES: self.assertEqual(R.renderer_of(req(n)), "line", n)
         self.assertEqual(R.renderer_of({"family": "pop65", "subject": {}}), "people"); self.assertEqual(R.renderer_of({"tags": ["wind"]}), "3d")   # people: a layout the scene renderer does not draw keeps people
         self.assertEqual(R.renderer_of({"family": "pop65", "lead": "members", "subject": {}}), "scene")

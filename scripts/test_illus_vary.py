@@ -113,10 +113,11 @@ class TopicScenes(unittest.TestCase):
     def test_at_least_five_topics_with_their_own_units(self):
         used = {R.topic_of(f) for f in T["families"]}
         self.assertTrue({"energy", "emissions", "people", "trade", "migration"} <= used)
-        own = (used | {T["neutral"]}) - {"tech"}      # tech draws the neutral cairn in its renderer_else layouts until it has a unit of its own
+        own = (used | {T["neutral"]}) - {"tech", "labour"}      # tech draws the neutral cairn in its renderer_else layouts until it has a unit of its own; labour (the collage's) the people figure in the layouts its renderer_else_topic routes
         units = {T["scenes"][t]["unit"] for t in own}
         self.assertEqual(len(units), len(own), "every topic draws its own unit")
         self.assertEqual(T["scenes"]["tech"]["unit"], T["scenes"][T["neutral"]]["unit"])
+        self.assertEqual(T["scenes"]["labour"]["unit"], T["scenes"][T["scenes"]["labour"]["renderer_else_topic"]]["unit"])
 
     def test_unknown_family_falls_back_to_the_neutral_scene(self):
         for fam in (None, "no_such_family", 5):
@@ -149,7 +150,9 @@ class TopicScenes(unittest.TestCase):
         self.assertEqual(b, "#1a9a6c"); self.assertNotEqual(a, b); self.assertEqual(c, "#123456")
 
     def test_the_strip_and_the_hero_share_one_family_map(self):
-        self.assertEqual(STRIP["strip_topics"]["families"], T["families"]); self.assertEqual(STRIP["strip_topics"]["neutral"], T["neutral"])
+        # a collage topic's strip is its renderer_else_topic's (labour: the people strip)
+        routed = {f: (T["scenes"][t]["renderer_else_topic"] if T["scenes"][t]["renderer"] == "collage" else t) for f, t in T["families"].items()}
+        self.assertEqual(STRIP["strip_topics"]["families"], routed); self.assertEqual(STRIP["strip_topics"]["neutral"], T["neutral"])
 
     def test_the_mark_stands_on_the_boundary_unit(self):
         s, *_ = R.resolve(req("st4")); marked = [i for i in s["items"] if "mark" in i]

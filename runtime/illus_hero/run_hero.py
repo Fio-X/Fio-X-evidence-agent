@@ -10,7 +10,9 @@ One JSON line in, one line out, as leaves_js/illus_strip.cjs:
         Under a scene a named ground (warm, cool) takes the tone of the scene's story arc (stories.arc_grounds: happened, in_time, lagging); given colours stand as given.
         A subject may also carry a proportion ({..., "proportion": {"share", "figures", "declared": {"count", "total"}}}, beside its own form): N figures,
         K = N x share half to even recomputed here. On a topic whose renderer is the scene renderer (topics.scene_renderer, the node child scene/scene.mjs;
-        build_scene) the proportion is drawn; on any other topic it is ignored and the subject's own form is drawn as without it.
+        build_scene) or the collage (build_collage) the proportion is drawn; on any other topic it is ignored and the subject's own form is drawn as without it.
+        A topic whose renderer is the collage (topics.collage_renderer, collage/draw.py; build_collage) draws its tally and its proportion as engraving
+        cut-outs, K of N in the accent, and requires the declared count and total; its other requests are routed as its renderer_else_topic's (routed_scene).
   out: {"svg": the picture's markup (no outer svg, no text; one <g transform="scale(k)"> over the 1440x560 viewBox), "w", "h", "dropped": [], "scene": name,
         "seconds": {stage: s}}
        | {"refused": [why, ...]}                       the input is wrong (the caller's fault)
@@ -479,11 +481,20 @@ def build(inp, work):
     return out, float(width), h, secs, scene["scene"], scene.get("composition")
 
 
+def routed_scene(topic):
+    """The scene block whose renderer a request of this topic is routed by when the collage does not draw it: the topic's own, or for a topic
+    whose renderer is the collage (labour) its renderer_else_topic's (people), so its rank and pair go to the scene renderer and its path, series
+    and groups to the people drawing, as that topic's do (its tally and its proportion are the collage's: renderer_of). The drawing itself still takes the request's own topic (unit, style, accent)."""
+    sc = TOPICS["scenes"][topic]
+    return TOPICS["scenes"][sc["renderer_else_topic"]] if sc["renderer"] == "collage" else sc
+
+
 def takes_proportion(inp):
-    """Whether the request draws its subject's proportion: the subject carries one and the topic's renderer is the scene renderer (people, trade, tech);
-    on a topic of another renderer the key is ignored and the subject's own form is drawn as without it."""
-    sub = inp.get("subject")
-    return isinstance(sub, dict) and "proportion" in sub and TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"] == "scene"
+    """Whether the request draws its subject's proportion: the subject carries one and the topic's renderer is the scene renderer (people, trade, tech)
+    or the collage (labour, which draws it itself: build_collage); on a topic of another renderer the key is ignored and the subject's own form is
+    drawn as without it."""
+    sub = inp.get("subject"); topic = topic_of(inp.get("family"))
+    return isinstance(sub, dict) and "proportion" in sub and (TOPICS["scenes"][topic]["renderer"] == "collage" or routed_scene(topic)["renderer"] == "scene")
 
 
 def without_ignored_proportion(inp):
@@ -501,14 +512,17 @@ def without_ignored_proportion(inp):
 
 
 def renderer_of(inp):
-    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people or scene); a request without a subject
+    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line, 3d, people, scene or collage; a collage
+    topic's tally and proportion are the collage's, its other requests routed as its renderer_else_topic's: routed_scene); a request without a subject
     (the tags-and-hero scene) is the 3D path's own. A topic whose renderer is scene draws the layouts topics.scene_renderer.kinds lists with it and
-    the others with its renderer_else; on such a topic a subject carrying a proportion is drawn by the scene renderer as that proportion (takes_proportion),
-    on any other topic the proportion is ignored."""
+    the others with its renderer_else; on such a topic a subject carrying a proportion is drawn by the scene renderer as that proportion, on a collage
+    topic by the collage (takes_proportion), on any other topic the proportion is ignored."""
     sub = inp.get("subject")
     if sub is None: return "3d"
-    if takes_proportion(inp): return "scene"
-    sc = TOPICS["scenes"][topic_of(inp.get("family"))]
+    topic = topic_of(inp.get("family"))
+    if takes_proportion(inp): return "collage" if TOPICS["scenes"][topic]["renderer"] == "collage" else "scene"
+    if TOPICS["scenes"][topic]["renderer"] == "collage" and kind_of(inp) in CR["kinds"]: return "collage"
+    sc = routed_scene(topic)
     if sc["renderer"] == "scene" and kind_of(inp) not in TOPICS["scene_renderer"]["kinds"]: return sc["renderer_else"]
     return sc["renderer"]
 
@@ -561,6 +575,78 @@ def build_people(inp):
     d = PD.draw(resolved, page_colours(["--accent", "--bar", "--t-title"]), primary)
     k = width / float(PD.CW); h = round(d["h"] * k, 2)
     return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+
+
+# ---------------------------------------------------------------- the collage (topics.collage_renderer: runtime/illus_hero/collage/draw.py)
+CR = TOPICS["collage_renderer"]
+
+
+def collage_knobs(inp):
+    """{knob: value} of the collage's own composition knobs (composition_knobs whose renderers are [collage]): each the request's
+    composition value, else its default; a value off its min..max (or not a number) is refused. Unknown knob names, and the other renderers'
+    knobs, are refused by check_knobs."""
+    ck = REG["composition_knobs"]; comp = inp.get("composition") or {}; kn = {}
+    for name, spec in ck.items():
+        if spec.get("renderers") != ["collage"]: continue
+        v = comp.get(name, spec["default"])
+        if isinstance(v, bool) or not isinstance(v, (int, float)): refuse(f"composition knob {name}: {v!r} is no number")
+        check_range(name, v, spec); kn[name] = float(v)
+    if kn["queue_far_h"] >= kn["hero_h"] or kn["queue_far_foot"] >= kn["hero_foot"] or kn["queue_far_x"] <= kn["hero_x"]:
+        refuse("composition knobs: the queue's far end must be smaller, higher and right of the hero")      # (their ranges keep it so; a guard)
+    return kn
+
+
+def collage_accent(inp, topic):
+    """The accent of a collage proportion request (compose_subject checks a tally's): the request's, else the topic's; hex only."""
+    acc = inp.get("accent", TOPICS["scenes"][topic]["accent"])
+    if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    return acc
+
+
+def build_collage(inp):
+    """The same reply the other paths give, drawn by runtime/illus_hero/collage (engraving cut-outs in a perspective queue, K of N in the accent).
+    Two subjects: a proportion (takes_proportion: N = proportion.figures, K the lit of proportion_flags, its declared count and total required and
+    checked there exactly as for the scene renderer; scene <topic>.proportion), or a tally of N members (its declared count and total required here,
+    since the picture is read by counting its accent figures, and, as for every renderer, the members the rule holds for and the members given:
+    lit_codes, by compose_subject's check of the request). N off collage_renderer.figures, or any other layout, is `unavailable` (the page's strip
+    stands in). Its layout knobs are collage_knobs (defaults and ranges in composition_knobs; off range refused; the other renderers' knobs refused).
+    The pack missing or damaged is `unavailable`; a reply over max_svg_bytes is `unavailable`. Colours: hex only (the page's check): the request's
+    accent, else the topic's."""
+    t0 = time.time(); width = inp.get("width")
+    if isinstance(width, float) and width.is_integer(): width = int(width)
+    if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
+    sub = inp.get("subject"); topic = topic_of(inp.get("family"))
+    if not isinstance(sub, dict): refuse("subject: an object required")
+    lo, hi = CR["figures"]
+    if takes_proportion(inp):
+        kind = "proportion"; p = sub.get("proportion"); n = p.get("figures") if isinstance(p, dict) else None
+        if isinstance(n, int) and not isinstance(n, bool) and SR["figures"][0] <= n <= SR["figures"][1] and not lo <= n <= hi:
+            raise Unavailable(f"collage: a proportion of {n} figures, the collage draws {lo} to {hi}")      # the page's strip stands in
+        flags = proportion_flags(sub)      # the share, N and the declared count and total, refused exactly as for the scene renderer
+        check_knobs(dict(inp.get("composition") or {}), "collage"); acc = collage_accent(inp, topic)
+        n, k = len(flags), sum(flags); seed_codes = [f"share={Decimal(repr(float(p['share'])))}"]
+    else:
+        kind = kind_of(inp)
+        if kind not in CR["kinds"]: raise Unavailable(f"collage: the {kind!r} layout is not drawn by the collage")      # the page's strip stands in
+        ms = sub.get("members")
+        if isinstance(ms, list) and not lo <= len(ms) <= hi: raise Unavailable(f"collage: {len(ms)} members, the collage draws {lo} to {hi} figures")
+        dec = sub.get("declared")
+        if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.declared: the collage needs the declared count and total (its accent figures are counted)")
+        _, _, acc, _ = compose_subject(inp, renderer="collage")      # the request's own check: knobs, ground, accent, and the recount (lit_codes) against declared
+        ms = members_of(sub); n, k = len(ms), len(lit_codes(sub)); seed_codes = [m["code"] for m in ms]
+    kn = collage_knobs(inp)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collage_draw", os.path.join(HERE, "collage", "draw.py"))
+    CD = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(CD)
+        d = CD.draw(seed_codes, k, n, width, acc.lower(), CR, kn)
+    except getattr(CD, "PackError", ()) as e: raise Unavailable(str(e))
+    sk = width / float(CD.CW); h = round(CD.CH * sk, 2)
+    svg = f'<g transform="scale({sk:.5f})">{d["inner"]}</g>'
+    if len(svg) > CR["max_svg_bytes"]: raise Unavailable(f"collage: {len(svg)} bytes, over the {CR['max_svg_bytes']} the collage may reply")
+    comp = dict(scene=f"{topic}.{kind}", renderer="collage", **d["composition"])
+    return svg, float(width), h, {"collage": round(time.time() - t0, 2), "total": round(time.time() - t0, 2)}, f"{topic}.{kind}", comp
 
 
 # ---------------------------------------------------------------- the scene renderer (topics.scene_renderer: runtime/illus_hero/scene/scene.mjs)
@@ -722,6 +808,7 @@ def serve():
         if drawer == "line": svg, w, h, secs, name, comp = build_line(inp)
         elif drawer == "people": svg, w, h, secs, name, comp = build_people(inp)
         elif drawer == "scene": svg, w, h, secs, name, comp = build_scene(inp)
+        elif drawer == "collage": svg, w, h, secs, name, comp = build_collage(inp)
         else:
             with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
                 svg, w, h, secs, name, comp = build(inp, work)
