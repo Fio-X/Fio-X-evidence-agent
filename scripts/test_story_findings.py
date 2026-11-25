@@ -1806,6 +1806,48 @@ class LowestOfGroupAndMoversHeadline(unittest.TestCase):
         self.assertEqual(seen, {True, False})   # one shape's biggest mover rose, the other's fell
 
 
+def flipped_eu27():
+    """The twenty-seven with every path reversed (most fall) but one member that rises: the members' mean falls."""
+    fl = {c: (b, a) for c, (a, b) in EU27.items()}
+    fl[sorted(fl)[0]] = (5.0, 9.0)
+    return eu27_request(fl)
+
+
+class MoverNotesCompare(unittest.TestCase):
+    """The movers section's notes on a Eurostat percent shape and a World Bank value shape: a mover's note whose members' mean went
+    the other way says the mean's change the other way, never a multiple of it. Each stated number is recomputed from the rows."""
+
+    def notes(self, mk):
+        req, names = mk()
+        composed, facts, _ = draw_all(self, req, names, ["movers", "overtake"])
+        at = {}
+        for r in req["rows"]:
+            if r["table"] == req["main"]["table"]: at.setdefault(r["dims"][req["main"]["by"]], {})[r["time"]] = float(r["value"])
+        y0, y1 = (composed["leaves"]["change_dots"]["periods"][i].split(":")[-1] for i in (0, 1))
+        whole = req["main"].get("whole")
+        ms = [c for c in at if c != whole]
+        mch = sum(at[c][y1] - at[c][y0] for c in ms) / len(ms)
+        words = {n["num"]: "".join(x.get("w", "") for x in n["text"]) for n in composed["leaves"]["change_dots"]["notes"]}
+        srcs = {n["num"]: [x["src"][5:] for x in n["text"] if "src" in x] for n in composed["leaves"]["change_dots"]["notes"]}
+        return composed, facts, at, (y0, y1), whole, mch, words, srcs
+
+    def test_a_mover_whose_mean_went_the_other_way_gets_no_multiple(self):
+        seen = set()
+        for mk in (wb12_request, lambda: percent(flipped_eu27)(), percent(eu27_request)):
+            composed, facts, at, (y0, y1), whole, mch, words, srcs = self.notes(mk)
+            for num in ("fact:mv_do", "fact:mv_dl"):
+                if num not in words: continue
+                code = next(x["name"] for n in composed["leaves"]["change_dots"]["notes"] if n["num"] == num for x in n["text"] if "name" in x)
+                up = at[code][y1] > at[code][y0]
+                if up != (mch > 0):
+                    self.assertNotIn("倍", words[num]); self.assertIn("反而", words[num]); self.assertIn("平均", words[num])
+                    self.assertAlmostEqual(facts[srcs[num][0]]["v"], abs(mch), places=6)
+                    seen.add("opp")
+                else:
+                    seen.add("same")
+        self.assertEqual(seen, {"opp", "same"})
+
+
 
 def blocks(composed):
     """The page's data blocks: the sections with a data leaf (not the numbers, the thesis or the notes)."""
@@ -2472,11 +2514,13 @@ class ChangeNotes(unittest.TestCase):
         self.assertEqual((composed["facts"]["sp_m0"]["op"], composed["facts"]["sp_m0"]["filter"]["country"]), ("mean", sorted(WB)))
         self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise", c="CHN"))   # opposite sign: the old sentence
         self.assertNotIn("k_d_chn", composed["facts"])
-        # the movers: the far end fell while the mean rose (old words); the member that led at the start rose more than the mean
+        # the movers: the far end fell while the mean rose (no multiple: the note says the mean rose, by its own change); the member
+        # that led at the start rose more than the mean
         req = linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True)
         composed, facts, notes = self.notes(req, ["movers", "ends"], "movers", WB_NAMES_ALL)
         ch = {c: b - a for c, (a, b) in WB_MOST_ROSE.items()}; mean = sum(ch.values()) / len(ch)
-        self.assertEqual(notes["mv_do"], FN.note("mv_do", "story.note.mv.down_most", c="DEU"))
+        self.assertEqual(notes["mv_do"], FN.note("mv_do", "story.note.mv.down_most_opp", c="DEU", m="mv_mup"))
+        self.assertAlmostEqual(facts["mv_mup"]["v"], mean, places=9)
         self.assertNotIn("k_mv_do", composed["facts"])
         self.assertEqual(notes["mv_dl"]["text"], FN.ST("story.note.mv.lead_up_ref", c="USA", k="k_mv_dl"))
         self.has_k(notes["mv_dl"], "mv_dl", facts, ch["USA"] / mean)

@@ -1089,7 +1089,15 @@ def angle_movers(q):
     members = sorted(q.panel)
     mch = sum(ch.values()) / len(ch)   # the members' mean change: the mean at the last year less the mean at the first (every member has both)
     avg = {"mv_m0": q.mean(members, y0), "mv_m1": q.mean(members, y1)}
+    def mean_key(up):  # the members' mean change the way `up` says, as a fact (its size, op minus of the two means), the means declared with it
+        key = "mv_mup" if up else "mv_mdn"
+        f.update(avg); f[key] = {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}
+        return key
+    mean_moved = len(members) >= MEAN_MIN and printed(q, abs(mch), q.change) != 0   # a mean change a note can print and stand on
     def vs_avg(code, name, base, up):  # the note on a member's change (fact `name`, its size) against the members' mean change the same way
+        if mean_moved and (mch > 0) != up and f"{base}_opp" in WD.WORDS:
+            # the mean went the other way: no multiple of it (it would mislead); the note says the mean's own change the other way
+            return note(name, f"{base}_opp", c=code, m=mean_key(not up))
         key = "mv_mup" if up else "mv_mdn"
         facts = {**avg, key: {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}}
         return to_average(q, f, base, name, abs(ch[code]), mch if up else -mch, key, facts, len(members), c=code)
