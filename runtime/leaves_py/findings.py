@@ -384,6 +384,29 @@ def clamp(x):
 
 # ---------------------------------------------------------------- the request
 
+# The measure families (the knowledge group's runtime/pi/assets/measure-families.json, shipped beside this folder): each family's
+# "zh" is its reviewed short name for the page, and its "tables" the table ids (or id prefixes ending in "_" or ".") it holds.
+FAMILIES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pi", "assets", "measure-families.json")
+
+
+def short_measure(table):
+    """The short name a chart's head prints for the main table's measure: the zh of the first measure family that holds the table
+    (as next_visual measure_family matches it: a prefix ending in "_" or ".", else the id itself, the id's "@<version>" left off),
+    or None when no family holds it, the file is missing or the name holds a digit (the request's measure words stay then). The
+    table's long reviewed name stays on the page's source line, which layer 1 writes."""
+    try:
+        with open(FAMILIES, encoding="utf-8") as fh: fams = json.load(fh).get("families") or []
+    except (OSError, ValueError):
+        return None
+    tid = str(table or "").split("@")[0]
+    for fam in fams:
+        held = [h for h in fam.get("tables") or [] if isinstance(h, str) and h]
+        if any(tid.startswith(h) if h.endswith(("_", ".")) else tid == h for h in held):
+            zh = fam.get("zh")
+            return zh if isinstance(zh, str) and zh and not any(ch.isdigit() for ch in zh) else None
+    return None
+
+
 class Req:
     def __init__(q, r):
         q.rows = r.get("rows") or []
@@ -407,6 +430,8 @@ class Req:
             if any(ch.isdigit() for ch in q.words[k]) and not (k == "unit" and us): raise Refused(f"findings: the {k} words hold a digit")
         # the unit as a leaf's segments: its words, or (a name with a digit) the unit table's name entry, which layer 1 holds to the table
         q.unit = [{"src": us}] if us else SW(q.words["unit"])
+        # the measure as a chart's head names it: the family's short name for the main table, else the request's measure words
+        q.head_name = short_measure(q.table) or q.words["measure"]
         q.chain = r.get("chain")
         pts = r.get("points") or {}
         q.points = {c: tuple(v) for c, v in pts.items() if isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)} if isinstance(pts, dict) else {}
@@ -609,7 +634,7 @@ def angle_path(q):
     text = T("story.path.text")
     s = q.wseries
     tk = ticks(top, q.defs.get(q.fmts["value"], {}))
-    data = {"title": SW(q.words["measure"]), "unit": q.unit,
+    data = {"title": SW(q.head_name), "unit": q.unit,
             "series": {"code": q.whole, "points": [s[y][1] for y in ys], "start_text": lab(q, f, "first"), "end_text": lab(q, f, "now")},
             "target": {"year": "fact:goal.t.y", "text": lab(q, f, "goal"), "label": ST("story.target")},
             "runs": [{"text": lab(q, f, "p_best"), "label": ST("story.run.best")},
@@ -660,7 +685,7 @@ def angle_need(q):
          "best": {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.change}}
     title, text = T("story.need.title"), T("story.need.text")
     tk = ticks(gv, q.defs.get(q.fmts["value"], {}))
-    data = {"title": SW(q.words["measure"]), "unit": q.unit,
+    data = {"title": SW(q.head_name), "unit": q.unit,
             "axis": {"ticks": [f"fact:need_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), "from_zero": True},
             "now": {"text": lab(q, f, "now"), "at": q.wseries[last][1], "label": ST("story.now")},
             "marks": [{"text": lab(q, f, "p_past"), "label": ST("story.run.past")}],
@@ -760,8 +785,8 @@ def angle_ends(q):
     f = {"hi": q.value(hi, y1), "lo": q.value(lo, y1), "hi_lo": {"op": "times", "a": "hi", "b": "lo", "fmt": q.fmts["times"]},
          "d_hl": {"op": "minus", "a": "hi", "b": "lo", "fmt": q.change}}
     title, text = T("story.ends.title", a=hi, b=lo), T("story.ends.text", a=hi, b=lo)
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "places": [hi, lo], "place_kind": "place",
-            "rows": [{"code": "main", "label": SW(q.words["measure"]), "a": q.panel[hi][y1][1], "b": q.panel[lo][y1][1],
+    data = {"title": SW(q.head_name), "unit": q.unit, "places": [hi, lo], "place_kind": "place",
+            "rows": [{"code": "main", "label": SW(q.head_name), "a": q.panel[hi][y1][1], "b": q.panel[lo][y1][1],
                       "a_text": lab(q, f, "hi"), "b_text": lab(q, f, "lo"), "ratio": "fact:hi_lo"}],
             "ratio_unit": ST("story.times")}
     size = clamp(math.log(ratio) / math.log(5))
@@ -851,7 +876,7 @@ def angle_chain(q):
              "periods": [f"period:{it['table']}:{first}", f"period:{it['table']}:{last}"]}
         if i < len(items) - 1: p["link"] = ST("story.chain.link")
         panels.append(p)
-    data = {"title": SW(q.words["measure"]), "panels": panels,
+    data = {"title": SW(q.head_name), "panels": panels,
             "band": {"from": band, "to": band, "label": ST("story.chain.band", y="band_y")},
             "footnote": ST("story.chain.foot")}
     title = W(q.words["measure"]) + T("story.chain.title")
@@ -917,7 +942,7 @@ def angle_rank(q):
     if g: f["goal"] = g[2]
     ill = illus_pair(q, at)   # the members' values at the page's year (the whole is a row of the leaf, not a member of the ranking)
     if ill: q.illus["rank"] = {"members": ill["members"]}
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "share_head": head, "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.head_name), "unit": q.unit, "share_head": head, "name_kind": "place", "rows": rows,
             "highlight": q.whole if q.wseries else hi,   # the code of the row the page draws in the accent (story.rank_style reads it)
             "omit": ST("story.rank.omit")}   # a long rank folds to its ends and the highlighted row (the leaf's fold_over), this line where rows are left out
     if q.wseries:   # each end as a multiple of the whole, where the end is on the side its words say
@@ -985,7 +1010,7 @@ def angle_members(q):
     if g and 0 < g[0] <= 1.5 * max(allv):
         f["goal"] = g[2]
         target = {"text": lab(q, f, "goal"), "scale": float(q.defs[q.fmts["value"]].get("scale", 1)), "label": ST("story.sm.target")}
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place",
             "cells": [{"code": c, "points": [members[c][y][1] for y in ys], "last_text": lab(q, f, key(c))} for c in sorted(members)],
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [hi, lo], "footnote": ST("story.sm.foot")}
     if ref: data["ref"] = ref
@@ -1033,7 +1058,7 @@ def angle_map(q):
     mx = ratio(q, f, "mx", key(hi), key(lo), at[hi], at[lo])
     second = ranked[1]
     tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place",
             "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": lab(q, f, key(c))} if c in called else {})) for c in sorted(members)],
             "ends": {"lo": lab(q, f, key(lo)), "hi": lab(q, f, key(hi))}, "footnote": ST("story.map.foot")}
     size = clamp(rng / max(abs(at[hi]), 1e-9))
@@ -1127,7 +1152,7 @@ def angle_movers(q):
         if lead in kept and lead not in (big, other) and ch[lead] != 0:
             lead_up = amount(lead, "mv_dl")
             anns.append(vs_avg(lead, "mv_dl", "story.note.mv.lead_up" if lead_up else "story.note.mv.lead_down", lead_up))
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [big, other], "footnote": ST("story.mv.foot", y0=key0(big), y1=key1(big))}
     if whole: data["ref"] = whole
     if len(kept) < len(order): data["omit"] = ST("story.mv.omit")
@@ -1201,7 +1226,7 @@ def angle_overtake(q):
     move = sum(abs(j) for j in jump.values()) / len(pool)
     anns = [to_average(q, f, base, name, abs(jump[c]), move, "ot_avg", avg, len(pool) if count else 0, c=c, a=ka(c), b=kb(c))
             for base, name, c in (("story.note.ot.fall", "ot_fall", dn), ("story.note.ot.rise", "ot_rise", up))]
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [up, dn], "footnote": ST("story.ot.foot")}
     if q.wseries: data["ref"] = q.whole
     size = clamp(cross / pairs * 4)
@@ -1241,7 +1266,7 @@ def angle_tiles(q):
     f = {key(c): q.value(c, y) for c in members}
     f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
     tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place",
             "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": lab(q, f, key(c))} for c in sorted(members)],
             "ends": {"lo": lab(q, f, key(lo)), "hi": lab(q, f, key(hi))}, "footnote": ST("story.tl.foot")}
     tx = ratio(q, f, "tx", key(hi), key(lo), at[hi], at[lo])
@@ -1285,7 +1310,7 @@ def strip_two(q, y0, y1, kicker_key, lead):
     if tr:
         f.update(tr[0]); refs.append({**tr[1], "text": "fact:goal.n"})
     k0, k1 = f"ds0_{members[0].lower()}", f"ds1_{members[0].lower()}"
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "rows": rows,
             "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)),
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "refs": refs, "footnote": ST("story.risk.simple_mean")}
     if lead: data["lead"] = [c for c in lead if c in members]
@@ -1317,7 +1342,7 @@ def grid_part(q, y, members):
         lit = sorted(order[:5])
         rule = {"op": "bottom", "k": 5}
         key, title = {"lit": ST("story.grid.lit_bottom"), "unlit": ST("story.grid.unlit")}, T("story.grid.title_bottom", lo=lo)
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)], "rule": rule,
             "key": key}
     return f, {"layer": "unit_grid", "shows": [q.shows(y, "rank")], "data": data, "style": {"unit_grid": {"sort": "flag_first"}}, "kicker": T("story.grid.kicker"),
@@ -1528,13 +1553,13 @@ def angle_groups(q):
     # the group means as glyphs (area = mean, at most fifteen, none below 0, the smallest still six px across at the largest's 110),
     # the mean of every grouped member as the ghost glyph, labelled by the words' table
     glyph_ok = len(order) <= 15 and gm[lo] >= 0 and allm >= 0 and (gm[lo] == 0 or 110 * math.sqrt(gm[lo] / max(gm[hi], allm)) >= 6)
-    glyph = {"title": SW(q.words["measure"]), "unit": q.unit, "accent": hi, "scale": 1, "footnote": ST("story.risk.simple_mean"),
+    glyph = {"title": SW(q.head_name), "unit": q.unit, "accent": hi, "scale": 1, "footnote": ST("story.risk.simple_mean"),
              "items": [{"code": gid, "name": SW(kept[gid][0]), "value": f"fact:{gk(gid)}.n", "text": f"fact:{gk(gid)}.n"} for gid in order],
              "ref": {"value": "fact:gp_all.n", "text": "fact:gp_all.n", "label": ST("story.ref.mean")}}
     # the members by group on one axis (dot_strip: a row a group, its own mean a tick), the members' mean (the leaf's own words)
     # and the registered target as rules, the target labelled from the request's target row
     for c in pool: f[f"gv_{c.lower()}"] = q.value(c, y)
-    strip = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "scale": scale,
+    strip = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "scale": scale,
              "rows": [{"code": c, "a": q.panel[c][y][1], "a_text": f"fact:gv_{c.lower()}.n", "group": gid} for gid in order for c in kept[gid][1]],
              "periods": [f"period:{q.table}:{y}"], "groups": [{"id": gid, "label": SW(kept[gid][0]), "mean": f"fact:{gk(gid)}.n"} for gid in order],
              "refs": [{"kind": "mean", "text": "fact:gp_all.n"}], "lead": [whi, wlo], "footnote": ST("story.risk.simple_mean")}
@@ -1611,7 +1636,7 @@ def angle_below(q):
     f["bl_lo"] = q.value(lo, y)
     title = T(f"story.below.title_{kind}", names=names, w=w, t=tkey)
     if len(order) > len(names): title.append(("w", WD.WORDS["story.below.more"]))
-    data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
+    data = {"title": SW(q.head_name), "unit": q.unit, "name_kind": "place", "mode": "flag", "scale": scale,
             "members": [{"code": c, "value": q.panel[c][y][1], "flag": c in lit} for c in sorted(at)],
             "rule": {"op": "lt", "ref": f"fact:{tkey}.n"}, "key": {"lit": ST("story.below.lit"), "unlit": ST("story.grid.unlit")}}
     line_note = {"goal": ("story.ref.target", {"w": w}), "whole": ("story.below.note_whole", {"w": w}), "mean": ("story.ref.mean", {})}[kind]
