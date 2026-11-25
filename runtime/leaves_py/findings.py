@@ -731,8 +731,14 @@ def angle_spread(q):
     # the two notes against the members' mean change over the span (the mean at the last year less the mean at the first: every member has both)
     avg = {"sp_m0": q.mean(members, y0), "sp_m1": q.mean(members, y1), "sp_mch": {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": q.change}}
     mch = sum(ch.values()) / len(ch)
-    anns = [to_average(q, f, base, f"d_{c.lower()}", ch[c], mch, "sp_mch", avg, len(members), c=c)
-            for base, c in (("story.note.spread.rise", up[0]), ("story.note.spread.fall", down[0]))]
+    def spread_note(base, c):
+        if len(members) >= MEAN_MIN and ch[c] * mch < 0 and printed(q, abs(mch), q.change) != 0 and f"{base}_opp" in WD.WORDS:
+            # the mean went the other way: no multiple of it (it would mislead); the note says the mean's own change that way (its size)
+            if mch > 0: f.update(avg); m = "sp_mch"
+            else: f.update({"sp_m0": avg["sp_m0"], "sp_m1": avg["sp_m1"], "sp_mdn": {"op": "minus", "a": "sp_m0", "b": "sp_m1", "fmt": q.change}}); m = "sp_mdn"
+            return note(f"d_{c.lower()}", f"{base}_opp", c=c, m=m)
+        return to_average(q, f, base, f"d_{c.lower()}", ch[c], mch, "sp_mch", avg, len(members), c=c)
+    anns = [spread_note(base, c) for base, c in (("story.note.spread.rise", up[0]), ("story.note.spread.fall", down[0]))]
     return {"angle": "spread", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [up[0], down[0]], "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
             "anns": anns,
             "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",

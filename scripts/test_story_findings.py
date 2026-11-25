@@ -2552,7 +2552,8 @@ class ChangeNotes(unittest.TestCase):
         self.has_k(notes["d_usa"], "d_usa", facts, ch["USA"] / mean)
         self.assertEqual(composed["facts"]["sp_mch"], {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": "x"})
         self.assertEqual((composed["facts"]["sp_m0"]["op"], composed["facts"]["sp_m0"]["filter"]["country"]), ("mean", sorted(WB)))
-        self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise", c="CHN"))   # opposite sign: the old sentence
+        self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise_opp", c="CHN", m="sp_mdn"))   # opposite sign: the mean fell
+        self.assertAlmostEqual(facts["sp_mdn"]["v"], -mean, places=9)
         self.assertNotIn("k_d_chn", composed["facts"])
         # the movers: the far end fell while the mean rose (no multiple: the note says the mean rose, by its own change); the member
         # that led at the start rose more than the mean
@@ -2581,6 +2582,29 @@ class ChangeNotes(unittest.TestCase):
         self.assertEqual(notes["mv_do"]["text"], FN.ST("story.note.mv.up_least_ref_lo", c=lo, k="k_mv_do"))
         self.has_k(notes["mv_do"], "mv_do", facts, mean / ch[lo])
         self.assertEqual(composed["facts"]["k_mv_do"], {"op": "times", "a": "mv_mup", "b": "mv_do", "fmt": "times"})
+
+    def test_a_spread_end_whose_mean_went_the_other_way_says_so(self):
+        """The spread's rise and fall notes when the members' mean change went the other way: no multiple, the mean's own change that
+        way (sp_mch when it rose, sp_mdn when it fell), recomputed from the rows; on a World Bank value shape (the mean rose, the
+        biggest fall is told) and a Eurostat percent shape (the mean fell, the biggest rise is told)."""
+        fell = {"AA": (50.0, 40.0), "BB": (45.0, 48.0), "CC": (40.0, 30.0), "DD": (35.0, 25.0), "EE": (30.0, 33.0), "FF": (20.0, 12.0), "GG": (10.0, 11.0)}
+        names = {"AA": "甲", "BB": "乙", "CC": "丙", "DD": "丁", "EE": "戊", "FF": "己", "GG": "庚"}
+        seen = set()
+        for req, nm, y0, y1 in ((linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True), WB_NAMES_ALL, 2010, 2022),
+                                (NotesStandAgainstAReference.pct(None, linear_request("nrg_ind_ren", "geo", fell, 2005, 2024, fixed={"nrg_bal": "REN"})), names, 2005, 2024)):
+            composed, facts, notes = self.notes(req, ["spread", "ends"], "spread", nm)
+            codes = {r["dims"][req["main"]["by"]] for r in req["rows"]}
+            ch = {c: self.at(req, c, y1) - self.at(req, c, y0) for c in codes}
+            mean = sum(ch.values()) / len(ch)
+            for num, n in notes.items():
+                c = num[2:].upper()
+                if ch[c] * mean >= 0: continue
+                self.assertNotIn("倍", self.words(n), num); self.assertIn("反而", self.words(n), num); self.assertIn("平均", self.words(n), num)
+                m = "sp_mch" if mean > 0 else "sp_mdn"
+                self.assertEqual(n, FN.note(num, "story.note.spread.rise_opp" if ch[c] > 0 else "story.note.spread.fall_opp", c=c, m=m))
+                self.assertAlmostEqual(facts[m]["v"], abs(mean), places=6)
+                seen.add("rise" if ch[c] > 0 else "fall")
+        self.assertEqual(seen, {"rise", "fall"})
 
     def test_a_mean_that_did_not_move_keeps_the_old_sentences(self):
         req = linear_request(WB_T, "country", WB_FLAT_MEAN, 2010, 2022, text=True)

@@ -206,6 +206,8 @@
 "story.note.spread.fall": "降得最多的{n:c}，变化",
 "story.note.spread.rise_ref": "涨得最多的{n:c}，涨幅是各国平均的 {f:k} 倍",
 "story.note.spread.fall_ref": "降得最多的{n:c}，降幅是各国平均的 {f:k} 倍",
+"story.note.spread.rise_opp": "涨得最多的{n:c}，涨了；各国平均反而降了 {f:m}",
+"story.note.spread.fall_opp": "降得最多的{n:c}，变化；各国平均反而涨了 {f:m}",
 "story.note.ends.diff": "最高的{n:a}比最低的{n:b}多，是{n:b}的 {f:hi_lo} 倍",
 "story.note.rank.hi": "最高的{n:hi}，与{n:w}（{f:rw}）相差",
 "story.note.rank.lo": "最低的{n:lo}，与{n:w}（{f:rw}）相差",
