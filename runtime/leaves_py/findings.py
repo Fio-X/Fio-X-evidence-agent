@@ -73,6 +73,8 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
   question and the page keeps the first (the lead's); a page holds MAX_BLOCKS data blocks at most; a flag grid with no lit glyph
   is not drawn; a strip of more than LABEL_ALL_MAX points names only the lead finding's members ("about").
   A finding whose question words (words.zh.json story.ask.<angle>) the request's "question" holds is scored ASKED_BOOST higher.
+  The change notes of spread, movers and overtake end with how many times the members' average change the mover's change is (to_average:
+  the average a mean fact over the same members, the multiple a times fact), or keep their plain words where no average stands.
 Chain rules. Years: the longest run of consecutive years, ending at the last, that every chain table and the whole have
 (at least CHAIN_YEARS). A chain table is read at the dims its "filter" names (one row a year, else the angle is dropped).
 Panel kind: the item's "kind" ("flow" = bars, "stock" = line) when it gives one, else bars when every value of the run is 0
@@ -154,6 +156,7 @@ MAX_BLOCKS = 5                # data blocks a page holds at most (the picks' own
 LABEL_ALL_MAX = 20            # a strip of more points than this names only the lead finding's members (the rest unlabelled)
 LEAD_MAX = 12                 # names a strip takes at most (dot_strip's LEAD_MAX)
 LABEL_GAP = 0.08              # two names in one strip row stand at least this share of the strip's span apart
+MEAN_MIN = 3                  # members an average change a note is set against stands on at least (as the level notes' simple mean)
 # What a block can show, its "shape" (each part declares shows: [{measure, when, shape}], Req.shows): two blocks that share an
 # entry answer one question, and a page keeps the first (place_leaves, same_question). No chart is named here: a leaf's part
 # says what it shows, the comparison reads only these declarations.
@@ -347,6 +350,32 @@ def compared(q, f, tag, base, num, a, b, va, vb, only_up=False, mean=False, **bi
     if not v: return note(num, base, **bind)
     kind, up, name = v
     return note(num, f"{base}{'_m' if mean else ''}_{kind}_{'up' if up else 'dn'}", rv=b, d=name, **bind)
+
+
+def to_average(q, f, base, num, d, avg, avg_key, avg_facts, n, **bind):
+    """A change note set against the members' average change: the plain note `base` (its number the fact `num`, the mover's change `d`)
+    becomes "<base>, N times the average" (word `<base>_ref`, fact k_<num> = num over avg_key, op times) when the mover moved more than
+    the average, else "<base>, the average is N times it" (`<base>_ref_lo`, avg_key over num: the larger is the one said to be N times,
+    as ratio() flips). `d` and `avg` are the two changes in one reading (both signed, or both the size in the mover's direction); `avg` is
+    the plain mean over `n` members, its facts `avg_facts` (avg_key among them) declared only when the note uses them. The note stays as it
+    was and declares nothing when fewer than MEAN_MIN members feed the mean, the mean is 0 (the shared tolerance), it went the other way
+    from the mover's (a multiple of an average that moved the other way would mislead), the multiple prints as 1 or less (it says nothing),
+    or the word table holds no such variant of `base`."""
+    if n < MEAN_MIN or abs(avg) <= 1e-9 * max(abs(d), 1.0) or d * avg <= 0: return note(num, base, **bind)
+    over = abs(d) >= abs(avg)
+    word = f"{base}_ref" if over else f"{base}_ref_lo"
+    big, small = (abs(d), abs(avg)) if over else (abs(avg), abs(d))
+    if word not in WD.WORDS or printed(q, big / small, q.fmts["times"]) <= 1: return note(num, base, **bind)
+    k = f"k_{num}"
+    f.update(avg_facts)
+    f[k] = {"op": "times", "a": num if over else avg_key, "b": avg_key if over else num, "fmt": q.fmts["times"]}
+    return note(num, word, k=k, **bind)
+
+
+def plain_ends(hi, lo):
+    """The suffix of a highest-and-lowest headline: "" (the words with a verb before each number, "reaches N", "only N") when both values
+    are above 0, else "_nov" (the same numbers with no verb: "reaches" or "only" before a value of 0 or below would mislead)."""
+    return "" if hi > 0 and lo > 0 else "_nov"
 
 
 def clamp(x):
@@ -699,8 +728,13 @@ def angle_spread(q):
     surprise = 0.9 if not caught else 0.5
     sturdy = clamp(len(q.panel) / 20) * clamp((int(y1) - int(y0)) / 10)
     key = "lowg" if caught else "topg"
+    # the two notes against the members' mean change over the span (the mean at the last year less the mean at the first: every member has both)
+    avg = {"sp_m0": q.mean(members, y0), "sp_m1": q.mean(members, y1), "sp_mch": {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": q.change}}
+    mch = sum(ch.values()) / len(ch)
+    anns = [to_average(q, f, base, f"d_{c.lower()}", ch[c], mch, "sp_mch", avg, len(members), c=c)
+            for base, c in (("story.note.spread.rise", up[0]), ("story.note.spread.fall", down[0]))]
     return {"angle": "spread", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [up[0], down[0]], "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
-            "anns": [note(f"d_{up[0].lower()}", "story.note.spread.rise", c=up[0]), note(f"d_{down[0].lower()}", "story.note.spread.fall", c=down[0])],
+            "anns": anns,
             "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "caught_up": caught},
@@ -869,7 +903,7 @@ def angle_rank(q):
         why = {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "above_whole": n_above}
     else:
         surprise = 0.5
-        title = T("story.rank.title_top", hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
+        title = T("story.rank.title_top" + plain_ends(at[hi], at[lo]), hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
         text = T("story.rank.text_top", hi=hi, lo=lo, y=key(hi))
         claim = {"num": f"fact:{key(hi)}", "head": T("story.rank.claim_top", hi=hi)}
         head, why_line = ST("story.rank.gap_top_head" + "_pp" * pct), "every member's value at the last year, highest first"
@@ -992,7 +1026,7 @@ def angle_map(q):
     f["mrange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
     mx = ratio(q, f, "mx", key(hi), key(lo), at[hi], at[lo])
     second = ranked[1]
-    tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain")
+    tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
             "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": f"fact:{key(c)}"} if c in called else {})) for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.map.foot")}
@@ -1052,15 +1086,23 @@ def angle_movers(q):
         up = (q.wseries if code == whole else q.panel[code])[y1][0] > (q.wseries if code == whole else q.panel[code])[y0][0]
         f[name] = {"op": "minus", "a": key1(code) if up else key0(code), "b": key0(code) if up else key1(code), "fmt": q.change}
         return up
+    members = sorted(q.panel)
+    mch = sum(ch.values()) / len(ch)   # the members' mean change: the mean at the last year less the mean at the first (every member has both)
+    avg = {"mv_m0": q.mean(members, y0), "mv_m1": q.mean(members, y1)}
+    def vs_avg(code, name, base, up):  # the note on a member's change (fact `name`, its size) against the members' mean change the same way
+        key = "mv_mup" if up else "mv_mdn"
+        facts = {**avg, key: {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}}
+        return to_average(q, f, base, name, abs(ch[code]), mch if up else -mch, key, facts, len(members), c=code)
     other_up = amount(other, "mv_do")
     kind = {(True, True): "up_least", (True, False): "down_most", (False, False): "down_least", (False, True): "up_most"}[(ch[big] > 0, other_up)]
-    anns = [note("mv_do", f"story.note.mv.{kind}", c=other)]
+    anns = [vs_avg(other, "mv_do", f"story.note.mv.{kind}", other_up)]
     if whole:
         anns.append(note("mv_dw", "story.note.mv.whole_up" if amount(whole, "mv_dw") else "story.note.mv.whole_down", w=whole))
     else:
         lead = max(q.panel, key=lambda c: (q.panel[c][y0][0], c))
         if lead in kept and lead not in (big, other) and ch[lead] != 0:
-            anns.append(note("mv_dl", "story.note.mv.lead_up" if amount(lead, "mv_dl") else "story.note.mv.lead_down", c=lead))
+            lead_up = amount(lead, "mv_dl")
+            anns.append(vs_avg(lead, "mv_dl", "story.note.mv.lead_up" if lead_up else "story.note.mv.lead_down", lead_up))
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [big, other], "footnote": ST("story.mv.foot", y0=key0(big), y1=key1(big))}
     if whole: data["ref"] = whole
@@ -1117,6 +1159,23 @@ def angle_overtake(q):
     f["ot_y0"], f["ot_y1"] = q.value(up, y0), q.value(up, y1)   # the two years the title and the key name
     f["ot_rise"] = {"op": "minus", "a": ka(up), "b": kb(up), "fmt": "n"}
     f["ot_fall"] = {"op": "minus", "a": kb(dn), "b": ka(dn), "fmt": "n"}
+    # the notes against the places' average rank move (each place's move in size, 0 for one that kept its rank): the moves of the places
+    # that moved (the riser's and the faller's are ot_rise and ot_fall) summed one by one (op plus), over the number of places. That
+    # number is the rank of the place alone at the bottom at the first year (else the last): a position fact the slope already prints,
+    # layer 1 rechecks it from the rows (no count of places, op n, which it cannot). Tied at the bottom both years: no average, the
+    # plain notes.
+    mk = lambda c: "ot_rise" if c == up else "ot_fall" if c == dn else f"ot_m_{c.lower()}"
+    moved = [c for c in codes if jump[c] != 0]
+    avg, total = {}, mk(moved[0])
+    for c in moved:
+        if c not in (up, dn): avg[mk(c)] = {"op": "minus", "a": ka(c) if jump[c] > 0 else kb(c), "b": kb(c) if jump[c] > 0 else ka(c), "fmt": "n"}
+    for i, c in enumerate(moved[1:], 1):
+        avg[f"ot_s{i}"] = {"op": "plus", "a": total, "b": mk(c), "fmt": "n"}; total = f"ot_s{i}"
+    count = next((k(c) for r, k in ((r0, ka), (r1, kb)) for c in codes if r[c] == len(pool)), None)
+    avg["ot_avg"] = {"op": "times", "a": total, "b": count, "fmt": q.fmts["times"]}
+    move = sum(abs(j) for j in jump.values()) / len(pool)
+    anns = [to_average(q, f, base, name, abs(jump[c]), move, "ot_avg", avg, len(pool) if count else 0, c=c, a=ka(c), b=kb(c))
+            for base, name, c in (("story.note.ot.fall", "ot_fall", dn), ("story.note.ot.rise", "ot_rise", up))]
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place", "rows": rows,
             "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [up, dn], "footnote": ST("story.ot.foot")}
     if q.wseries: data["ref"] = q.whole
@@ -1131,7 +1190,7 @@ def angle_overtake(q):
             "title": T("story.ot.title", up=up, over=over, y0="ot_y0", y1="ot_y1", u0=ka(up), u1=kb(up)),
             "text": T("story.ot.text_ref" if q.wseries else "story.ot.text", w=q.whole, y0="ot_y0", y1="ot_y1"), "facts": f, "data": data,
             "claim": {"num": "fact:ot_rise", "head": T("story.ot.claim", up=up)}, "notes": [], "members": True, "last": "ot_y1",
-            "anns": [note("ot_fall", "story.note.ot.fall", c=dn, a=ka(dn), b=kb(dn)), note("ot_rise", "story.note.ot.rise", c=up, a=ka(up), b=kb(up))],
+            "anns": anns,
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "crossings": cross, "pairs": int(pairs),
                     "riser": up, "rose": jump[up], "faller": dn, "fell": -jump[dn]},
@@ -1156,7 +1215,7 @@ def angle_tiles(q):
     key = lambda c: f"tl_{c.lower()}"
     f = {key(c): q.value(c, y) for c in members}
     f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
-    tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain")
+    tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": q.unit, "name_kind": "place",
             "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}
