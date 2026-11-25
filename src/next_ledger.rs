@@ -2770,6 +2770,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "leaf::sampled",
     "leaf::node",
     "leaf::python",
+    "leaf::drawn_as", // the scene names of the pieces the page was given, passed on as the child said them: no check
     "leaf::leaves",
     "leaf::word",
     "leaf::words",
