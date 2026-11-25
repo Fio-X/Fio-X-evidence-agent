@@ -114,6 +114,11 @@ class OpeningCaption(unittest.TestCase):
         self.assertEqual(body_zh.count("别的名字"), 1)                       # only the kicker: the heads keep the Chinese name the findings child had
         self.assertGreaterEqual(body_zh.count("失业率"), 3)
 
+    def test_what_stands_in_brackets_goes_with_the_brackets_nested_or_not(self):
+        import story
+        for given, want in (("a(b)c", "ac"), ("a(b(c)d)e", "ae"), ("x(y", "x"), ("no brackets", "no brackets"), ("p)q", "pq")):
+            self.assertEqual(story.unbracketed(given), want, given)
+
     def test_no_line_with_another_picture_none_drawn_or_no_proportion(self):
         req = rate_request(10.5)
         _, plain = page(req, RATE_NAMES, ["rank", "ends"])                          # layer 1 passes no scene name (as today)

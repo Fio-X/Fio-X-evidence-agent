@@ -22,6 +22,7 @@ A section that draws the header's big numbers (layer bignums, html) is a bare bl
 section's id, its svg the pub-chart named by the section's kicker and described by its title read aloud)."""
 import html
 import re
+import unicodedata
 
 import facts as FX
 import prod
@@ -223,13 +224,22 @@ def headline_names(title):
 DOT_LEAD_MAX = 12   # the dot strip's own limit on its leaders (dot_strip.LEAD_MAX; a test keeps the two equal): a longer list stays as the findings gave it
 
 
-PAREN = re.compile(r"[（(][^）)]*[）)]")
+def unbracketed(text):
+    """`text` without what stands in brackets (any open and close punctuation, nested too, by the Unicode category: Ps opens, Pe closes),
+    the brackets themselves gone; an unclosed bracket takes the rest of the text with it."""
+    depth, out = 0, []
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if cat == "Ps": depth += 1
+        elif cat == "Pe": depth = max(0, depth - 1)
+        elif not depth: out.append(ch)
+    return "".join(out)
 
 
 def measure_name(spec):
     """The measure's Chinese name the page's kicker prints over the headline, without the layout note in brackets (the kicker may read
     "<measure> (latest rank)"): None when what is left is empty or holds a digit or a Latin letter (no reviewed Chinese name)."""
-    kick = PAREN.sub("", str(spec.get("kicker") or "")).strip()
+    kick = unbracketed(str(spec.get("kicker") or "")).strip()
     return kick if kick and not FX.digit(kick) and not re.search(r"[A-Za-z]", kick) else None
 
 
