@@ -533,7 +533,7 @@ class Findings(unittest.TestCase):
             self.assertEqual(lead["id"], picks[0])
             self.assertNotIn("text", lead)                      # the dek says it
             self.assertNotEqual(lead["title"], composed["title"])
-            self.assertIn("：", lead["title"]); self.assertRegex(lead["title"], r"\{[a-z_0-9]+\}$")  # the claim's words, then its number
+            self.assertIn("：", lead["title"]); self.assertRegex(lead["title"], r"\{[a-z_0-9]+\}(" + re.escape(FN.WD.WORDS["story.times"]) + ")?$")  # the claim's words, then its number (a ratio's with the times word)
             self.assertNotIn("answer", composed["leaves"]["thesis_claims"])
             dek = re.search(r'<p class="dek">(.*?)</p>', page_html, re.S)[1]
             self.assertIn("data-src", dek)
@@ -611,11 +611,16 @@ class Findings(unittest.TestCase):
         """q4 11-23: the ends finding's row and both charts' heads are named by the measure's whole name; beside the rank (a pair,
         half the page wide) a World Bank indicator's reviewed name left the pair bars no track and the heads no room. The page now
         draws on both shapes: short names keep the rank and the ends paired; a name whose head runs past half the page takes
-        each picture wider (story.plan), and the pair bars' row name stands over its tracks (pair_bars)."""
+        each picture wider (story.plan), and the pair bars' row name stands over its tracks (pair_bars). 11-26: a table a measure family
+        holds is headed by the family's short name, so the long name pairs too; a table no family holds keeps the long name in its heads."""
         long = "不含土地利用、土地利用变化和林业的人均二氧化碳排放量（吨二氧化碳当量／人）"
         eu, eu_names = eu_request()
         wb, wb_names = wb12_request()
-        for req, names, paired in ((eu, eu_names, True), (wb, wb_names, True), ({**wb, "words": {**wb["words"], "measure": long}}, wb_names, False)):
+        alone = "XX.NO.FAMILY"   # test-only table id no measure family holds
+        wb_alone = {**wb, "rows": [{**r, "table": alone} if r.get("table") == wb["main"]["table"] else r for r in wb["rows"]],
+                    "main": {**wb["main"], "table": alone}, "words": {**wb["words"], "measure": long}}
+        for req, names, paired in ((eu, eu_names, True), (wb, wb_names, True), ({**wb, "words": {**wb["words"], "measure": long}}, wb_names, True),
+                                   (wb_alone, wb_names, False)):
             composed, facts, bodies, page_html = self._page(req, names, ["rank", "ends", "members"])
             self.assertEqual([s["layer"] for s in composed["sections"]][2:4], ["rankbar", "pair_bars"])
             self.assertEqual('data-layout="pair"' in page_html, paired)
