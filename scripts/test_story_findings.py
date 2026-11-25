@@ -3028,23 +3028,50 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
                     self.assertTrue(flat(h).rstrip("，。；").endswith(unit) or re.search(re.escape(unit) + r"[^0-9]*$", flat(h)), (kind, flat(h)))
             if kind != "pct": self.assertGreaterEqual(runs, 2, kind)
 
-    def test_big_numbers_print_alone_and_their_label_carries_the_unit(self):
+    def test_big_numbers_of_one_unit_print_alone_under_one_unit_line(self):
+        """The header's numbers and the claims' numbers whose unit is words share one unit: each prints alone, the unit once on a line over
+        the group, no number's label or lead in brackets; a percent page has no such line and keeps its signs."""
         paren = lambda u: FN.WD.WORDS["paren"].replace("{v}", u)
+        line = lambda u: FN.WD.WORDS["unit.line"].replace("{v}", u)
         for kind in ("co2", "usd", "pct"):
             composed, facts, page_html, unit = unit_page(self, kind, self.PICKS)
             cells = re.findall(r'<div class="bv"[^>]*>(.*?)</div><div class="bl">(.*?)</div>', page_html, re.S)
             self.assertEqual(len(cells), 3, kind)
+            heads = [flat(x) for x in re.findall(r'<div class="bnu"[^>]*>(.*?)</div>', page_html, re.S)]
+            self.assertEqual(heads, [] if kind == "pct" else [line(unit)], kind)
             for v, lab in cells:
                 self.numbers(v, facts)
-                if kind == "pct":
-                    self.assertIn("%", flat(v)); self.assertNotIn(paren("%"), flat(lab))
-                else:
-                    self.assertNotIn(unit, flat(v)); self.assertTrue(flat(lab).endswith(paren(unit)), (kind, flat(lab)))
-            for c in composed["leaves"]["thesis_claims"]["claims"]:
+                self.assertNotIn(paren(unit), flat(lab), kind)
+                if kind == "pct": self.assertIn("%", flat(v))
+                else: self.assertNotIn(unit, flat(v))
+            th = composed["leaves"]["thesis_claims"]
+            self.assertEqual(th.get("unit_line"), None if kind == "pct" else [{"w": line(unit)}], kind)
+            for c in th["claims"]:
                 f = composed["facts"][re.sub(r"^fact:|\.n$", "", c["num"])]
                 worded = kind != "pct" and FN.cell_src(FN.Req({**unit_shape(kind)[0]}), "k", f["fmt"]).endswith(".n")
                 self.assertEqual(c["num"].endswith(".n"), worded, (kind, c["num"]))
-                self.assertEqual(c["head"][-1] == {"w": paren(unit)}, worded, (kind, c["head"]))
+                self.assertNotIn({"w": paren(unit)}, c["head"], kind)
+            if kind != "pct":
+                self.assertEqual(flat(page_html).count(line(unit)), 2, kind)   # the header's line and the claims' line, once each
+
+    def test_big_numbers_of_two_units_keep_each_unit_in_brackets(self):
+        """A group whose numbers are in two units (test-only: a change in another unit than the level) keeps each number's unit in brackets
+        on its label or lead and draws no unit line, on a tonnes-per-head and a US-dollars-per-head shape."""
+        from unittest import mock
+        paren = lambda u: FN.WD.WORDS["paren"].replace("{v}", u)
+        for kind in ("co2", "usd"):
+            req, names, unit, _ = unit_shape(kind)
+            other = "千" + unit   # test-only words of a second unit
+            req = {**req, "fmts": {**req["fmts"], "delta": "dlt"}, "fmt_defs": {**req["fmt_defs"], "dlt": {"scale": 1, "dec": 1, "suffix": " " + other}}}
+            with mock.patch.dict(FMT_DEFS, req["fmt_defs"]):
+                composed, facts, _, page_html = Findings._page(self, req, names, ["movers", "members", "rank"])
+            self.assertNotIn('class="bnu"', page_html, kind)
+            labs = [flat(x) for x in re.findall(r'<div class="bl">(.*?)</div>', page_html, re.S)]
+            self.assertEqual(sorted(l[l.rindex("（"):] for l in labs), sorted([paren(unit)] * 2 + [paren(other)]), (kind, labs))
+            th = composed["leaves"]["thesis_claims"]
+            self.assertNotIn("unit_line", th, kind)
+            tails = [c["head"][-1]["w"] for c in th["claims"] if c["num"].endswith(".n")]
+            self.assertEqual(sorted(set(tails)), sorted({paren(unit), paren(other)}), (kind, tails))
 
     def test_a_note_s_bold_number_prints_alone_and_its_words_say_the_unit_once(self):
         for kind in ("co2", "usd", "pct"):
