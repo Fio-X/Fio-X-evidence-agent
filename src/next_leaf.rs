@@ -1801,9 +1801,16 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
     })
 }
 
-/// Every way a strip is more than line art in the page's colours: it holds only `<g>` groups (a transform at most) and
-/// `<path/>` strokes (a path, a stroke of one of `colours`, its width, no fill, round caps and joins, a transform), balanced,
-/// with nothing between the tags but white space: no text, no other element, no link, script, style or colour of its own.
+/// The page theme colours a strip may fill a shape with, as `fill="var(--name)"` (runtime/leaves_py/tokens.css defines them,
+/// so the page colours the shape and the strip holds no colour of its own): --bg the paper (a figure's light detail, a pale
+/// shirt), --bar the light grey (skin, pale clothes), --t-sec the grey of the second pen (mid tones, the near arm), --t-title
+/// the ink (silhouettes, hair, dark clothes). Not the accent: it marks the page's focus alone and a strip lights nobody.
+pub const STRIP_FILLS: &[&str] = &["--bg", "--bar", "--t-sec", "--t-title"];
+
+/// Every way a strip is more than line art and flat shapes in the page's colours: it holds only `<g>` groups (a transform at
+/// most) and `<path/>`s (a path, a stroke of one of `colours`, its width, a fill that is none or `var(--name)` of
+/// STRIP_FILLS, round caps and joins, a transform; the stroke and the fill always named), balanced, with nothing between
+/// the tags but white space: no text, no other element, no link, script, style, opacity, filter or colour of its own.
 pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
     let transform = |v: &str| {
         let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
@@ -1892,21 +1899,33 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
                         .all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZmclqtz".contains(c)),
                     "stroke" => colours.contains(&value),
                     "stroke-width" => value.parse::<f64>().is_ok_and(|w| w > 0.0 && w.is_finite()),
-                    "fill" => value == "none",
+                    "fill" => {
+                        value == "none"
+                            || value
+                                .strip_prefix("var(")
+                                .and_then(|v| v.strip_suffix(')'))
+                                .is_some_and(|t| STRIP_FILLS.contains(&t))
+                    }
                     "stroke-linecap" | "stroke-linejoin" => value == "round",
                     "transform" => transform(value),
                     _ => false,
                 };
             if !ok {
                 off.push(format!(
-                    "strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}",
-                    colours.join(" or ")
+                    "strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}, fills none or var() of {}",
+                    colours.join(" or "),
+                    STRIP_FILLS.join(" ")
                 ));
             }
             a = after.trim_start();
         }
         if name == "path" && !attrs.contains(" stroke=\"") {
             off.push("strip: a path names no stroke colour".into());
+        }
+        if name == "path" && !attrs.contains(" fill=\"") {
+            off.push(
+                "strip: a path names no fill (unnamed, it paints black); e.g. fill=\"none\"".into(),
+            );
         }
         if name == "g" {
             depth += 1;
@@ -2750,8 +2769,9 @@ mod tests {
         assert_eq!(split_months(&span("2026-S1.h", "上")).len(), 1);
     }
 
-    /// A strip is taken as line art in the page's colours only: groups and strokes pass; text, another element, a colour of
-    /// its own, a fill, a link, an odd transform, an unclosed group each refuse, naming what.
+    /// A strip is taken as line art and flat shapes in the page's colours only: groups, strokes and fills of the page's theme
+    /// tokens (STRIP_FILLS, each by name) pass; text, another element, a colour of its own, a fill of any other colour, a
+    /// link, an opacity, a filter, a style, an odd transform, an unnamed fill, an unclosed group each refuse, naming what.
     #[test]
     fn a_strip_is_only_strokes_in_the_page_colours() {
         let colours = ["var(--t-title)", "var(--accent)"];
@@ -2761,21 +2781,53 @@ mod tests {
             path(
                 r#"stroke="var(--t-title)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round""#
             ),
-            path(r#"stroke="var(--accent)" stroke-width="1.300""#),
+            path(r#"stroke="var(--accent)" stroke-width="1.300" fill="none""#),
             path(
-                r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0""#
+                r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0" fill="none""#
             ),
         );
         assert_eq!(strip_faults(&ok, &colours), Vec::<String>::new());
+        // the fills a strip may use: exactly these four theme tokens, each one the page defines
+        assert_eq!(STRIP_FILLS, &["--bg", "--bar", "--t-sec", "--t-title"][..]);
+        let tokens = include_str!("../runtime/leaves_py/tokens.css");
+        for t in STRIP_FILLS {
+            assert!(tokens.contains(&format!("{t}:")), "the page defines no {t}");
+        }
+        for fill in ["var(--bg)", "var(--bar)", "var(--t-sec)", "var(--t-title)"] {
+            let shape = format!(
+                r#"<g>{}</g>"#,
+                path(&format!(
+                    r#"stroke="var(--t-title)" stroke-width="0.5" fill="{fill}" stroke-linejoin="round""#
+                ))
+            );
+            assert_eq!(
+                strip_faults(&shape, &colours),
+                Vec::<String>::new(),
+                "{fill}"
+            );
+        }
         let refused = |svg: &str| {
             let off = strip_faults(svg, &colours);
             assert!(!off.is_empty(), "{svg} passed");
             off[0].clone()
         };
+        let filled = |attrs: &str| path(&format!(r#"stroke="var(--t-title)" {attrs}"#));
+        assert!(refused(&filled(r##"fill="#c93f2b""##)).contains("fill=\"#c93f2b\""));
+        assert!(refused(&filled(r#"fill="red""#)).contains("fill=\"red\""));
+        assert!(refused(&filled(r#"fill="url(#x)""#)).contains("fill=\"url(#x)\""));
+        assert!(refused(&filled(r#"fill="var(--not-a-token)""#)).contains("var(--not-a-token)"));
+        assert!(refused(&filled(r#"fill="var(--accent)""#)).contains("fill=\"var(--accent)\""));
+        assert!(refused(&filled(r#"fill="var(--t-body)""#)).contains("var(--t-body)"));
+        assert!(refused(&filled(r#"fill="var(--bg) ""#)).contains("fill"));
+        assert!(refused(&filled(r#"fill="var(--bg)" fill-opacity="0.5""#)).contains("fill-opacity"));
+        assert!(refused(&filled(r#"fill="var(--bg)" opacity="0.5""#)).contains("opacity"));
+        assert!(refused(&filled(r#"fill="var(--bg)" filter="url(#f)""#)).contains("filter"));
+        assert!(refused(&filled(r#"fill="none" style="fill:red""#)).contains("style"));
+        assert!(refused(&filled(r#"stroke-width="1""#)).contains("names no fill"));
+        assert!(refused(r#"<g fill="var(--bg)"></g>"#).contains("<g fill"));
         assert!(refused(&format!("{ok}<text>3</text>")).contains("<text> is no element"));
         assert!(refused(&format!("{ok} 44 ")).contains("text \" 44 \" between the tags"));
         assert!(refused(&path(r##"stroke="#D0021B""##)).contains("stroke=\"#D0021B\""));
-        assert!(refused(&path(r#"stroke="var(--t-title)" fill="var(--accent)""#)).contains("fill"));
         assert!(refused(&path(r#"stroke="var(--t-title)" href="x""#)).contains("href"));
         assert!(refused(r#"<g transform="rotate(4)"></g>"#).contains("transform"));
         assert!(refused(&path(r#"stroke-width="1""#)).contains("names no stroke colour"));
