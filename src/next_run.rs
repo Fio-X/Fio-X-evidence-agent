@@ -1379,11 +1379,18 @@ fn one_code(dims: &BTreeMap<String, BTreeSet<String>>, d: &str) -> Option<String
 }
 
 /// The refusal of a page that sums over its unit (a total of its parts or origins, each printed as a share of it) when the
-/// unit table's additive column says no (owner decision 11-25: a chain-linked level is read but is not the sum of its
-/// parts; so is a per-head amount or a rate), naming what a page over that unit may do instead, with an example. None when
-/// the unit adds up, or when the table has no row for it (a unit with no row is refused by its fill, by name).
+/// unit is a level the unit table marks not additive: its additive column says no and its rule is an amount in a unit of
+/// measure (amount, amount_own_currency, per_capita), such as a chain-linked level or a per-head amount, whose sum across
+/// rows means nothing (owner decision 11-25: a chain-linked level is read but is not the sum of its parts). It names what
+/// a page over that unit may do instead, with an example. None when the unit adds up, when it is not additive but no such
+/// level (a rate, percentage, index, density or the like reads as before), or when the table has no row for it (a unit
+/// with no row is refused by its fill, by name).
 fn unit_sum_refused(unit: &str) -> Option<String> {
-    (next_pack::unit_table_additive(unit) == Some(false)).then(|| {
+    let level = matches!(
+        next_pack::unit_rule(unit),
+        Some("amount" | "amount_own_currency" | "per_capita")
+    );
+    (level && next_pack::unit_table_additive(unit) == Some(false)).then(|| {
         format!(
             "unit {unit} does not add up (unit-short-zh additive no), so no sum or share of a sum is taken over it; \
              a page over {unit} may take the last value, a difference, a ratio or a rank \
@@ -10368,7 +10375,7 @@ mod tests {
         };
         let (main, monthly) = tables("MIO_M3");
         assert!(ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).is_ok());
-        for unit in ["CLV10_MEUR", "CLV20_EUR_HAB"] {
+        for unit in ["CLV10_MEUR", "CLV20_EUR_HAB", "PYP_MEUR"] {
             let (main, monthly) = tables(unit);
             let why = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap_err();
             assert_eq!(
@@ -10381,11 +10388,36 @@ mod tests {
                 "{why}"
             );
         }
-        // the unit table's own word decides: an amount that adds up, or a code it has no row for, is not refused here
+        // a rate or an index the table marks not additive (pct_family, pct_change, index_base) is no level: a hub page over
+        // it is not refused for its sum, as before
+        for unit in ["PC_GDP", "PCH_M1_SA"] {
+            let (main, monthly) = tables(unit);
+            let got = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs);
+            assert!(
+                !matches!(&got, Err(e) if e.contains("does not add up")),
+                "{unit}: {:?}",
+                got.err()
+            );
+        }
+        // the unit table's own word decides: an amount that adds up, a not-additive rate or index, or a code it has no row
+        // for, is not refused here; a not-additive level (amount, amount_own_currency, per_capita) is
         assert_eq!(
-            ["MIO_M3", "PER", "GWH", "NO_SUCH_UNIT"].map(unit_sum_refused),
-            [None, None, None, None]
+            [
+                "MIO_M3",
+                "PER",
+                "GWH",
+                "NO_SUCH_UNIT",
+                "PC_GDP",
+                "PCH_M1_SA",
+                "CLV_I20",
+                "PD10_EUR"
+            ]
+            .map(unit_sum_refused),
+            [None, None, None, None, None, None, None, None]
         );
+        for unit in ["CLV10_MEUR", "CLV10_MNAC", "CLV20_EUR_HAB", "PYP_MEUR"] {
+            assert!(unit_sum_refused(unit).is_some(), "{unit}");
+        }
     }
 
     /// The ring page's fill on Hubs rows: its rows (no total or aggregate row), facts, unit format, share words, top list
@@ -17744,6 +17776,21 @@ mod tests {
                     shape_of(&recipe(name).eats, &tables, &Hubs).err(),
                     unit_sum_refused(unit).map(|w| format!("not this shape: {w}")),
                     "{name} {unit}"
+                );
+            }
+        }
+        assert!(unit_sum_refused("PYP_MEUR").is_some());
+        // a rate or an index the table marks not additive is no level: composition_groups does not refuse it for its sum
+        for unit in ["PC_GDP", "PCH_M1_SA", "CLV_I20", "PD10_EUR"] {
+            assert_eq!(unit_sum_refused(unit), None, "{unit}");
+            let (main, sums) = (in_unit(&main[..], unit), in_unit(&sums[..], unit));
+            let tables = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+            for name in ["composition", "composition_steps"] {
+                let got = shape_of(&recipe(name).eats, &tables, &Hubs);
+                assert!(
+                    !matches!(&got, Err(e) if e.contains("does not add up")),
+                    "{name} {unit}: {:?}",
+                    got.err()
                 );
             }
         }
