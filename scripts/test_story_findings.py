@@ -2221,6 +2221,35 @@ class ClosingSpeaksOfRanksOnlyWithRanks(unittest.TestCase):
                 self.assertEqual("名次" in composed["end"], ranked, (mk.__name__, picks))
 
 
+class NoNoteSaysItTwice(unittest.TestCase):
+    """The same note (the same number, by what it computes, and the same words) stands once on the page, in the first section that has it:
+    the highest over the lowest is said by the two-ends section and again by the map's range; the later one goes. A note that differs stays."""
+
+    def notes(self, req, picks):
+        c = FN.compose({**req, "picks": picks})
+        return {l: [n["num"] for n in d.get("notes", [])] for l, d in c["leaves"].items() if isinstance(d, dict) and d.get("notes")}
+
+    def test_the_ends_note_is_not_said_again_by_the_map(self):
+        from test_story_findings import eu27_request
+        for mk in (eu27_plain, lambda: eu27_plain(whole=True), eu27_request):
+            req, _ = mk()
+            both = self.notes(req, ["below", "ends", "map"])
+            self.assertIn("fact:d_hl", both["pair_bars"])
+            self.assertNotIn("fact:mrange", both["member_map"])      # the map's range is the ends' difference in the same words
+            self.assertIn("fact:mp_fi", both["member_map"])          # the map's other note says something else and stays
+            one = self.notes(req, ["below", "map", "movers"])
+            self.assertIn("fact:mrange", one["member_map"])          # with no ends section before it the map's note stands
+
+    def test_no_two_notes_of_a_page_say_the_same(self):
+        for mk in (eu27_plain, lambda: eu27_plain(whole=True), eu_request, wb24_request):
+            req, _ = mk()
+            for picks in (["below", "ends", "map"], ["ends", "rank", "movers"], ["rank", "ends", "tiles"], ["ends", "members", "overtake"]):
+                try: composed = FN.compose({**req, "picks": picks})
+                except FN.Refused: continue
+                nums = [n["num"] for d in composed["leaves"].values() if isinstance(d, dict) for n in d.get("notes", [])]
+                self.assertEqual(len(nums), len(set(nums)), (picks, nums))
+
+
 class UnitNameHoldsADigit(unittest.TestCase):
     """A unit whose short name holds a digit (a chain-linked volume's base year) comes to the child as the unit table's name entry
     (words.unit_src), never as typed words: every leaf that prints the unit prints that entry, marked with its src, and no digit is

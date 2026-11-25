@@ -1787,16 +1787,32 @@ def compose(r):
                 raise Refused(f"findings: the fact {k} is declared two ways by two findings")
             facts[k] = v
     style = {}
-    for c in chosen:   # each pick's own leaf (its main part, or its fallback) and the extra parts it was given
+    told = set()   # the notes an earlier section printed: a later note that says the same again goes
+    def says(n):
+        """A note as what it says: its number and every entry in its words by the fact each is declared as (two facts declared alike are one
+        value), its literal words as they are; two notes of two sections with one `says` are the same note."""
+        def val(key, depth=0):   # a fact by what it computes: its operands replaced by theirs, down to the rows
+            d = facts.get(key)
+            if not isinstance(d, dict) or depth > 8: return d if d is not None else key
+            return {k: (val(v, depth + 1) if k in ("a", "b") and isinstance(v, str) and v in facts else v) for k, v in d.items()}
+        decl = lambda src: json.dumps(val(re.sub(r"\.[a-z.]+$", "", src[len("fact:"):])), sort_keys=True, default=str) if src.startswith("fact:") else src
+        return (decl(n["num"]), tuple(decl(x["src"]) if "src" in x else x.get("w", json.dumps(x, sort_keys=True)) for x in n["text"]))
+    def fresh(anns):
+        keep = [n for n in anns or [] if says(n) not in told]
+        told.update(says(n) for n in keep)
+        return keep
+    for c in chosen:   # each pick's own leaf (its main part, or its fallback), in the page's order; the extra parts follow every pick's own
         main, extra = placed[c["id"]]
         # the lead's section is headed by its claim's number: a note of that number would only say it again, so it goes
         anns = [n for n in (main.get("anns") or []) if c is not chosen[0] or n["num"] != c["claim"]["num"]]
         if c is not chosen[0]: anns = unsaid(anns, c["title"], c["text"])   # a later finding's section prints its title and text
+        anns = fresh(anns)
         leaves[main["layer"]] = {**main["data"], "notes": anns} if anns else main["data"]  # the notes are the story's (story.py reads them; the leaf ignores them)
         for m in [main, *extra]:
             for leaf, kv in (m.get("style") or {}).items(): style[leaf] = {**style.get(leaf, {}), **kv}
-        for m in extra:
-            ann = unsaid(m.get("anns"), m["title"], m["text"])
+    for c in chosen:
+        for m in placed[c["id"]][1]:
+            ann = fresh(unsaid(m.get("anns"), m["title"], m["text"]))
             leaves[m["layer"]] = {**m["data"], "notes": ann} if ann else m["data"]
     first = chosen[0]
     # a strip of more than LABEL_ALL_MAX points names only the members the lead finding is about (its "about"), the rest unlabelled:
