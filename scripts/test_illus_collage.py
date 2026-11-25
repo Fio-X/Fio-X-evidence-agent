@@ -10,7 +10,7 @@ image packages blocked: the run needs the standard library only) and another mem
 (a Python mirror of next_leaf.rs hero_faults: g, path, image, defs, mask, linearGradient, stop; hex colours; png/jpeg data URLs), holds no text,
 and its accent figures (accent blocks under a clothing mask) are the declared count, its figures (outline masks) the member count; the svg is at
 most 3 MB, the pack at most 6 MB and each piece at most 150 KB; every piece's sha256 is the pack's, every figure has a CC0/PDM licence row; at least 25 figures wear
-the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 30 px at the largest tier.
+the accent, each with a clothing mask in every tier whose edge inside the figure has no straight run over 32 px at the largest tier.
 Run: python3 -I -B scripts/test_illus_collage.py"""
 import csv
 import hashlib
@@ -153,8 +153,8 @@ def accent_figures(svg, accent):
     return len(set(reds)), len(set(figs))
 
 
-STRAIGHT_PX = 30        # the longest straight run allowed on a clothing mask's edge inside the figure, at the largest tier (480 px high)
-STRAIGHT_TOL = 0.8      # px off the chord that still counts as straight
+STRAIGHT_PX = 32        # the longest straight run allowed on a clothing mask's edge inside the figure, at the largest tier (480 px high)
+STRAIGHT_TOL = 0.6      # px off the chord that still counts as straight (a rasterised polygon side stays within about half a pixel)
 NB8 = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)]
 
 
@@ -220,25 +220,39 @@ def contours(m):
     return out
 
 
+def straight_runs(run, tol):
+    """Douglas-Peucker split of an ordered run of edge pixels: the chord lengths of the pieces whose pixels all lie within tol px of their
+    chord. Unlike growing a chord until the first pixel strays (which a pixel staircase stops early), the split finds every straight piece."""
+    import math
+    out = []; stack = [(0, len(run) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (y0, x0), (y1, x1) = run[a], run[b]; L = math.hypot(y1 - y0, x1 - x0)
+        if b - a < 2: out.append(L); continue
+        if L == 0: dev = [math.hypot(y - y0, x - x0) for y, x in run[a + 1:b]]
+        else: dev = [abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / L for y, x in run[a + 1:b]]
+        k = max(range(len(dev)), key=dev.__getitem__)
+        if dev[k] <= tol: out.append(L)
+        else: stack += [(a, a + 1 + k), (a + 1 + k, b)]
+    return out
+
+
 def longest_straight(cloth, sil, tol=STRAIGHT_TOL, margin=2):
     """The longest straight run (px, chord length) of a clothing mask's edge where the edge lies inside the figure (over `margin` px inside
     its filled outline): a polygon side cutting across the clothing shows up here, the figure's own outline does not."""
-    import math
     f = filled(sil); h, w = len(f), len(f[0])
     inside = lambda y, x: all(0 <= y + dy < h and 0 <= x + dx < w and f[y + dy][x + dx] for dy in range(-margin, margin + 1) for dx in range(-margin, margin + 1))
     best = 0.0
     for pts in contours(cloth):
-        flags = [inside(*q) for q in pts]; n = len(pts); i = 0
+        flags = [inside(*q) for q in pts]; n = len(pts)
+        if not all(flags):                      # start at a point on the outline, so a run inside never wraps round the start
+            s = flags.index(False); pts = pts[s:] + pts[:s]; flags = flags[s:] + flags[:s]
+        i = 0
         while i < n:
             if not flags[i]: i += 1; continue
             j = i
             while j + 1 < n and flags[j + 1]: j += 1
-            run = pts[i:j + 1]
-            for a in range(len(run)):
-                for b in range(a + 2, len(run)):
-                    (y0, x0), (y1, x1) = run[a], run[b]; L = math.hypot(y1 - y0, x1 - x0)
-                    if max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / L for y, x in run[a + 1:b]) > tol: break
-                    best = max(best, L)
+            best = max([best] + straight_runs(pts[i:j + 1], tol))
             i = j + 1
     return best
 
@@ -575,6 +589,9 @@ class Pack(unittest.TestCase):
         disc = [[1 if (y - 100) ** 2 + (x - 60) ** 2 < 45 ** 2 else 0 for x in range(120)] for y in range(200)]
         self.assertLess(longest_straight(disc, sil), STRAIGHT_PX)                       # and passes a curved edge
         self.assertEqual(longest_straight(box, box), 0)                                 # and ignores the figure's own outline
+        fx = os.path.join(HERE, "fixtures", "collage_masks")                          # the 856579_1 mask of an earlier pack: a straight side along the jug,
+        old = [png_bits(open(os.path.join(fx, f"856579_1-d75a305f.l.{k}.png"), "rb").read()) for k in ("cloth", "sil")]   # a flat step, a straight shoulder
+        self.assertGreater(longest_straight(*old), 50)
 
     def test_the_pack_holds_no_local_path_or_non_english_text(self):
         for name in ("pack.json", "LICENSES.tsv", "draw.py"):
