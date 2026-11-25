@@ -371,6 +371,12 @@ def to_average(q, f, base, num, d, avg, avg_key, avg_facts, n, **bind):
     return note(num, word, k=k, **bind)
 
 
+def plain_ends(hi, lo):
+    """The suffix of a highest-and-lowest headline: "" (the words with a verb before each number, "reaches N", "only N") when both values
+    are above 0, else "_nov" (the same numbers with no verb: "reaches" or "only" before a value of 0 or below would mislead)."""
+    return "" if hi > 0 and lo > 0 else "_nov"
+
+
 def clamp(x):
     return max(0.0, min(1.0, x))
 
@@ -892,7 +898,7 @@ def angle_rank(q):
         why = {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "above_whole": n_above}
     else:
         surprise = 0.5
-        title = T("story.rank.title_top", hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
+        title = T("story.rank.title_top" + plain_ends(at[hi], at[lo]), hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
         text = T("story.rank.text_top", hi=hi, lo=lo, y=key(hi))
         claim = {"num": f"fact:{key(hi)}", "head": T("story.rank.claim_top", hi=hi)}
         head, why_line = ST("story.rank.gap_top_head" + "_pp" * pct), "every member's value at the last year, highest first"
@@ -1015,7 +1021,7 @@ def angle_map(q):
     f["mrange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
     mx = ratio(q, f, "mx", key(hi), key(lo), at[hi], at[lo])
     second = ranked[1]
-    tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain")
+    tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
             "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": f"fact:{key(c)}"} if c in called else {})) for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.map.foot")}
@@ -1204,7 +1210,7 @@ def angle_tiles(q):
     key = lambda c: f"tl_{c.lower()}"
     f = {key(c): q.value(c, y) for c in members}
     f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
-    tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain")
+    tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain") + plain_ends(at[hi], at[lo])
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
             "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
             "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}

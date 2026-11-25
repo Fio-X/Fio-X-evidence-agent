@@ -2429,11 +2429,60 @@ class SuperlativeTitles(unittest.TestCase):
             for picks in (["rank", "tiles"], ["map", "rank"], ["tiles", "rank"]):
                 if picks[0] not in {c["id"] for c in FN.candidates(req)[1]}: continue
                 h1 = self.headline(req, names, picks)
-                if "排第" in h1: continue   # the rank with a whole leads with where the whole stands (story.rank.title), not this form
+                if "是第" in h1:   # the rank with a whole leads with where the whole stands (story.rank.title): a verb before its number too
+                    self.assertRegex(h1, r"^欧盟在 2024 年是第 [0-9]+ 名，[^，]+最高、[^，]+最低$"); self.assertTrue(self.has_verb(h1, names.values()), h1)
+                    seen.add(("rank_whole", True)); continue
                 self.assertTrue(self.has_verb(h1, names.values()), h1)
                 self.assertRegex(h1, r"达 [0-9]"); self.assertRegex(h1, r"只有 [0-9]")
                 seen.add((picks[0], "%" in h1))
-        self.assertTrue({("rank", True), ("rank", False), ("map", True), ("map", False), ("tiles", True), ("tiles", False)} <= seen, seen)
+        self.assertTrue({("rank_whole", True), ("rank", True), ("rank", False), ("map", True), ("map", False), ("tiles", True), ("tiles", False)} <= seen, seen)
+
+    # the headlines as they were before the verbs (commit 011035b3), byte for byte: what a lowest of 0 or below keeps
+    OLD = {"story.rank.title_top": "{n:hi}最高，{f:rhi}；{n:lo}最低，{f:rlo}",
+           **{f"story.map.title_{s}": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}" + t
+              for s, t in (("plain", ""), ("east", "；东边的偏高"), ("west", "；西边的偏高"), ("north", "；北边的偏高"), ("south", "；南边的偏高"))},
+           **{f"story.tl.title_{s}": "{y:y1}，" + h + "最高的{n:hi}，{f:thi}；最低的{n:lo}，{f:tlo}"
+              for s, h in (("plain", ""), ("north", "北边的偏高："), ("south", "南边的偏高："), ("east", "东边的偏高："), ("west", "西边的偏高："))}}
+
+    def as_title(self, text, prefix, hi, lo):
+        """A headline template as the page's wording with the angle's binding (hi, lo, their value facts <prefix><code>, the year of hi's)."""
+        k = lambda c: f"{prefix}{c.lower()}"
+        out = text.replace("{y:y1}", "{%s.t}" % k(hi)).replace("{n:hi}", "{name.%s}" % hi).replace("{n:lo}", "{name.%s}" % lo)
+        return re.sub(r"\{f:\w+(hi|lo)\}", lambda m: "{%s}" % k(hi if m.group(1) == "hi" else lo), out)
+
+    def test_the_old_words_are_kept_as_the_no_verb_variants(self):
+        for key, text in self.OLD.items():
+            self.assertEqual(FN.WD.WORDS[f"{key}_nov"], text, key)
+            self.assertEqual(re.findall(r"\{[fyn]:\w+\}", FN.WD.WORDS[key]), re.findall(r"\{[fyn]:\w+\}", text), key)
+
+    def test_a_lowest_of_zero_or_below_keeps_the_old_headline_on_two_shapes(self):
+        eu, eu_names = eu27_request()
+        eu = NotesStandAgainstAReference.pct(None, eu)
+        eu = {**eu, "rows": [r for r in eu["rows"] if r["dims"].get("geo") != "EU27_2020"], "main": {k: v for k, v in eu["main"].items() if k != "whole"}}
+        wb, wb_names = wb12_request()
+        family = {"rank": ("story.rank.title_top", "r_"), "map": ("story.map.title_", "mp_"), "tiles": ("story.tl.title_", "tl_")}
+        seen = set()
+        for req, names, low, last in ((eu, eu_names, "LU", "2024"), (wb, wb_names, "IND", "2022")):
+            text = isinstance(req["rows"][0]["value"], str)
+            for v in (None, 0.0, -1.5):   # as it is (every value above 0), a lowest of 0, a lowest below 0
+                rows = req["rows"] if v is None else [dict(r, value=(f"{v:.2f}" if text else v)) if r["dims"].get(req["main"]["by"]) == low and r["time"] == last else r for r in req["rows"]]
+                r = {**req, "rows": rows}
+                ids = {c["id"] for c in FN.candidates(r)[1]}
+                if v is not None and v < 0: self.assertNotIn("rank", ids)   # the rank draws bars: a value below 0 drops it
+                for lead in ("rank", "map", "tiles"):
+                    if lead not in ids: continue
+                    title = FN.compose({**r, "picks": [lead, next(i for i in ("ends", "movers", "tiles", "map") if i in ids and i != lead)]})["title"]   # the ends need the lowest above 0
+                    hi, lo = re.findall(r"\{name\.(\w+)\}", title)[:2]
+                    if v is not None: self.assertEqual(lo, low)
+                    head, prefix = family[lead]
+                    keys = [k for k in self.OLD if k.startswith(head)]
+                    want = {self.as_title((self.OLD[k] if v is not None else FN.WD.WORDS[k]), prefix, hi, lo) for k in keys}
+                    self.assertIn(title, want, (lead, v))
+                    self.assertEqual("达 " in title or "只有 " in title, v is None, (lead, v, title))
+                    seen.add((lead, v, text))
+        for lead in ("map", "tiles"):
+            self.assertTrue({(lead, v, t) for v in (None, 0.0, -1.5) for t in (False, True)} <= seen, (lead, seen))
+        self.assertTrue({("rank", v, t) for v in (None, 0.0) for t in (False, True)} <= seen, seen)
 
 
 if __name__ == "__main__":
