@@ -482,7 +482,7 @@ class Collage(unittest.TestCase):
         close.fac_max x the mean width of two neighbours) and no figure is cut by the sheet's edge. Blank paper is counted on the drawn geometry:
         every figure's 1-bit outline grid (pack.json grid.sil) painted at its drawn box onto 4 px cells, then the 40 px cells of the 1440 x 560
         frame with at most 2% of their area painted (the faint far figures included, shadows and grain not). At N = 30 the queue's geometry
-        (hero box, queue x, feet and heights) is pinned by its sha256, at both widths and for a proportion: the close view is off from N = 24."""
+        (queue x, feet and heights; the hero box follows which figure is the hero) is pinned by its sha256, at both widths and for a proportion: the close view is off from N = 24."""
         def blank(svg, comp):
             cov = CD.Cover(4); ids = {f"clg-s{j}": p for j, p in enumerate(comp["pieces"][:comp["queue"]])}
             if comp["hero"]: ids["clg-sh"] = comp["pieces"][-1]
@@ -514,10 +514,10 @@ class Collage(unittest.TestCase):
         hs = [R.build_collage(top_req(n, 3))[5] for n in range(12, 27, 2)]          # no jump: the view steps back over the ramp
         self.assertEqual([c["close"] for c in hs[:2]], [1.0, 1.0]); self.assertEqual([c["close"] for c in hs[-2:]], [0.0, 0.0])
         self.assertTrue(all(a["hero_h"] >= b["hero_h"] and a["hero_h"] - b["hero_h"] <= 2 * C["shift"]["hero_h"] / (C["ramp"][1] - C["ramp"][0]) + 1e-6 for a, b in zip(hs, hs[1:])))
-        geo = lambda c: hashlib.sha256(json.dumps({k: c[k] for k in ("hero_box", "queue_x", "queue_feet", "queue_heights")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        self.assertEqual(geo(self.out["n30k12"][5]), "4b1ef588fb7e68bd71776cfb4e5dfa4512e709a11113ab2441d690298ead2ff8")
-        self.assertEqual(geo(R.build_collage(top_req(30, 12, width=1440))[5]), "9454d4bed81a7b4d39220032eb7d6e46bfdb4211df9705d0ae8b8f25ce07a768")
-        self.assertEqual(geo(R.build_collage(prop_req(0.3, count=9))[5]), "16f12ed7d9d1c5c2505ea718a8bcad7f8ce90eab47b5c8ac1fb919251832a9f2")
+        geo = lambda c: hashlib.sha256(json.dumps({k: c[k] for k in ("queue_x", "queue_feet", "queue_heights")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual(geo(self.out["n30k12"][5]), "5a2cb9b619ca1818e8377ceaa1c6d3ed07b9815be6f0454d951fe72df9d32242")
+        self.assertEqual(geo(R.build_collage(top_req(30, 12, width=1440))[5]), "5a2cb9b619ca1818e8377ceaa1c6d3ed07b9815be6f0454d951fe72df9d32242")
+        self.assertEqual(geo(R.build_collage(prop_req(0.3, count=9))[5]), "5a2cb9b619ca1818e8377ceaa1c6d3ed07b9815be6f0454d951fe72df9d32242")
         self.assertEqual(self.out["n30k12"][5]["close"], 0.0)
 
     def test_colours_are_the_request_accent_else_the_pages(self):
