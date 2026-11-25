@@ -35,6 +35,29 @@ def digit(text):
     """Whether a text holds a digit (any numeric character, as layer 1 counts one) outside its {key} placeholders."""
     return any(unicodedata.category(ch) in ("Nd", "Nl", "No") for ch in re.sub(r"\{[A-Za-z_][\w.]*\}", "", text))
 
+SENTENCE_END = "。！？"
+
+
+def long_unit(u):
+    """Whether a number's unit is words (a unit name), not nothing or the percent sign that is the number's own mark."""
+    return u.strip() not in ("", "%")
+
+
+def unit_runs(spec, F, text):
+    """For each number placeholder {key} of text in order (no part: {key.n} and {key.t} are no such number): True when its unit is left
+    off. In a run of numbers of one unit that is words (two or more in a sentence, nothing between them but words, names, years and
+    numbers with no unit), the unit follows only the last; a number of another unit (a ratio, a percent) or a sentence's end ends a run."""
+    flags, prev = [], None
+    for mo in re.finditer(r"\{([a-z0-9_.]+)\}|[" + SENTENCE_END + "]", text):
+        if mo.group(1) is None: prev = None; continue
+        k, _, part = mo.group(1).partition(".")
+        if part: continue
+        u = unit(spec, F[k]).strip() if k in F else ""
+        if prev is not None and prev[1] == u and long_unit(u): flags[prev[0]] = True
+        flags.append(False); prev = (len(flags) - 1, u)
+    return flags
+
+
 def worded(spec, F, which, wording):
     """A drafted wording (which: "dek", "unit" or "notes.<i>", the hero's i-th note) filled like any text. With a ledger it prints from layer 1's segments:
     {"w": words} filled, {"src": entry} the date entry marked; segments that do not spell the wording, or leave a digit
@@ -48,7 +71,8 @@ def worded(spec, F, which, wording):
     if "".join(s["w"] if "w" in s else text(s["src"]) for s in segs) != wording:
         raise Refused(f"{which}: the request's segments do not spell {wording!r}")
     if any(digit(s["w"]) for s in segs if "w" in s): raise Refused(f"{which}: a segment's words hold a digit")
-    return "".join(fill(spec, F, s["w"]) if "w" in s else entry(s["src"], "span", None) for s in segs)
+    flags = iter(unit_runs(spec, F, wording))   # the runs of one unit over the whole wording, whichever segment each number is in
+    return "".join(fill(spec, F, s["w"], flags) if "w" in s else entry(s["src"], "span", None) for s in segs)
 
 def members():
     """The aggregate's member codes the request gives; a query that leaves the members out refuses without them."""
@@ -215,10 +239,13 @@ def period_words(stem):
         return word("date.half", y=y, h=entry(f"{stem}.h", "span", None))
     return word("date.y", y=y)
 
-def fill(spec, F, text):
+def fill(spec, F, text, flags=None):
     """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit. With a ledger
-    only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts."""
+    only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts.
+    In a run of numbers of one unit that is words, only the run's last {key} writes its unit (unit_runs; `flags`, an iterator
+    over a whole wording's, when text is one segment of it)."""
     import re
+    if flags is None: flags = iter(unit_runs(spec, F, text))
     def name(mo):
         # {name.<code>}: a place's (or a part's) name as layer 1 names it (next_run NAME_PLACEHOLDER), marked with its name row
         # so the page checks read which place the words name: with a ledger the one name row of the code (a src ending
@@ -235,12 +262,13 @@ def fill(spec, F, text):
     text = re.sub(r"\{name\.([A-Za-z0-9_]+)\}", name, text)
     def sub(mo):
         k, _, part = mo.group(1).partition(".")
+        off = not part and next(flags, False)   # a number before the last of its run of one unit: the number alone
         if LEDGER is not None:
             if part == "t": return period(spec, k)
             if part == "n": return entry(f"fact:{k}.n")
-            return f'<b class="n">{entry(f"fact:{k}.n", "span", None)}{html.escape(unit(spec, F[k]), quote=False)}</b>'
+            return f'<b class="n">{entry(f"fact:{k}.n", "span", None)}{"" if off else html.escape(unit(spec, F[k]), quote=False)}</b>'
         if part == "t": return spec["fmts"]["time"].get("prefix", "") + tlabel(F[k]["t"])
-        return f'<b class="n">{fmt(spec, F[k], bare=part == "n")}</b>'
+        return f'<b class="n">{fmt(spec, F[k], bare=part == "n" or off)}</b>'
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
 
 def placed(text):
