@@ -2869,7 +2869,9 @@ def unit_shape(kind):
     """(request, names, the unit a label would print, the head's expected name) of three shapes: a World Bank tonnes-per-head shape
     (CO2 per capita), a World Bank US dollars per head shape (GDP per head) and a Eurostat percent share (unchanged)."""
     if kind == "pct":
-        req, names = percent(lambda: eu27_plain(whole=True))()
+        req, names = eu27_plain(whole=True)
+        # the value format under a name of its own: the facts child reads "x" as a ratio's format (no unit), so the page would print none
+        req = {**req, "fmts": {**req["fmts"], "value": "val"}, "fmt_defs": {**req["fmt_defs"], "val": {**FMT_DEFS["x"], "suffix": "%"}}}
         return req, names, "%", req["words"]["measure"]
     if kind == "co2":
         req, unit, measure, head = linear_request(WB_T + "@2", "country", WB12, 2016, 2024, text=True), "吨二氧化碳当量/人", CO2_LONG, "碳排放"
@@ -2877,7 +2879,8 @@ def unit_shape(kind):
     else:
         ends = {c: (a * 1000, b * 1000) for c, (a, b) in WB12.items()}
         req, unit, measure, head = linear_request("NY.GDP.PCAP.CD", "country", ends, 2016, 2024, text=True), "美元/人", "人均国内生产总值（现价美元）", "人均GDP"
-    req["fmt_defs"] = {**FMT_DEFS, "x": {"scale": 1, "dec": 1, "suffix": " " + unit}}
+    req["fmts"] = {**req["fmts"], "value": "val"}
+    req["fmt_defs"] = {**FMT_DEFS, "val": {"scale": 1, "dec": 1, "suffix": " " + unit}}
     req["words"] = {"measure": measure, "unit": unit}
     return req, WB12_NAMES, unit, head
 
@@ -2954,7 +2957,7 @@ class UnitsOnceShortHeadsTimesWord(unittest.TestCase):
             composed, facts, drawn = draw_all(self, req, names, ["ends", "rank", "movers"])
             claims = composed["leaves"]["thesis_claims"]["claims"]
             for c in claims:
-                is_times = composed["facts"][c["num"][len("fact:"):]].get("op") == "times"
+                is_times = composed["facts"][re.sub(r"^fact:|\.n$", "", c["num"])].get("op") == "times"   # a number whose unit is words is its bare entry
                 self.assertEqual(c.get("num_unit"), [{"w": times}] if is_times else None, (kind, c["num"]))
             self.assertEqual(claims[0]["num"], "fact:hi_lo", kind)
             self.assertRegex(str(drawn["thesis_claims"]), r'data-src="fact:hi_lo"[^>]*>[^<]*</tspan>' + re.escape(times), kind)
@@ -2965,6 +2968,94 @@ class UnitsOnceShortHeadsTimesWord(unittest.TestCase):
         self.assertEqual(column.times_word(ctx, "r"), times)
         self.assertEqual(column.times_word(ctx, "v"), "")
         self.assertEqual(column.times_word(ctx, "s"), "")   # a ratio whose format already puts a unit after it
+
+
+def unit_page(test, kind, picks):
+    """A unit shape's page drawn by the real child with the shape's own formats: (composed, facts, page html, unit)."""
+    from unittest import mock
+    req, names, unit, _ = unit_shape(kind)
+    with mock.patch.dict(FMT_DEFS, req["fmt_defs"]):
+        composed, facts, _, page_html = Findings._page(test, req, names, picks)
+    return composed, facts, page_html, unit
+
+
+def flat(x):
+    return re.sub(r"<[^>]+>", "", x)
+
+
+def heads_of(page_html):
+    """The page's headline, dek and section titles and texts, each as html."""
+    return [m for m in re.findall(r"<h1>(.*?)</h1>|<p class=\"?dek\"?>(.*?)</p>|<h2\b[^>]*>(.*?)</h2>", page_html, re.S) for m in m if m]
+
+
+class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
+    """A run of numbers of one unit that is words in a sentence writes the unit after its last number only; a big number (the header's,
+    a claim's) and a short note's bold number print alone, the unit once in the words beside them; a percent sign stays on each number.
+    On a tonnes-per-head, a US-dollars-per-head and a percent shape, every number printed a ledger entry recomputed from the facts."""
+
+    PICKS = ["movers", "rank", "ends", "members"]
+
+    def numbers(self, html_, facts):
+        """The fact entries printed in html_, each checked against the facts recomputed by this test (one decimal place)."""
+        got = re.findall(r'data-src="fact:([a-z0-9_]+)\.n">([^<]*)<', html_)
+        for k, text in got:
+            self.assertEqual(text, f"{facts[k]['v']:,.1f}" if facts[k]["fmt"] == "val" else text, k)
+        return got
+
+    def test_the_run_finder_reads_units_and_sentences(self):
+        import facts as FX
+        spec = {"fmts": {"t": {"suffix": " 吨/人"}, "d": {"suffix": " 吨/人"}, "p": {"suffix": "%"}, "r": {"suffix": ""}, "u": {"suffix": " 美元/人"}}}
+        F = {"a": {"fmt": "t"}, "b": {"fmt": "d"}, "c": {"fmt": "p"}, "e": {"fmt": "p"}, "x": {"fmt": "r"}, "m": {"fmt": "u"}}
+        self.assertEqual(FX.unit_runs(spec, F, "从 {a} 降到 {b}，降得最多"), [True, False])
+        self.assertEqual(FX.unit_runs(spec, F, "{a.t}，{name.USA} 达 {a}；{name.NGA}只有 {b}"), [True, False])
+        self.assertEqual(FX.unit_runs(spec, F, "{a} 是 {x} 倍，{b}"), [False, False, False])     # a ratio between ends the run
+        self.assertEqual(FX.unit_runs(spec, F, "{a}。{b}"), [False, False])                     # so does a sentence's end
+        self.assertEqual(FX.unit_runs(spec, F, "{a} 和 {m}"), [False, False])                   # two units
+        self.assertEqual(FX.unit_runs(spec, F, "从 {c} 到 {e}"), [False, False])                # a percent sign stays on each
+
+    def test_a_run_of_one_unit_writes_the_unit_after_its_last_number(self):
+        for kind in ("co2", "usd", "pct"):
+            composed, facts, page_html, unit = unit_page(self, kind, self.PICKS)
+            runs = 0
+            for h in heads_of(page_html):
+                nums = [k for k, _ in self.numbers(h, facts) if facts[k]["fmt"] == "val"]
+                if kind == "pct":
+                    self.assertGreaterEqual(flat(h).count("%"), len(nums), h)
+                    continue
+                self.assertLessEqual(flat(h).count(unit), 1, (kind, flat(h)))
+                if len(nums) > 1:
+                    runs += 1
+                    self.assertTrue(flat(h).rstrip("，。；").endswith(unit) or re.search(re.escape(unit) + r"[^0-9]*$", flat(h)), (kind, flat(h)))
+            if kind != "pct": self.assertGreaterEqual(runs, 2, kind)
+
+    def test_big_numbers_print_alone_and_their_label_carries_the_unit(self):
+        paren = lambda u: FN.WD.WORDS["paren"].replace("{v}", u)
+        for kind in ("co2", "usd", "pct"):
+            composed, facts, page_html, unit = unit_page(self, kind, self.PICKS)
+            cells = re.findall(r'<div class="bv"[^>]*>(.*?)</div><div class="bl">(.*?)</div>', page_html, re.S)
+            self.assertEqual(len(cells), 3, kind)
+            for v, lab in cells:
+                self.numbers(v, facts)
+                if kind == "pct":
+                    self.assertIn("%", flat(v)); self.assertNotIn(paren("%"), flat(lab))
+                else:
+                    self.assertNotIn(unit, flat(v)); self.assertTrue(flat(lab).endswith(paren(unit)), (kind, flat(lab)))
+            for c in composed["leaves"]["thesis_claims"]["claims"]:
+                f = composed["facts"][re.sub(r"^fact:|\.n$", "", c["num"])]
+                worded = kind != "pct" and FN.cell_src(FN.Req({**unit_shape(kind)[0]}), "k", f["fmt"]).endswith(".n")
+                self.assertEqual(c["num"].endswith(".n"), worded, (kind, c["num"]))
+                self.assertEqual(c["head"][-1] == {"w": paren(unit)}, worded, (kind, c["head"]))
+
+    def test_a_note_s_bold_number_prints_alone_and_its_words_say_the_unit_once(self):
+        for kind in ("co2", "usd", "pct"):
+            composed, facts, page_html, unit = unit_page(self, kind, self.PICKS)
+            notes = re.findall(r'<li class="note"><b class="n">(.*?)</b><span class="nt">(.*?)</span></li>', page_html, re.S)
+            self.assertTrue(notes, kind)
+            for num, words in notes:
+                self.numbers(num, facts)
+                if kind == "pct": continue
+                self.assertNotIn(unit, flat(num), kind)
+                self.assertEqual(flat(words).count(unit), 1, (kind, flat(words)))
 
 
 if __name__ == "__main__":
