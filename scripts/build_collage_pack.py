@@ -102,7 +102,7 @@ CLOTH = {
 # The figures that may be the hero (pack.json hero_ok), each checked by eye over the engraving at 100% of the largest tier: the red
 # reaches the shoulders and the collar and covers the sleeves, the face, hair, headscarf, hands and held objects stay out, no bite at the
 # neck, no straight line across the chest. Every one is red_ok with a clothing solidity of at least the renderer's hero_solidity (0.55).
-HERO_OK = {"856576_0", "856576_2", "856578_0", "856579_0", "856579_1", "856581_1", "856584_1"}
+HERO_OK = {"856576_2", "856578_0", "856579_0", "856579_1", "856581_1", "856584_1"}
 TIERS = (("l", 480), ("m", 240), ("s", 120))
 LEVELS = 32                 # alpha levels of a lines piece
 INK = 42                    # the grey of the engraving lines
