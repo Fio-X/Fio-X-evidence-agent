@@ -165,9 +165,9 @@ def compute(facts, rows, members):
         elif op == "reach_year":
             s, r, g = get(q["start"]), get(q["rate"]), get(q["target"]); assert r["v"] > 0, k
             f.update(v=int(s["t"]) + math.ceil((g["v"] - s["v"]) / r["v"]))
-        elif op in ("minus", "times"):
+        elif op in ("minus", "times", "plus"):
             a, b = get(q["a"]), get(q["b"])
-            f.update(v=a["v"] - b["v"] if op == "minus" else a["v"] / b["v"])
+            f.update(v={"minus": a["v"] - b["v"], "plus": a["v"] + b["v"]}.get(op) if op != "times" else a["v"] / b["v"])
         elif op == "position":
             rs = sel(q)
             at = {}
@@ -2161,7 +2161,8 @@ class NotesStandAgainstAReference(unittest.TestCase):
             srcs = [x["src"] for x in n["text"] if "src" in x]
             words = self.words(n)
             self.assertIn(f"从第 ", words); self.assertIn(verb, words)
-            a, b = (composed["facts"][x[5:]] for x in srcs)
+            a, b = (composed["facts"][x[5:]] for x in srcs[:2])   # a third, the multiple of the average move, when the note has one (ChangeNotes)
+            self.assertEqual(srcs[2:], [f"fact:k_{num[5:]}"] if len(srcs) > 2 else [])
             self.assertEqual((a["op"], b["op"]), ("position", "position"))          # the ranks are the position facts the rows print
             self.assertEqual(sorted({a["time"], b["time"]}), sorted({composed["facts"][srcs[0][5:]]["time"], composed["facts"][srcs[1][5:]]["time"]}))
             diff = facts[num[5:]]["v"]
@@ -2198,6 +2199,185 @@ class NotesStandAgainstAReference(unittest.TestCase):
         req, names = eu27_request()
         self.stands_against_the_lowest(req, names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", False)
         self.stands_against_the_lowest(self.pct(req), names, ["path", "tiles"], "tiles", "整体的值", "vs_whole", True)
+
+# ---------------------------------------------------------------- the change notes against the members' average change
+
+def linear_request(table, by, ends, y0, y1, whole=None, fixed=None, text=False):
+    """A request whose places go in a straight line from their first value to their last (test-only values, no noise): ends is
+    {code: (first, last)}; `text` gives the values as the source's decimal text (the World Bank shape)."""
+    fixed = fixed or {}
+    rows = []
+    for c, (a, b) in ends.items():
+        for y in range(y0, y1 + 1):
+            v = round(a + (b - a) * (y - y0) / (y1 - y0), 6)
+            r = row(table, fixed, by, c, y, v)
+            rows.append({**r, "value": f"{v:.2f}"} if text else r)
+    main = {"table": table, "by": by, "filter": fixed, **({"whole": whole} if whole else {})}
+    if whole: main["members"] = [c for c in ends if c != whole]
+    return {"rows": rows, "main": main, "fmts": FMTS, "fmt_defs": FMT_DEFS, "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}}
+
+
+WB_T = "EN.GHG.CO2.PC.CE.AR5"
+# most rose (the mean change is above 0): the far end of the order fell (no multiple of an average that rose), the member that led at the
+# start rose more than the average (the multiple of it)
+WB_MOST_ROSE = {"USA": (16.0, 17.0), "CHN": (5.0, 9.0), "IND": (1.0, 2.0), "BRA": (2.0, 2.5), "IDN": (1.5, 2.6), "DEU": (10.0, 8.0),
+                "JPN": (9.0, 9.5), "ZAF": (8.0, 7.5)}
+# one fell far, the rest rose and the mean rose: the far end is the one that rose most
+WB_ONE_FELL = {"USA": (20.0, 10.0), "CHN": (5.0, 9.0), "IND": (1.0, 2.0), "BRA": (2.0, 2.5), "IDN": (1.5, 2.6), "JPN": (9.0, 9.5),
+               "DEU": (8.0, 10.0), "ZAF": (6.0, 9.0)}
+# the changes sum to 0: the mean did not move
+WB_FLAT_MEAN = {"USA": (17.0, 18.0), "DEU": (9.0, 8.0), "CHN": (6.0, 8.0), "IND": (4.0, 2.0), "BRA": (2.5, 3.0), "ZAF": (8.5, 8.0)}
+WB_NAMES_ALL = {**WB12_NAMES, "IDN": "印度尼西亚"}
+
+
+class ChangeNotes(unittest.TestCase):
+    """The change notes (spread, movers, overtake) say how many times the members' average change the mover's change is, from facts:
+    the average a mean fact over the same members (the mean at the last year less the mean at the first; the rank's, the places' moves
+    summed over the bottom place's rank), the multiple a times fact; with no average to stand on (fewer than three members, a mean of 0,
+    one that went the other way) the note is the old sentence byte for byte and declares no fact for it."""
+
+    def notes(self, req, picks, sid, names):
+        composed = FN.compose({**req, "picks": picks})
+        sec = next(x for x in composed["sections"] if x["id"] == sid)
+        _, facts = ledger(req, composed, names)
+        return composed, facts, {n["num"][5:]: n for n in composed["leaves"][sec["layer"]]["notes"]}
+
+    def words(self, note):
+        return "".join(x.get("w", "") for x in note["text"])
+
+    def at(self, req, code, year):
+        return next(float(r["value"]) for r in req["rows"] if r["dims"].get(req["main"]["by"]) == code and r["time"] == str(year) and r["table"] == req["main"]["table"])
+
+    def has_k(self, note, num, facts, want):
+        """The note ends with its multiple, the fact k_<num> (op times), worth `want`."""
+        srcs = [x["src"] for x in note["text"] if "src" in x]
+        self.assertEqual(srcs[-1], f"fact:k_{num}", self.words(note))
+        self.assertTrue(self.words(note).endswith(" 倍"), self.words(note))
+        self.assertAlmostEqual(facts[f"k_{num}"]["v"], want, places=6)
+
+    def test_the_rank_notes_are_set_against_the_average_rank_move_on_a_percent_shape(self):
+        for req, names in (eu27_request(), (NotesStandAgainstAReference.pct(None, eu27_request()[0]), EU27_NAMES)):
+            composed, facts, notes = self.notes(req, ["movers", "overtake", "tiles"], "overtake", names)
+            places = [*EU27, "EU27_2020"]
+            v0, v1 = ({c: self.at(req, c, y) for c in places} for y in (2005, 2024))
+            rank = lambda v: {c: 1 + sum(1 for w in v.values() if w > v[c]) for c in v}
+            r0, r1 = rank(v0), rank(v1)
+            move = sum(abs(r0[c] - r1[c]) for c in places) / len(places)   # the average rank move, every place of the slope (the whole among them)
+            for num, word in (("ot_fall", "story.note.ot.fall_ref"), ("ot_rise", "story.note.ot.rise_ref")):
+                n = notes[num]
+                self.assertEqual(n["text"], FN.ST(word, c=next(x["name"] for x in n["text"] if "name" in x), a=n["text"][3]["src"][5:], b=n["text"][5]["src"][5:], k=f"k_{num}"))
+                self.assertTrue(self.words(n).endswith("，是平均名次变动的  倍"), self.words(n))
+                self.has_k(n, num, facts, facts[num]["v"] / move)
+                self.assertGreater(facts[f"k_{num}"]["v"], 1)
+            # the average is the summed moves over a position fact worth the number of places (the bottom place's rank), no count of places
+            avg = composed["facts"]["ot_avg"]
+            self.assertEqual(avg["op"], "times"); self.assertEqual(composed["facts"][avg["b"]]["op"], "position")
+            self.assertEqual(facts[avg["b"]]["v"], len(places))
+            self.assertEqual({q.get("op") for q in composed["facts"].values()} & {"n", "count"}, set())
+            self.assertAlmostEqual(facts["ot_avg"]["v"], move, places=9)
+
+    def test_the_value_notes_are_set_against_the_average_change_on_a_world_bank_shape(self):
+        # the spread: the mean fell, so the one that fell most is set against it and the one that rose most keeps its old words
+        req, names = wb_request()
+        composed, facts, notes = self.notes(req, ["spread", "ends"], "spread", names)
+        ch = {c: self.at(req, c, 2022) - self.at(req, c, 2010) for c in WB}
+        mean = sum(ch.values()) / len(ch)
+        self.assertLess(mean, 0)
+        self.assertEqual(notes["d_usa"]["text"], FN.ST("story.note.spread.fall_ref", c="USA", k="k_d_usa"))
+        self.has_k(notes["d_usa"], "d_usa", facts, ch["USA"] / mean)
+        self.assertEqual(composed["facts"]["sp_mch"], {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": "x"})
+        self.assertEqual((composed["facts"]["sp_m0"]["op"], composed["facts"]["sp_m0"]["filter"]["country"]), ("mean", sorted(WB)))
+        self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise", c="CHN"))   # opposite sign: the old sentence
+        self.assertNotIn("k_d_chn", composed["facts"])
+        # the movers: the far end fell while the mean rose (old words); the member that led at the start rose more than the mean
+        req = linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True)
+        composed, facts, notes = self.notes(req, ["movers", "ends"], "movers", WB_NAMES_ALL)
+        ch = {c: b - a for c, (a, b) in WB_MOST_ROSE.items()}; mean = sum(ch.values()) / len(ch)
+        self.assertEqual(notes["mv_do"], FN.note("mv_do", "story.note.mv.down_most", c="DEU"))
+        self.assertNotIn("k_mv_do", composed["facts"])
+        self.assertEqual(notes["mv_dl"]["text"], FN.ST("story.note.mv.lead_up_ref", c="USA", k="k_mv_dl"))
+        self.has_k(notes["mv_dl"], "mv_dl", facts, ch["USA"] / mean)
+        self.assertEqual(composed["facts"]["k_mv_dl"], {"op": "times", "a": "mv_dl", "b": "mv_mup", "fmt": "times"})
+        # one fell far and the mean rose: the one that rose most, k times the mean rise
+        req = linear_request(WB_T, "country", WB_ONE_FELL, 2010, 2022, text=True)
+        composed, facts, notes = self.notes(req, ["movers", "ends"], "movers", WB_NAMES_ALL)
+        ch = {c: b - a for c, (a, b) in WB_ONE_FELL.items()}; mean = sum(ch.values()) / len(ch)
+        self.assertEqual(notes["mv_do"]["text"], FN.ST("story.note.mv.up_most_ref", c="CHN", k="k_mv_do"))
+        self.has_k(notes["mv_do"], "mv_do", facts, ch["CHN"] / mean)
+
+    def test_the_smallest_mover_says_the_average_is_k_times_it(self):
+        """All rose: the far end rose least, and the larger (the average) is the one said to be N times (the level notes' rule)."""
+        req, names = eu27_request()
+        composed, facts, notes = self.notes(req, ["movers", "tiles"], "movers", names)
+        ch = {c: self.at(req, c, 2024) - self.at(req, c, 2005) for c in EU27}; mean = sum(ch.values()) / len(ch)
+        lo = min(ch, key=lambda c: (ch[c], c))
+        self.assertEqual(notes["mv_do"]["text"], FN.ST("story.note.mv.up_least_ref_lo", c=lo, k="k_mv_do"))
+        self.has_k(notes["mv_do"], "mv_do", facts, mean / ch[lo])
+        self.assertEqual(composed["facts"]["k_mv_do"], {"op": "times", "a": "mv_mup", "b": "mv_do", "fmt": "times"})
+
+    def test_a_mean_that_did_not_move_keeps_the_old_sentences(self):
+        req = linear_request(WB_T, "country", WB_FLAT_MEAN, 2010, 2022, text=True)
+        self.assertEqual(sum(b - a for a, b in WB_FLAT_MEAN.values()), 0)
+        for picks, sid, olds in ((["spread", "ends"], "spread", {"d_chn": ("story.note.spread.rise", "CHN"), "d_ind": ("story.note.spread.fall", "IND")}),
+                                 (["movers", "ends"], "movers", None)):
+            composed, facts, notes = self.notes(req, picks, sid, WB_NAMES_ALL)
+            self.assertFalse([k for k in composed["facts"] if k.startswith(("k_", "sp_m", "mv_m"))], sid)
+            for num, n in notes.items():
+                self.assertNotIn("倍", self.words(n), (sid, num))
+            for num, (word, c) in (olds or {}).items():
+                self.assertEqual(notes[num], FN.note(num, word, c=c))
+
+    def test_a_rank_tied_at_the_bottom_both_years_keeps_the_old_sentences(self):
+        ends = {"AA": (50.0, 40.0), "BB": (45.0, 48.0), "CC": (40.0, 30.0), "DD": (35.0, 52.0), "EE": (30.0, 33.0), "FF": (5.0, 6.0), "GG": (5.0, 6.0)}
+        names = {"AA": "甲", "BB": "乙", "CC": "丙", "DD": "丁", "EE": "戊", "FF": "己", "GG": "庚"}
+        req = linear_request("nrg_ind_ren", "geo", ends, 2005, 2024, fixed={"nrg_bal": "REN"})
+        composed, facts, notes = self.notes(req, ["overtake", "ends"], "overtake", names)
+        self.assertEqual(notes["ot_fall"], FN.note("ot_fall", "story.note.ot.fall", c="AA", a="ot_a_aa", b="ot_b_aa"))
+        self.assertFalse([k for k in composed["facts"] if k.startswith(("k_", "ot_avg", "ot_s", "ot_m_"))])
+        # the same with the bottom alone at the last year: the average stands on its rank there
+        req = linear_request("nrg_ind_ren", "geo", {**ends, "GG": (5.0, 5.5)}, 2005, 2024, fixed={"nrg_bal": "REN"})
+        composed, facts, notes = self.notes(req, ["overtake", "ends"], "overtake", names)
+        self.assertEqual(composed["facts"]["ot_avg"]["b"], "ot_b_gg"); self.assertEqual(facts["ot_b_gg"]["v"], len(ends))
+        self.assertIn("k_ot_fall", composed["facts"])
+
+    def test_to_average_falls_back_with_fewer_than_three_members_a_zero_mean_or_the_other_way(self):
+        q = FN.Req(wb_request()[0])
+        base, avg = "story.note.mv.up_most", {"m": {"op": "minus", "a": "x1", "b": "x0", "fmt": "x"}}
+        plain = FN.note("d", base, c="CHN")
+        for n, d, mean in ((2, 4.0, 1.0), (3, 4.0, 0.0), (3, 4.0, 1e-12), (3, 4.0, -1.0), (3, 1.04, 1.0)):   # the last prints 1.0 times: says nothing
+            f = {}
+            self.assertEqual(FN.to_average(q, f, base, "d", d, mean, "m", avg, n, c="CHN"), plain, (n, d, mean))
+            self.assertEqual(f, {}, (n, d, mean))   # no number made for it
+        f = {}
+        got = FN.to_average(q, f, base, "d", 4.0, 1.0, "m", avg, 3, c="CHN")
+        self.assertEqual(got, FN.note("d", base + "_ref", c="CHN", k="k_d"))
+        self.assertEqual(f, {**avg, "k_d": {"op": "times", "a": "d", "b": "m", "fmt": "times"}})
+        # a variant the word table does not hold (the largest rise is never below the average): the old words
+        f = {}
+        self.assertEqual(FN.to_average(q, f, base, "d", 1.0, 4.0, "m", avg, 3, c="CHN"), plain); self.assertEqual(f, {})
+
+    def test_the_notes_print_only_facts_and_fit_their_box_on_the_page(self):
+        """Drawn by the real page child on both shapes: every digit of a note is a ledger entry of a fact the page declares, and each note's
+        words, laid at the width the layout gives them (the column less the card's padding, rule, gap and number), fit it in three lines."""
+        cases = ((eu27_request(), ["movers", "overtake", "tiles"]),
+                 ((linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True), WB_NAMES_ALL), ["movers", "spread", "ends"]),
+                 (wb_request(), ["spread", "ends"]))
+        seen = 0
+        for (req, names), picks in cases:
+            composed, facts, _, page = Findings._page(self, req, names, picks)
+            for sec in re.findall(r'<section class="sec".*?</section>', page, re.S):
+                col = re.search(r'<div class="col" style="width:(\d+)px">', sec)
+                for item in re.findall(r'<li class="note">(.*?)</li>', sec, re.S):
+                    for src in re.findall(r'data-src="fact:([a-z0-9_]+?)(?:\.n)?"', item): self.assertIn(src, composed["facts"])
+                    self.assertFalse(re.search(r"[0-9]", re.sub(r"<[^>]+>", "", re.sub(r'<span data-src="[^"]*">[^<]*</span>', "", item))), item)
+                    num, txt = (re.sub(r"<[^>]+>", "", x) for x in re.match(r'<b class="n">(.*?)</b><span class="nt">(.*)</span>$', item, re.S).groups())
+                    w = (int(col.group(1)) if col else story.PAGE_W - 640 - 36) - 28 - 3 - 12 - K.tw(num, 16)
+                    lines = K.lay([(txt, None)], 14, w)
+                    self.assertLessEqual(len(lines), 3, txt)
+                    self.assertTrue(all(sum(K.tw(u, 14) for u, _ in ln) <= w + 14 for ln in lines), txt)   # a line past the box by under one glyph is its closing mark
+                    seen += "倍" in txt
+        self.assertGreaterEqual(seen, 4)
+
 
 if __name__ == "__main__":
     unittest.main()
