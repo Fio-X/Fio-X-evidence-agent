@@ -5723,7 +5723,7 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
     Ok(())
 }
 
-/// A unit whose short form holds a digit (a chain-linked volume's base year, 欧元/人（2020年不变价）) goes to the findings child as the
+/// A unit whose short form holds a digit (a chain-linked volume's base year, as in a euro-per-head unit at 2020 prices) goes to the findings child as the
 /// unit table's name entry (words.unit_src, name:unit_short_zh:<code>), never as typed words, and the page's ledger holds that entry
 /// (knobs.named) as the unit table gives it (fixed_name), as the column page's unit line does. Only a reference to a name-table entry
 /// is added: no word, number or choice of a picture is made here. A unit whose form holds no digit goes as words, as before.
