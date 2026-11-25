@@ -1715,6 +1715,48 @@ class PaceAndGroups(unittest.TestCase):
 
 DATA_OFF = ("bignums", "thesis_claims", "risk_notes")
 
+def accent_marks_by_section(page_html):
+    """{section id: (the codes its h2 names, the codes of the marks drawn in the accent there)}: a mark is any rect, circle, path or
+    polygon with a data-code filled or stroked with the accent; the pair bars' "main" bars are left out (they name their entity by
+    the column above them, not by a code)."""
+    out = {}
+    for sid, body in re.findall(r'<section class="sec" data-id="([a-z0-9_]+)"[^>]*>((?:(?!</section>).)*)</section>', page_html, re.S):
+        h2 = re.search(r"<h2\b[^>]*>(.*?)</h2>", body, re.S)
+        named = set(re.findall(r'data-src="name:[^"]*:([^":]+)"', h2[1])) if h2 else set()
+        marks = {m for m in re.findall(r'<(?:rect|circle|path|polygon|line|polyline) [^>]*?(?:fill|stroke)="var\(--accent\)"[^>]*?data-code="([^"]+)"', body)}
+        marks |= {m for m in re.findall(r'<(?:rect|circle|path|polygon|line|polyline) [^>]*?data-code="([^"]+)"[^>]*?(?:fill|stroke)="var\(--accent\)"', body)}
+        out[sid] = (named, marks - {"main"})
+    return out
+
+
+class GlyphAccentIsTheNamed(unittest.TestCase):
+    """A story page's glyph row (the group means, the two paces) draws its glyph in the accent only when the section's headline names
+    its code ({name.<code>}); a group's or a period's glyph has a name of its own words, no name row, so it is drawn in the bar's grey.
+    Over every section of the page, each code drawn in the accent is one the section's headline names. On a Eurostat percent shape
+    and a World Bank shape for the groups angle, on the Eurostat shape for the pace angle (the World Bank shape draws no pace glyphs)."""
+    CASES = (("eu groups", lambda: eu27_plain(ASKED["groups"]), ["groups", "rank"]),
+             ("wb groups", lambda: wb24_request(ASKED["groups"]), ["groups", "ends"]),
+             ("eu pace", lambda: eu27_plain(ASKED["pace"]), ["pace", "rank"]))
+
+    def test_the_glyph_rows_accent_is_dropped_and_every_red_code_is_named(self):
+        seen = set()
+        for what, mk, picks in self.CASES:
+            req, names = mk()
+            composed = FN.compose({**req, "picks": picks})
+            if "glyph_row" not in composed["leaves"]: continue
+            self.assertIsNotNone(composed["leaves"]["glyph_row"].get("accent"), what)        # the composed leaf marks one glyph
+            given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+            self.assertEqual(given["glyph_row"]["accent"], [], what)                          # its headline names no item's code
+            page_html = Findings._page(self, req, names, picks)[3]
+            secs = accent_marks_by_section(page_html)
+            gsec = next(x["id"] for x in composed["sections"] if x["layer"] == "glyph_row")
+            body = re.search(r'<section class="sec" data-id="' + gsec + r'"[^>]*>((?:(?!</section>).)*)</section>', page_html, re.S)[1]
+            self.assertNotIn('data-glyph="circle"', re.sub(r'<circle [^>]*fill="var\(--bar\)"[^>]*data-glyph="circle"/>|<circle [^>]*fill="none"[^>]*/>', "", body), what)
+            for sid, (named, marks) in secs.items(): self.assertLessEqual(marks, named, (what, sid))
+            seen.add(what)
+        self.assertEqual(seen, {c[0] for c in self.CASES}, seen)
+
+
 
 def blocks(composed):
     """The page's data blocks: the sections with a data leaf (not the numbers, the thesis or the notes)."""
