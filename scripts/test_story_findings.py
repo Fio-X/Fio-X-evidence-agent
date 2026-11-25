@@ -2619,6 +2619,13 @@ class MapsAreGreyButTheNamed(unittest.TestCase):
             self.assertIn('<span class="sw accent"></span><span data-word="story.legend.accent">', page_html, what)
             self.assertIn('<span class="sw ramp"></span><span data-word="story.legend.map">', page_html, what)
             self.assertNotIn("var(--accent)", re.search(r"\.story \.sw\.ramp\{[^}]*\}", page_html)[0], what)
+            # the page legend's map line says both colours: the grey steps and the red of the headline's names
+            self.assertIn(FN.WD.WORDS["story.legend.map"], page_html, what)
+            self.assertIn("灰色越深", FN.WD.WORDS["story.legend.map"]); self.assertIn("红色", FN.WD.WORDS["story.legend.map"])
+            # the line under the section's head reads the grey ramp, not the old "the darker the colour" of the accent's steps
+            body = re.search(r'<section class="sec" data-id="[a-z0-9_]+"[^>]*>((?:(?!</section>).)*data-layer="' + layer + r'".*?)</section>', page_html, re.S)[1]
+            if what != "wb map": self.assertIn("灰色越深", re.sub(r"<[^>]+>", "", body), what)   # the wb map's section prints no such line
+            self.assertNotIn("颜色越深", re.sub(r"<[^>]+>", "", body), what)
             seen.add(what)
             if red: seen.add("red " + what.split()[0])
         self.assertEqual(seen >= {"red eu", "red wb12"}, True, seen)                         # both shapes draw a named member in red
