@@ -1,7 +1,8 @@
 """The line under the opening picture (story.py opening_caption): when the picture child drew the lead's proportion (layer 1 passes the
 child's scene name on, drawn_as.illus_hero "<topic>.proportion"), the page prints one line under the picture from the lead section's
-picture.caption (findings.py: fixed words, the member by its name row, the claim's own fact, the measure's name), every number a ledger
-entry and no digit in its words; with any other picture, none drawn, or no proportion (a money measure), the page is the one it was.
+picture.caption (findings.py: fixed words, the member by its name row, the claim's own fact, a slot for the measure's name, which the page
+fills from its kicker: the request's measure words are the table's English title when it has no reviewed Chinese name, as on the real
+unemployment page), every number a ledger entry and no digit or Latin letter in its words; with any other picture, none drawn, or no proportion (a money measure), the page is the one it was.
 Run: python3 -I -B scripts/test_story_opening_caption.py"""
 import json
 import os
@@ -27,13 +28,13 @@ def money_request():
     return {**req, "fmt_defs": {**req["fmt_defs"], "x": {"scale": 1, "dec": 0, "suffix": " 美元"}}, "words": {"measure": "人均国内生产总值", "unit": "美元"}}, names
 
 
-def page(req, names, picks, drawn_as=None, hero=True, edit=None):
+def page(req, names, picks, drawn_as=None, hero=True, edit=None, kicker="失业率"):
     """(composed, the page's html) drawn by the real child, the opening picture given as layer 1 gives it (its svg and size) and, when
     `drawn_as` is given, the scene name layer 1 passes on."""
     composed = FN.compose({**req, "picks": picks})
     if edit: edit(composed)
     rows, _ = ledger(req, composed, names)
-    spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"],
+    spec = {"title": composed["title"], "kicker": kicker, "dek": composed["dek"], "end": composed["end"], "source": "s", "refs": [], "facts": composed["facts"],
             "sections": composed["sections"], "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})},
             "fmts": {**FMT_DEFS, **req["fmt_defs"], "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
             "hero": {"data": {}, "leaves": composed["leaves"], "style": dict(composed.get("style", {}))}}
@@ -68,7 +69,8 @@ class OpeningCaption(unittest.TestCase):
         self.assertEqual([g for g in cap if "name" in g], [{"name": "ES"}])
         self.assertEqual([g["src"] for g in cap if "src" in g], [f"fact:{num}"])          # the headline's own fact, the only number
         self.assertFalse(any(re.search(r"[0-9〇一二三四五六七八九十百千]", g.get("w", "")) for g in cap), cap)   # no digit or numeral word
-        self.assertIn({"w": "失业率"}, cap)                                                # the measure's name from the request's words
+        self.assertIn({"slot": "measure"}, cap)                                            # the measure's name: the page's kicker fills it
+        self.assertNotIn("Unemployment", json.dumps(cap))                                   # never the request's English table title
         self.assertNotIn("caption", lead["picture"]["subject"])                             # the picture child gets the subject alone
 
     def test_a_drawn_proportion_prints_one_line_under_the_picture(self):
@@ -82,6 +84,12 @@ class OpeningCaption(unittest.TestCase):
             self.assertFalse(re.search(r"[0-9]", re.sub(r"<[^>]+>", "", re.sub(r'<span data-src="fact:[^"]*">[^<]*</span>', "", got[0]))), got[0])   # every digit a fact
             self.assertIn('<div class="opening"><svg aria-hidden="true" ', html)          # the picture hidden, the line read
             self.assertEqual(re.sub(r"<[^>]+>", "", got[0]), f"红色的人按西班牙 {top:.1f}% 的失业率画")
+            self.assertFalse(re.search(r"[A-Za-z]", re.sub(r"<[^>]+>", "", got[0])), got[0])   # no Latin letter (the real run's leak)
+
+    def test_a_kicker_with_no_chinese_name_gives_the_plain_word_for_a_share(self):
+        for kick in ("Unemployment by sex and age - annual data", "失业率 2025", ""):
+            got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人按西班牙 10.5% 的比例画"], kick)
 
     def test_no_line_with_another_picture_none_drawn_or_no_proportion(self):
         req = rate_request(10.5)

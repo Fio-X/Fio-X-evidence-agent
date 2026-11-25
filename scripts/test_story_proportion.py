@@ -35,7 +35,7 @@ def rate_request(top):
             v = round(a + (b - a) * (y - 2016) / 9, 1)
             rows.append({**row(t, {"age": "Y15-74"}, "geo", c, y, v), "value": f"{v:.1f}"})
     return {"rows": rows, "main": {"table": t, "by": "geo", "filter": {"age": "Y15-74"}, "members": list(RATES)}, "fmts": RATE_FMTS,
-            "fmt_defs": RATE_DEFS, "words": {"measure": "失业率", "unit": "百分比"}}
+            "fmt_defs": RATE_DEFS, "words": {"measure": "Unemployment by sex and age - annual data", "unit": "百分比"}}   # as layer 1 sends a table with no reviewed Chinese name: its title
 
 
 def lead_subject(req, picks):

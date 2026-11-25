@@ -450,13 +450,18 @@ def chart(body, layer, size, sid, label, desc, over="", pos="", origin=(0.0, 0.0
 
 def opening_caption(spec, drawn_as):
     """The line under the opening picture when it is drawn as a share of figures (drawn_as.illus_hero, the picture child's scene name, ends in
-    ".proportion"): the lead section's picture.caption (findings.py: the member, the claim's own fact, the measure's name) as html; "" otherwise.
+    ".proportion"): the lead section's picture.caption (findings.py: the member, the claim's own fact, the measure's slot) as html; "" otherwise.
     The page does not know the topic's renderer: only the child's reply says whether the share was drawn (layer 1 passes its scene name on)."""
     if not str((drawn_as or {}).get("illus_hero") or "").endswith(".proportion"): return ""
     lead = next((s for s in spec.get("sections") or [] if isinstance(s, dict) and s.get("title") is not None), None)
     cap = ((lead or {}).get("picture") or {}).get("caption")
     if not cap: return ""
     if not isinstance(cap, list): raise FX.Refused("page: the opening picture's caption is no list of segments")
+    # the measure's slot: the page's kicker, the measure's Chinese name the header prints over the headline; a kicker that holds a digit or a
+    # Latin letter (no reviewed Chinese name) gives the plain word for a share instead
+    kick = str(spec.get("kicker") or "").strip()
+    fill = {"w": kick} if kick and not FX.digit(kick) and not re.search(r"[A-Za-z]", kick) else {"word": "story.opening.share"}
+    cap = [fill if g == {"slot": "measure"} else g for g in cap]
     return f'<p class="opening-cap" data-cap="proportion">{seg_html(cap, "the opening picture caption")}</p>'
 
 

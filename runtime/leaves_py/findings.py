@@ -460,6 +460,7 @@ def illus_series(q, vals, split):
 # count; a K of 0 or N has nothing to count and gives no proportion. It is a key beside the angle's own subject, never in its place: the
 # child draws it only where the topic's renderer is the scene renderer, and the angle's own subject everywhere else.
 PROPORTION_FIGURES = 30
+MEASURE_SLOT = "<measure>"   # the caption's place for the measure's name: a {"slot": "measure"} segment story.py fills from the page's kicker
 
 
 def proportion_count(share, n):
@@ -1769,9 +1770,10 @@ def compose(r):
             # the lead's own rows, for the opening picture: the angle's own subject, and beside it a rate its claim reads off one member as a share of figures
             subject, prop = q.illus.get(c["id"]), illus_proportion(q, c)
             picture = {"subject": subject} if subject else {}
-            if prop:   # and the line under that picture, when it is drawn as the share: the member, the claim's own fact, the measure's name
-                picture = {"subject": {**(subject or {}), "proportion": prop},
-                           "caption": ST("story.opening.proportion", c=[v for kind, v in c["claim"]["head"] if kind == "n"][0], share=num[len("fact:"):], m=q.words["measure"])}
+            if prop:   # and the line under that picture, when it is drawn as the share: the member, the claim's own fact, and a slot for the
+                # measure's Chinese name, which the page fills from its kicker (the request's measure words may be the table's English title)
+                cap = ST("story.opening.proportion", c=[v for kind, v in c["claim"]["head"] if kind == "n"][0], share=num[len("fact:"):], m=MEASURE_SLOT)
+                picture = {"subject": {**(subject or {}), "proportion": prop}, "caption": [{"slot": "measure"} if g == {"w": MEASURE_SLOT} else g for g in cap]}
             sections.append({"id": c["id"], "layer": placed[c["id"]][0]["layer"], "kicker": wording(c["kicker"]), "title": wording(lead),
                              **({"picture": picture} if picture else {})})
         else:
