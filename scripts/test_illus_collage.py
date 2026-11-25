@@ -43,6 +43,11 @@ def top_req(n, k, width=1140, pre="M", **extra):
     return {"family": "unemployment", "lead": "members", "width": width, "accent": ACCENT, "subject": {"members": ms, "rule": {"op": "top", "k": k}, "declared": {"count": k, "total": n}}, **extra}
 
 
+def zero_req(n=10):
+    ms = [{"code": f"Z{i:02d}", "value": float(i)} for i in range(n)]
+    return {"family": "unemployment", "lead": "members", "width": 1140, "accent": ACCENT, "subject": {"members": ms, "rule": {"op": "gt", "ref": 99.0}, "declared": {"count": 0, "total": n}}}
+
+
 def spec_req(name):
     return {"family": "unemployment", "lead": SPECS[name]["lead"], "width": 1140, "accent": ACCENT, "subject": SPECS[name]["subject"]}
 
@@ -123,12 +128,19 @@ def hero_faults(svg):
     return off
 
 
+def flat_cut(tops, h):
+    """Whether a mask's top edge (its first set row per column) is one horizontal line: over half the columns within 1.5% of the height of
+    the commonest start row, or the middle 80% of the start rows within 5% of the height."""
+    mode = max(set(tops), key=tops.count); st = sorted(tops)
+    return sum(1 for y in tops if abs(y - mode) <= 0.015 * h) / len(tops) > 0.5 or (st[len(st) * 9 // 10] - st[len(st) // 10]) / h < 0.05
+
+
 def accent_figures(svg, accent):
     """(accent figures, figures) read off the svg's structure: an accent figure is a path in the accent under a clothing mask (clg-c<j>) whose
-    mask is defined with an image; a figure is a paper block under an outline mask (clg-s<j>)."""
-    reds = re.findall(r'<path d="[^"]*" fill="' + re.escape(accent) + r'" mask="url\(#(clg-c\d+)\)"/>', svg)
+    mask is defined with an image; a figure is a block under an outline mask (clg-s<j>); the hero's are clg-ch and clg-sh."""
+    reds = re.findall(r'<path d="[^"]*" fill="' + re.escape(accent) + r'" mask="url\(#(clg-c(?:\d+|h))\)"/>', svg)
     for m in reds: assert re.search(r'<mask id="' + m + r'"><image href="data:image/png;base64,', svg), m
-    figs = re.findall(r'<path d="[^"]*" fill="#[0-9a-f]{6}" mask="url\(#(clg-s\d+)\)"/>', svg)
+    figs = re.findall(r'<path d="[^"]*" fill="#[0-9a-f]{6}" mask="url\(#(clg-s(?:\d+|h))\)"/>', svg)
     return len(set(reds)), len(set(figs))
 
 
@@ -183,10 +195,62 @@ class Collage(unittest.TestCase):
         for name in ("people27", "em_tally", "pop_tally", "n30k12", "n12k5_wide"):
             self.assertGreaterEqual(self.out[name][5]["red_visible_min"], R.CR["red_visible"], name)
 
+    def test_the_hero_is_the_front_most_accent_figure_iff_k_is_at_least_one(self):
+        lo, hi = R.REG["composition_knobs"]["hero_h"]["min"], R.REG["composition_knobs"]["hero_h"]["max"]
+        for name, (svg, w, h, secs, scene, comp) in list(self.out.items()) + [("k0", R.build_collage(zero_req()))]:
+            k = comp["lit"]
+            self.assertEqual(comp["hero"] is not None, k >= 1, name); self.assertEqual('id="clg-sh"' in svg, k >= 1, name)
+            if not k:
+                self.assertEqual(accent_figures(svg, ACCENT), (0, comp["objects"])); self.assertNotIn("r", comp["queue_flags"]); continue
+            self.assertIn(comp["hero"], comp["red"], name); self.assertIn('id="clg-ch"', svg, name)
+            self.assertTrue(lo <= comp["hero_h"] <= hi, name); self.assertAlmostEqual(comp["hero_box"][3] / 560, comp["hero_h"], places=3)
+            self.assertGreater(comp["hero_foot"], max(comp["queue_feet"]), name)              # in front of every queue figure
+            self.assertGreater(comp["hero_box"][3], max(comp["queue_heights"]), name)         # and the largest
+            self.assertLess(comp["hero_box"][0] + comp["hero_box"][2] / 2, 1440 / 3, name)   # in the left-front third
+            self.assertEqual(comp["queue_flags"].count("r"), k - 1, name); self.assertEqual(comp["queue"], comp["objects"] - 1, name)
+            self.assertLess(svg.index('id="clg-sh"'), svg.index('id="clg-grain"')); self.assertGreater(svg.index('id="clg-sh"'), svg.rindex('id="clg-s', 0, svg.index('id="clg-sh"')))
+
+    def test_three_shapes_k3_k13_k29_counts_groups_and_hero(self):
+        G = R.CR["group"]
+        for k in (3, 13, 29):
+            svg, w, h, secs, scene, comp = R.build_collage(top_req(30, k))
+            self.assertEqual(accent_figures(svg, ACCENT), (k, 30), k); self.assertEqual(hero_faults(svg), [], k)
+            flags = comp["queue_flags"]; self.assertEqual(len(flags), 29); self.assertEqual(flags.count("r"), k - 1)
+            runs = [len(r) for r in re.findall(r"r+", flags)]
+            if k / 30 > R.CR["stretch_share"]:
+                greys = flags.count("g"); want = -(-(k - 1) // G)
+                self.assertRegex(flags, r"^g?r", k)                                             # one stretch from the near end
+                self.assertRegex(flags.lstrip("g"), r"^(r+g)*r+g*$", k)                          # its groups split by one grey figure each
+                self.assertNotIn("gg", flags.lstrip("g").rstrip("g"), k)
+                self.assertEqual(len(runs), min(want, 1 + greys), k)
+                self.assertTrue(all(r <= G for r in runs[:-1]), (k, runs))
+                if len(runs) == want: self.assertTrue(all(r <= G for r in runs), (k, runs))
+            else:
+                self.assertEqual(flags[0] + flags[-1], "gg", k); self.assertTrue(all(r == 1 for r in runs), (k, runs))   # spread, single figures
+        self.assertEqual(re.findall(r"r+", R.build_collage(top_req(30, 13))[5]["queue_flags"]), ["rrrrr", "rrrrr", "rr"])
+
+    def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
+        ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
+        self.assertTrue({"hero_h", "hero_x", "horizon", "queue_near_h", "queue_far_h", "queue_ink", "queue_fill", "ground_grey"} <= set(mine))
+        for name in mine:
+            spec = ck[name]; self.assertTrue(spec["min"] <= spec["default"] <= spec["max"], name)
+            for bad in (spec["min"] - 0.01, spec["max"] + 0.01, "big", True):
+                with self.assertRaises(R.Refused, msg=f"{name}={bad}"): R.build_collage({**top_req(10, 3), "composition": {name: bad}})
+        with self.assertRaisesRegex(R.Refused, "unknown composition knob"): R.build_collage({**top_req(10, 3), "composition": {"hero_size": 0.5}})
+        with self.assertRaisesRegex(R.Refused, "below hero_h"): R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5, "queue_near_h": 0.5}})
+        with self.assertRaisesRegex(R.Refused, "only the collage"): R.build_scene({"family": "pop65", "lead": "members", "width": 1140, "subject": people_req()["subject"], "composition": {"hero_h": 0.55}})
+        a = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.5}}); b = R.build_collage({**top_req(10, 3), "composition": {"hero_h": 0.6}})
+        self.assertEqual((a[5]["hero_h"], b[5]["hero_h"]), (0.5, 0.6)); self.assertNotEqual(a[0], b[0])
+
     def test_colours_are_the_request_accent_else_the_topics(self):
         svg = R.build_collage({k: v for k, v in top_req(10, 3).items() if k != "accent"})[0]
         self.assertEqual(accent_figures(svg, R.TOPICS["scenes"]["labour"]["accent"]), (3, 10))
-        self.assertEqual(set(re.findall(r'fill="(#[0-9a-f]{6})"', self.out["n3k1"][0])), {ACCENT, json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"], "#000000"})
+        svg = R.build_collage({**top_req(10, 3), "accent": "#123456"})[0]; self.assertEqual(accent_figures(svg, "#123456"), (3, 10))
+        paper = json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"]; ck = R.REG["composition_knobs"]
+        tone = lambda f: "#" + "".join(f"{round(int(paper[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))
+        fills = set(re.findall(r'fill="(#[0-9a-f]{6})"', self.out["n30k12"][0]))
+        self.assertEqual(fills, {ACCENT, paper, "#000000", tone(ck["ground_grey"]["default"]), tone(ck["queue_fill"]["default"])})     # one accent, the rest the paper's greys
+        self.assertEqual(svg.count('<path d="M0 '), svg.count("<path "))       # the ground is one flat block, every path a box
 
     def test_n_outside_3_to_30_or_another_layout_is_unavailable(self):
         with self.assertRaisesRegex(R.Unavailable, "31 members"): R.build_collage(top_req(31, 5))
@@ -259,6 +323,28 @@ class Pack(unittest.TestCase):
             self.assertTrue(rows[f["id"]]["source_url"].startswith("https://www.metmuseum.org/art/collection/search/"), f["id"])
         for name in ("LICENCE-met-openaccess-README.txt", "LICENSE-CC0-1.0-legalcode.txt"): self.assertTrue(os.path.getsize(os.path.join(COLLAGE, name)) > 1000, name)
         self.assertGreaterEqual(sum(f["red_ok"] for f in self.index["figures"]), 30)     # enough accent figures for 30 members
+
+    def test_no_accent_mask_is_a_flat_horizontal_cut(self):
+        """The top edge of every red_ok figure's clothing mask follows the shoulders: its start row varies across the mask's columns (not over
+        half of them within 1.5% of the height of the commonest start row), at every tier, decoded from the pack (Pillow, test time only)."""
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        import io
+        by = {p["id"]: p for p in self.index["pieces"]}; flat = []
+        for f in self.index["figures"]:
+            if not f["red_ok"]: continue
+            for t in ("l", "m", "s"):
+                p = by[f"{f['id']}.{t}.cloth"]; im = Image.open(io.BytesIO(self.bin[p["offset"]:p["offset"] + p["len"]])).convert("L")
+                w, h = im.size; px = im.load(); tops = []
+                for x in range(w):
+                    y = next((y for y in range(h) if px[x, y] > 127), None)
+                    if y is not None: tops.append(y)
+                if flat_cut(tops, h): flat.append((f["id"], t))
+        self.assertEqual(flat, [])
+        self.assertTrue(flat_cut([20] * 40, 100)); self.assertTrue(flat_cut([20] * 30 + [40, 45, 50, 60, 22, 21, 19, 30, 35, 20], 100))   # the detector catches a flat cut
+        self.assertFalse(flat_cut([40 - abs(x - 20) for x in range(41)], 100))                                                          # and passes a shoulder line
 
     def test_the_pack_holds_no_local_path_or_non_english_text(self):
         for name in ("pack.json", "LICENSES.tsv", "draw.py"):

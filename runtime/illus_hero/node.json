@@ -835,6 +835,106 @@
    ],
    "note": "the scene the scene renderer stages the figures in (queue: people in line; grid: classroom desks; door: a doorway the few walk through); the default (null) is the first rule of topics.scene_renderer.scene_choice the data matches. A scene given here must be able to draw the data (scene_renderer.draws), or it is refused. Only the scene renderer has it"
   }
+,
+  "hero_h": {
+   "default": 0.56,
+   "min": 0.5,
+   "max": 0.6,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the near hero's height, a share of the picture height"
+  },
+  "hero_x": {
+   "default": 0.17,
+   "min": 0.08,
+   "max": 0.3,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the near hero's centre, a share of the picture width (the left-front third)"
+  },
+  "hero_foot": {
+   "default": 0.97,
+   "min": 0.88,
+   "max": 1.0,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the near hero's feet, a share of the picture height from the top"
+  },
+  "horizon": {
+   "default": 0.38,
+   "min": 0.22,
+   "max": 0.45,
+   "renderers": [
+    "collage"
+   ],
+   "note": "where the flat ground meets the paper, a share of the picture height; with the hero it sets the one depth rule"
+  },
+  "queue_near_h": {
+   "default": 0.47,
+   "min": 0.3,
+   "max": 0.52,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's nearest figure's height, a share of the picture height (below hero_h, or refused)"
+  },
+  "queue_far_h": {
+   "default": 0.1,
+   "min": 0.04,
+   "max": 0.15,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's farthest figure's height, a share of the picture height"
+  },
+  "queue_near_x": {
+   "default": 0.3,
+   "min": 0.28,
+   "max": 0.55,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's near end, a share of the picture width"
+  },
+  "queue_far_x": {
+   "default": 0.98,
+   "min": 0.8,
+   "max": 1.0,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's far end, a share of the picture width"
+  },
+  "queue_ink": {
+   "default": 0.62,
+   "min": 0.4,
+   "max": 0.85,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's line opacity (a mid-grey band; the hero's lines are at 1 and drawn once more at hero_ink_again)"
+  },
+  "queue_fill": {
+   "default": 0.8,
+   "min": 0.68,
+   "max": 0.92,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue figures' blocks: the paper colour darkened to this share (the hero's block is the paper)"
+  },
+  "ground_grey": {
+   "default": 0.88,
+   "min": 0.78,
+   "max": 0.97,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the one flat ground block: the paper colour darkened to this share"
+  }
  },
  "input": {
   "schema": {
@@ -2569,7 +2669,7 @@
    "deadline": 20.0
   },
   "collage_renderer": {
-   "doc": "collage = runtime/illus_hero/collage/draw.py (run_hero.py build_collage; standard library only, no pixel work): N single full-length engraving figures (Miguel Gamborino's street-cries series, The Metropolitan Museum of Art, CC0; collage/LICENSES.tsv) from one pack (collage/pack.bin, indexed by collage/pack.json, built once by scripts/build_collage_pack.py), standing in a queue that recedes in perspective over grey paper, K of them with their clothing in the accent under the engraving lines. Only the tally (kinds); one figure per member, N on `figures` (any other layout or N is `unavailable`, the page's strip stands in), K the members the rule holds for (lit_codes), and the subject's declared count and total are required and must be K and N. The picture is layered SVG of PNG and JPEG data URLs (paper, then per figure farthest first: foot shadow, a paper block cut to the outline, the accent block cut to the clothing, the lines; then the grain); no text, no number. Same request, same bytes (the seed: sha256 of the sorted member codes, K, N, the width and the pack's sha256). queue: the reference picture's layout (feet on the line from..to, height = height_k x (foot y - horizon_y), the spacing factor bisected on fac so the last centre is at fit_x); foreground: one figure per `per` members in the group at the right (at most len(at)); accent places: spread over the queue's clear places (not its first and last figure, at least red_min_h high, not behind the foreground group); an accent figure is the first of the red_ok figures (seeded order) whose clothing is at least red_visible in view of the figures in front (cover_cell px cells), else the one most in view. far_light: the lines' opacity, a + b x min(1, height / c). max_svg_bytes: a reply larger is `unavailable`.",
+   "doc": "collage = runtime/illus_hero/collage/draw.py (run_hero.py build_collage; standard library only, no pixel work): N single full-length engraving figures (Miguel Gamborino's street-cries series, The Metropolitan Museum of Art, CC0; collage/LICENSES.tsv) from one pack (collage/pack.bin, indexed by collage/pack.json, built once by scripts/build_collage_pack.py): a long queue (people queueing for work) receding in perspective to the right over grey paper and one flat light-grey ground, K of them with their clothing in the accent under the engraving lines. Of the K, the front-most is drawn as the near hero (the figure the picture is about): hero_h of the picture height, standing in the left-front third, the darkest and clearest figure (full ink on a paper block); the queue is a mid-grey band (its lines at queue_ink, its blocks at queue_fill grey). K = 0 draws no hero. The hero is one of the N: the picture's figures are N and its accent figures K, and the subject's declared count and total are required and must be K and N (lit_codes). Only the tally (kinds), N on `figures` (any other layout or N is `unavailable`, the page's strip stands in). Every figure obeys one depth rule, the hero's: height = k x (foot y - horizon), k = hero height / (hero foot - horizon); the queue's nearest figure is queue_near_h high, its farthest queue_far_h, its feet on the line between, x from queue_near_x to queue_far_x (fractions of the frame; the knobs are composition_knobs with renderers [collage], defaults and ranges there). The queue's accent figures: when K / N is at most stretch_share, spread evenly over the queue's clear places (not its first and last figure, at least red_min_h high); above it, one stretch from the queue's near end (where its figures are largest), cut into groups of at most `group` with one grey figure between groups (the scene renderer's queue rule; when the grey figures run out, the groups at the far end close up), a spare grey figure first. The hero is the first red_ok figure (seeded order) whose clothing solidity is at least hero_solidity; a queue accent figure the first red_ok figure whose clothing is at least red_visible in view of the figures in front (cover_cell px cells), else the one most in view. far_light: the queue lines' opacity factor, a + b x min(1, height / c) (far figures lighter). Layers: paper, ground, then per figure farthest first a foot shadow, a block cut to the outline, the accent cut to the clothing (a shoulder-following mask from the print's hand colouring, built into the pack), the lines; then the grain. No text, no number, no halo, no props. Same request, same bytes (the seed: sha256 of the sorted member codes, K, N, the width, the knobs given and the pack's sha256). max_svg_bytes: a reply larger is `unavailable`.",
    "kinds": [
     "tally"
    ],
@@ -2577,50 +2677,18 @@
     3,
     30
    ],
-   "horizon_y": 205,
-   "height_k": 1.3,
    "queue": {
-    "from": [
-     60,
-     505
-    ],
-    "to": [
-     1000,
-     236
-    ],
     "aspect": 0.42,
     "probe": 80,
-    "fit_x": 990,
     "fac": [
      0.3,
      1.5
     ]
    },
-   "foreground": {
-    "per": 6,
-    "at": [
-     [
-      1075,
-      470
-     ],
-     [
-      1160,
-      497
-     ],
-     [
-      1245,
-      525
-     ],
-     [
-      1320,
-      551
-     ],
-     [
-      1395,
-      551
-     ]
-    ]
-   },
+   "stretch_share": 0.3,
+   "group": 5,
+   "hero_solidity": 0.55,
+   "hero_ink_again": 0.6,
    "shadow": {
     "w": 1.0,
     "h": 0.035,
@@ -2632,7 +2700,7 @@
     250
    ],
    "red_visible": 0.6,
-  "red_min_h": 40,
+   "red_min_h": 60,
    "cover_cell": 4,
    "max_svg_bytes": 3145728
   },

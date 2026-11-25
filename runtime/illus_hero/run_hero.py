@@ -581,11 +581,28 @@ def build_people(inp):
 CR = TOPICS["collage_renderer"]
 
 
+def collage_knobs(inp):
+    """{knob: value} of the collage's own composition knobs (composition_knobs whose renderers are [collage]): each the request's
+    composition value, else its default; a value off its min..max (or not a number) is refused, as is a queue whose nearest figure is not
+    smaller than the hero. Unknown knob names are refused by compose_subject's check_knobs."""
+    ck = REG["composition_knobs"]; comp = inp.get("composition") or {}; kn = {}
+    for name, spec in ck.items():
+        if spec.get("renderers") != ["collage"]: continue
+        v = comp.get(name, spec["default"])
+        if isinstance(v, bool) or not isinstance(v, (int, float)): refuse(f"composition knob {name}: {v!r} is no number")
+        check_range(name, v, spec); kn[name] = float(v)
+    if kn["queue_near_h"] >= kn["hero_h"]: refuse(f"composition knob queue_near_h={kn['queue_near_h']} must be below hero_h={kn['hero_h']}")
+    if kn["queue_far_h"] >= kn["queue_near_h"]: refuse(f"composition knob queue_far_h={kn['queue_far_h']} must be below queue_near_h={kn['queue_near_h']}")
+    if kn["queue_far_x"] <= kn["queue_near_x"]: refuse("composition knob queue_far_x must be right of queue_near_x")
+    return kn
+
+
 def build_collage(inp):
     """The same reply the other paths give, drawn by runtime/illus_hero/collage (engraving cut-outs in a perspective queue, K of N in the accent).
     Only a tally of N members on collage_renderer.figures: any other layout or N is `unavailable` (the page's strip stands in). The subject's declared
     count and total are required here (the picture is read by counting its accent figures) and, as for every renderer, must be the members the rule
-    holds for and the members given (lit_codes, by compose_subject's check of the request), or the request is refused. The pack missing or damaged
+    holds for and the members given (lit_codes, by compose_subject's check of the request), or the request is refused. Its layout knobs are
+    collage_knobs (defaults and ranges in composition_knobs; off range refused). The pack missing or damaged
     is `unavailable`; a reply over max_svg_bytes is `unavailable`. Colours: hex only (the page's check): the request's accent, else the topic's."""
     t0 = time.time(); width = inp.get("width")
     if isinstance(width, float) and width.is_integer(): width = int(width)
@@ -599,13 +616,14 @@ def build_collage(inp):
     dec = sub.get("declared")
     if not isinstance(dec, dict) or "count" not in dec or "total" not in dec: refuse("subject.declared: the collage needs the declared count and total (its accent figures are counted)")
     _, _, acc, _ = compose_subject(inp, renderer="collage")      # the request's own check: knobs, ground, accent, and the recount (lit_codes) against declared
+    kn = collage_knobs(inp)
     ms = members_of(sub); lit = lit_codes(sub)
     import importlib.util
     spec = importlib.util.spec_from_file_location("collage_draw", os.path.join(HERE, "collage", "draw.py"))
     CD = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(CD)
-        d = CD.draw([m["code"] for m in ms], len(lit), len(ms), width, acc.lower(), CR)
+        d = CD.draw([m["code"] for m in ms], len(lit), len(ms), width, acc.lower(), CR, kn)
     except getattr(CD, "PackError", ()) as e: raise Unavailable(str(e))
     k = width / float(CD.CW); h = round(CD.CH * k, 2)
     svg = f'<g transform="scale({k:.5f})">{d["inner"]}</g>'
