@@ -276,6 +276,10 @@ def accent_only(spec):
         if title is None or not isinstance(d, dict): continue
         rows, nm = {r.get("code") for r in d.get("rows") or [] if isinstance(r, dict)}, set(named)
         if layer in ACCENT_DATA and isinstance(d.get("accent"), list): leaves[layer] = {**d, "accent": [c for c in d["accent"] if c in named]}
+        elif layer == "glyph_row" and isinstance(d.get("accent"), (list, str)):
+            # its one glyph's accent (a code, or a list of one) is no more than the colour and its name's weight; a group's or a period's
+            # glyph is named by its own words, no name row a headline can name, so it is drawn without the accent
+            leaves[layer] = {**d, "accent": [c for c in ([d["accent"]] if isinstance(d["accent"], str) else d["accent"]) if c in named]}
         elif layer == "rankbar" and isinstance(d.get("highlight"), str):
             # the rows its headline names are all in the accent (both ends of a "highest ... lowest" title), the whole's row as it was
             leaves[layer] = {**d, "highlight": ",".join(dict.fromkeys([d["highlight"], *sorted(nm & rows)]))} if rows else d

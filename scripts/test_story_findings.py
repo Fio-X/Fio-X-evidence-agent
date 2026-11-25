@@ -1715,6 +1715,179 @@ class PaceAndGroups(unittest.TestCase):
 
 DATA_OFF = ("bignums", "thesis_claims", "risk_notes")
 
+def accent_marks_by_section(page_html):
+    """{section id: (the codes its h2 names, the codes of the marks drawn in the accent there)}: a mark is any rect, circle, path or
+    polygon with a data-code filled or stroked with the accent; the pair bars' "main" bars are left out (they name their entity by
+    the column above them, not by a code)."""
+    out = {}
+    for sid, body in re.findall(r'<section class="sec" data-id="([a-z0-9_]+)"[^>]*>((?:(?!</section>).)*)</section>', page_html, re.S):
+        h2 = re.search(r"<h2\b[^>]*>(.*?)</h2>", body, re.S)
+        named = set(re.findall(r'data-src="name:[^"]*:([^":]+)"', h2[1])) if h2 else set()
+        marks = {m for m in re.findall(r'<(?:rect|circle|path|polygon|line|polyline) [^>]*?(?:fill|stroke)="var\(--accent\)"[^>]*?data-code="([^"]+)"', body)}
+        marks |= {m for m in re.findall(r'<(?:rect|circle|path|polygon|line|polyline) [^>]*?data-code="([^"]+)"[^>]*?(?:fill|stroke)="var\(--accent\)"', body)}
+        out[sid] = (named, marks - {"main"})
+    return out
+
+
+class GlyphAccentIsTheNamed(unittest.TestCase):
+    """A story page's glyph row (the group means, the two paces) draws its glyph in the accent only when the section's headline names
+    its code ({name.<code>}); a group's or a period's glyph has a name of its own words, no name row, so it is drawn in the bar's grey.
+    Over every section of the page, each code drawn in the accent is one the section's headline names. On a Eurostat percent shape
+    and a World Bank shape for the groups angle, on the Eurostat shape for the pace angle (the World Bank shape draws no pace glyphs)."""
+    CASES = (("eu groups", lambda: eu27_plain(ASKED["groups"]), ["groups", "rank"]),
+             ("wb groups", lambda: wb24_request(ASKED["groups"]), ["groups", "ends"]),
+             ("eu pace", lambda: eu27_plain(ASKED["pace"]), ["pace", "rank"]))
+
+    def test_the_glyph_rows_accent_is_dropped_and_every_red_code_is_named(self):
+        seen = set()
+        for what, mk, picks in self.CASES:
+            req, names = mk()
+            composed = FN.compose({**req, "picks": picks})
+            if "glyph_row" not in composed["leaves"]: continue
+            self.assertIsNotNone(composed["leaves"]["glyph_row"].get("accent"), what)        # the composed leaf marks one glyph
+            given = story.accent_only({"sections": composed["sections"], "hero": {"leaves": composed["leaves"]}})
+            self.assertEqual(given["glyph_row"]["accent"], [], what)                          # its headline names no item's code
+            page_html = Findings._page(self, req, names, picks)[3]
+            secs = accent_marks_by_section(page_html)
+            gsec = next(x["id"] for x in composed["sections"] if x["layer"] == "glyph_row")
+            body = re.search(r'<section class="sec" data-id="' + gsec + r'"[^>]*>((?:(?!</section>).)*)</section>', page_html, re.S)[1]
+            self.assertNotIn('data-glyph="circle"', re.sub(r'<circle [^>]*fill="var\(--bar\)"[^>]*data-glyph="circle"/>|<circle [^>]*fill="none"[^>]*/>', "", body), what)
+            for sid, (named, marks) in secs.items(): self.assertLessEqual(marks, named, (what, sid))
+            seen.add(what)
+        self.assertEqual(seen, {c[0] for c in self.CASES}, seen)
+
+
+def percent(mk):
+    """A shape's request with its value format printing a percent sign (the Eurostat share pages' format)."""
+    def go(*a):
+        req, names = mk(*a)
+        return {**req, "fmt_defs": {**req["fmt_defs"], "x": {**req["fmt_defs"]["x"], "suffix": "%"}}}, names
+    return go
+
+
+class LowestOfGroupAndMoversHeadline(unittest.TestCase):
+    """The groups section's note on the widest group's lowest member sets it against that group's own simple mean (the gap in points
+    on a percent measure, the mean as a multiple of it on any other unit), a fact recomputed from the rows; the movers' headline says
+    with its verb which way the biggest mover went (rose to ..., rose most / fell to ..., fell most). A Eurostat percent shape and a
+    World Bank value shape each."""
+
+    def test_the_lowest_of_the_widest_group_is_set_against_its_mean(self):
+        seen = set()
+        for mk, kind in ((percent(eu27_plain), "pp"), (wb24_request, "x")):
+            req, names = mk(ASKED["groups"])
+            composed, facts, _ = draw_all(self, req, names, ["groups", "rank"])
+            note = next(n for n in composed["leaves"]["glyph_row"]["notes"] if n["num"] == "fact:gp_vlo")
+            words = "".join(x.get("w", "") for x in note["text"])
+            self.assertTrue(("比" in words and "低" in words) if kind == "pp" else "倍" in words, (kind, note))
+            self.assertIn("平均", words, kind)
+            ref = next(x["src"][5:] for x in note["text"] if x.get("src", "").startswith("fact:gp_") and x["src"] != "fact:gp_vlo")
+            d = next(x["src"][5:] for x in note["text"] if x.get("src", "").startswith("fact:vs_"))
+            # the widest group's mean is the reference: its lowest member is below it; the number is the gap or the multiple, from the rows
+            self.assertLess(facts["gp_vlo"]["v"], facts[ref]["v"], kind)
+            want = facts[ref]["v"] - facts["gp_vlo"]["v"] if kind == "pp" else facts[ref]["v"] / facts["gp_vlo"]["v"]
+            self.assertAlmostEqual(facts[d]["v"], want, places=6)
+            self.assertEqual(composed["facts"][d]["op"], "minus" if kind == "pp" else "times", kind)
+            seen.add(kind)
+        self.assertEqual(seen, {"pp", "x"})
+
+    def test_the_movers_headline_says_which_way_with_its_verb(self):
+        seen = set()
+        for mk in (percent(eu27_request), wb12_request):
+            req, names = mk()
+            composed, facts, _ = draw_all(self, req, names, ["movers", "overtake"])
+            title = json.dumps(composed["title"], ensure_ascii=False)   # the lead section's headline is the page's
+            big = composed["leaves"]["change_dots"]["accent"][0]
+            up = facts["mv_dbig"]["v"] > 0
+            self.assertIn("升到" if up else "降到", title, mk)
+            self.assertIn("升得最多" if up else "降得最多", title, mk)
+            self.assertNotIn("变到", title, mk)
+            self.assertIn(big, title, mk)
+            seen.add(up)
+        self.assertEqual(seen, {True, False})   # one shape's biggest mover rose, the other's fell
+
+
+def with_whole(mk, whole, name, scale=None):
+    """A shape's request given a whole series: `scale` times the members' simple mean each year (None: the members' mean itself)."""
+    def go(*a):
+        req, names = mk(*a)
+        main, by = req["main"], req["main"]["by"]
+        mine = [r for r in req["rows"] if r["table"] == main["table"] and r["dims"][by] != main.get("whole")]
+        years = sorted({r["time"] for r in mine})
+        rows = [r for r in req["rows"] if not (r["table"] == main["table"] and r["dims"][by] == main.get("whole"))]
+        for y in years:
+            vs = [float(r["value"]) for r in mine if r["time"] == y]
+            v = sum(vs) / len(vs) * (scale or 1.0)
+            rows.append({**row(main["table"], main.get("filter", {}), by, whole, int(y), v), "value": v})
+        members = main.get("members") or sorted({r["dims"][by] for r in mine})
+        return {**req, "rows": rows, "main": {**main, "whole": whole, "members": members}}, {**names, whole: name}
+    return go
+
+
+def flipped_eu27():
+    """The twenty-seven with every path reversed (most fall) but one member that rises: the members' mean falls."""
+    fl = {c: (b, a) for c, (a, b) in EU27.items()}
+    fl[sorted(fl)[0]] = (5.0, 9.0)
+    return eu27_request(fl)
+
+
+class MoverNotesCompare(unittest.TestCase):
+    """The movers section's notes on a Eurostat percent shape and a World Bank value shape. The whole's note sets the whole's change
+    against the members' mean change: more or less the same way by N (op minus of the two sizes), or, when the mean went the other
+    way, the mean's own change; the plain note where the gap prints 0. A mover's note whose members' mean went the other way says the
+    mean's change the other way, never a multiple of it. Each stated number is recomputed from the rows."""
+
+    def notes(self, mk):
+        req, names = mk()
+        composed, facts, _ = draw_all(self, req, names, ["movers", "overtake"])
+        at = {}
+        for r in req["rows"]:
+            if r["table"] == req["main"]["table"]: at.setdefault(r["dims"][req["main"]["by"]], {})[r["time"]] = float(r["value"])
+        y0, y1 = (composed["leaves"]["change_dots"]["periods"][i].split(":")[-1] for i in (0, 1))
+        whole = req["main"].get("whole")
+        ms = [c for c in at if c != whole]
+        mch = sum(at[c][y1] - at[c][y0] for c in ms) / len(ms)
+        words = {n["num"]: "".join(x.get("w", "") for x in n["text"]) for n in composed["leaves"]["change_dots"]["notes"]}
+        srcs = {n["num"]: [x["src"][5:] for x in n["text"] if "src" in x] for n in composed["leaves"]["change_dots"]["notes"]}
+        return composed, facts, at, (y0, y1), whole, mch, words, srcs
+
+    def test_the_whole_is_set_against_the_members_mean_change(self):
+        seen = set()
+        for mk, want in ((percent(eu27_request), "less"), (with_whole(wb12_request, "WLD", "世界", 1.3), None),
+                         (with_whole(lambda: percent(flipped_eu27)(), "EU27_2020", "欧盟", 1.0), "plain"),
+                         (lambda: percent(flipped_eu27)(), "opp")):
+            composed, facts, at, (y0, y1), whole, mch, words, srcs = self.notes(mk)
+            w, wd = words["fact:mv_dw"], at[whole][y1] - at[whole][y0]
+            if want == "plain":   # the whole is the members' mean: the gap prints 0, the old words stand
+                self.assertEqual(w, re.sub(r"\{[^}]*\}", "", FN.WD.WORDS["story.note.mv.whole_up" if wd > 0 else "story.note.mv.whole_down"])); seen.add(want); continue
+            self.assertIn("平均", w); self.assertTrue("比" in w or "反而" in w, w)
+            if (wd > 0) != (mch > 0):
+                self.assertIn("反而", w); self.assertAlmostEqual(facts[srcs["fact:mv_dw"][0]]["v"], abs(mch), places=6); seen.add("opp")
+                continue
+            gap = abs(wd) - abs(mch)
+            self.assertIn("多" if gap > 0 else "少", w)
+            self.assertAlmostEqual(facts["mv_gw"]["v"], abs(gap), places=6)
+            self.assertAlmostEqual(facts[srcs["fact:mv_dw"][0]]["v"], abs(mch), places=6)
+            self.assertEqual(composed["facts"]["mv_gw"]["op"], "minus")
+            seen.add("more" if gap > 0 else "less")
+        self.assertEqual(seen, {"less", "more", "plain", "opp"})
+
+    def test_a_mover_whose_mean_went_the_other_way_gets_no_multiple(self):
+        seen = set()
+        for mk in (wb12_request, lambda: percent(flipped_eu27)(), percent(eu27_request)):
+            composed, facts, at, (y0, y1), whole, mch, words, srcs = self.notes(mk)
+            for num in ("fact:mv_do", "fact:mv_dl"):
+                if num not in words: continue
+                code = next(x["name"] for n in composed["leaves"]["change_dots"]["notes"] if n["num"] == num for x in n["text"] if "name" in x)
+                up = at[code][y1] > at[code][y0]
+                if up != (mch > 0):
+                    self.assertNotIn("倍", words[num]); self.assertIn("反而", words[num]); self.assertIn("平均", words[num])
+                    self.assertAlmostEqual(facts[srcs[num][0]]["v"], abs(mch), places=6)
+                    seen.add("opp")
+                else:
+                    seen.add("same")
+        self.assertEqual(seen, {"opp", "same"})
+
+
 
 def blocks(composed):
     """The page's data blocks: the sections with a data leaf (not the numbers, the thesis or the notes)."""
@@ -2379,13 +2552,16 @@ class ChangeNotes(unittest.TestCase):
         self.has_k(notes["d_usa"], "d_usa", facts, ch["USA"] / mean)
         self.assertEqual(composed["facts"]["sp_mch"], {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": "x"})
         self.assertEqual((composed["facts"]["sp_m0"]["op"], composed["facts"]["sp_m0"]["filter"]["country"]), ("mean", sorted(WB)))
-        self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise", c="CHN"))   # opposite sign: the old sentence
+        self.assertEqual(notes["d_chn"], FN.note("d_chn", "story.note.spread.rise_opp", c="CHN", m="sp_mdn"))   # opposite sign: the mean fell
+        self.assertAlmostEqual(facts["sp_mdn"]["v"], -mean, places=9)
         self.assertNotIn("k_d_chn", composed["facts"])
-        # the movers: the far end fell while the mean rose (old words); the member that led at the start rose more than the mean
+        # the movers: the far end fell while the mean rose (no multiple: the note says the mean rose, by its own change); the member
+        # that led at the start rose more than the mean
         req = linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True)
         composed, facts, notes = self.notes(req, ["movers", "ends"], "movers", WB_NAMES_ALL)
         ch = {c: b - a for c, (a, b) in WB_MOST_ROSE.items()}; mean = sum(ch.values()) / len(ch)
-        self.assertEqual(notes["mv_do"], FN.note("mv_do", "story.note.mv.down_most", c="DEU"))
+        self.assertEqual(notes["mv_do"], FN.note("mv_do", "story.note.mv.down_most_opp", c="DEU", m="mv_mup"))
+        self.assertAlmostEqual(facts["mv_mup"]["v"], mean, places=9)
         self.assertNotIn("k_mv_do", composed["facts"])
         self.assertEqual(notes["mv_dl"]["text"], FN.ST("story.note.mv.lead_up_ref", c="USA", k="k_mv_dl"))
         self.has_k(notes["mv_dl"], "mv_dl", facts, ch["USA"] / mean)
@@ -2406,6 +2582,29 @@ class ChangeNotes(unittest.TestCase):
         self.assertEqual(notes["mv_do"]["text"], FN.ST("story.note.mv.up_least_ref_lo", c=lo, k="k_mv_do"))
         self.has_k(notes["mv_do"], "mv_do", facts, mean / ch[lo])
         self.assertEqual(composed["facts"]["k_mv_do"], {"op": "times", "a": "mv_mup", "b": "mv_do", "fmt": "times"})
+
+    def test_a_spread_end_whose_mean_went_the_other_way_says_so(self):
+        """The spread's rise and fall notes when the members' mean change went the other way: no multiple, the mean's own change that
+        way (sp_mch when it rose, sp_mdn when it fell), recomputed from the rows; on a World Bank value shape (the mean rose, the
+        biggest fall is told) and a Eurostat percent shape (the mean fell, the biggest rise is told)."""
+        fell = {"AA": (50.0, 40.0), "BB": (45.0, 48.0), "CC": (40.0, 30.0), "DD": (35.0, 25.0), "EE": (30.0, 33.0), "FF": (20.0, 12.0), "GG": (10.0, 11.0)}
+        names = {"AA": "甲", "BB": "乙", "CC": "丙", "DD": "丁", "EE": "戊", "FF": "己", "GG": "庚"}
+        seen = set()
+        for req, nm, y0, y1 in ((linear_request(WB_T, "country", WB_MOST_ROSE, 2010, 2022, text=True), WB_NAMES_ALL, 2010, 2022),
+                                (NotesStandAgainstAReference.pct(None, linear_request("nrg_ind_ren", "geo", fell, 2005, 2024, fixed={"nrg_bal": "REN"})), names, 2005, 2024)):
+            composed, facts, notes = self.notes(req, ["spread", "ends"], "spread", nm)
+            codes = {r["dims"][req["main"]["by"]] for r in req["rows"]}
+            ch = {c: self.at(req, c, y1) - self.at(req, c, y0) for c in codes}
+            mean = sum(ch.values()) / len(ch)
+            for num, n in notes.items():
+                c = num[2:].upper()
+                if ch[c] * mean >= 0: continue
+                self.assertNotIn("倍", self.words(n), num); self.assertIn("反而", self.words(n), num); self.assertIn("平均", self.words(n), num)
+                m = "sp_mch" if mean > 0 else "sp_mdn"
+                self.assertEqual(n, FN.note(num, "story.note.spread.rise_opp" if ch[c] > 0 else "story.note.spread.fall_opp", c=c, m=m))
+                self.assertAlmostEqual(facts[m]["v"], abs(mean), places=6)
+                seen.add("rise" if ch[c] > 0 else "fall")
+        self.assertEqual(seen, {"rise", "fall"})
 
     def test_a_mean_that_did_not_move_keeps_the_old_sentences(self):
         req = linear_request(WB_T, "country", WB_FLAT_MEAN, 2010, 2022, text=True)

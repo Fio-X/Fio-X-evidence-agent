@@ -731,8 +731,14 @@ def angle_spread(q):
     # the two notes against the members' mean change over the span (the mean at the last year less the mean at the first: every member has both)
     avg = {"sp_m0": q.mean(members, y0), "sp_m1": q.mean(members, y1), "sp_mch": {"op": "minus", "a": "sp_m1", "b": "sp_m0", "fmt": q.change}}
     mch = sum(ch.values()) / len(ch)
-    anns = [to_average(q, f, base, f"d_{c.lower()}", ch[c], mch, "sp_mch", avg, len(members), c=c)
-            for base, c in (("story.note.spread.rise", up[0]), ("story.note.spread.fall", down[0]))]
+    def spread_note(base, c):
+        if len(members) >= MEAN_MIN and ch[c] * mch < 0 and printed(q, abs(mch), q.change) != 0 and f"{base}_opp" in WD.WORDS:
+            # the mean went the other way: no multiple of it (it would mislead); the note says the mean's own change that way (its size)
+            if mch > 0: f.update(avg); m = "sp_mch"
+            else: f.update({"sp_m0": avg["sp_m0"], "sp_m1": avg["sp_m1"], "sp_mdn": {"op": "minus", "a": "sp_m0", "b": "sp_m1", "fmt": q.change}}); m = "sp_mdn"
+            return note(f"d_{c.lower()}", f"{base}_opp", c=c, m=m)
+        return to_average(q, f, base, f"d_{c.lower()}", ch[c], mch, "sp_mch", avg, len(members), c=c)
+    anns = [spread_note(base, c) for base, c in (("story.note.spread.rise", up[0]), ("story.note.spread.fall", down[0]))]
     return {"angle": "spread", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [up[0], down[0]], "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
             "anns": anns,
             "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",
@@ -1089,15 +1095,33 @@ def angle_movers(q):
     members = sorted(q.panel)
     mch = sum(ch.values()) / len(ch)   # the members' mean change: the mean at the last year less the mean at the first (every member has both)
     avg = {"mv_m0": q.mean(members, y0), "mv_m1": q.mean(members, y1)}
+    def mean_key(up):  # the members' mean change the way `up` says, as a fact (its size, op minus of the two means), the means declared with it
+        key = "mv_mup" if up else "mv_mdn"
+        f.update(avg); f[key] = {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}
+        return key
+    mean_moved = len(members) >= MEAN_MIN and printed(q, abs(mch), q.change) != 0   # a mean change a note can print and stand on
     def vs_avg(code, name, base, up):  # the note on a member's change (fact `name`, its size) against the members' mean change the same way
+        if mean_moved and (mch > 0) != up and f"{base}_opp" in WD.WORDS:
+            # the mean went the other way: no multiple of it (it would mislead); the note says the mean's own change the other way
+            return note(name, f"{base}_opp", c=code, m=mean_key(not up))
         key = "mv_mup" if up else "mv_mdn"
         facts = {**avg, key: {"op": "minus", "a": "mv_m1" if up else "mv_m0", "b": "mv_m0" if up else "mv_m1", "fmt": q.change}}
         return to_average(q, f, base, name, abs(ch[code]), mch if up else -mch, key, facts, len(members), c=code)
+    def whole_note(up):  # the whole's change (fact mv_dw) against the members' mean change: how much more or less the same way, else
+        # (the mean went the other way) the mean's own change; the plain note where no mean stands or the gap prints as 0
+        base = "story.note.mv.whole_up" if up else "story.note.mv.whole_down"
+        if not mean_moved: return note("mv_dw", base, w=whole)
+        if (mch > 0) != up: return note("mv_dw", f"{base}_opp", w=whole, m=mean_key(not up))
+        gap = abs(q.wseries[y1][0] - q.wseries[y0][0]) - abs(mch)
+        if printed(q, abs(gap), q.change) == 0: return note("mv_dw", base, w=whole)
+        key = mean_key(up)
+        f["mv_gw"] = {"op": "minus", "a": "mv_dw" if gap > 0 else key, "b": key if gap > 0 else "mv_dw", "fmt": q.change}
+        return note("mv_dw", f"{base}_{'more' if gap > 0 else 'less'}", w=whole, m=key, d="mv_gw")
     other_up = amount(other, "mv_do")
     kind = {(True, True): "up_least", (True, False): "down_most", (False, False): "down_least", (False, True): "up_most"}[(ch[big] > 0, other_up)]
     anns = [vs_avg(other, "mv_do", f"story.note.mv.{kind}", other_up)]
     if whole:
-        anns.append(note("mv_dw", "story.note.mv.whole_up" if amount(whole, "mv_dw") else "story.note.mv.whole_down", w=whole))
+        anns.append(whole_note(amount(whole, "mv_dw")))
     else:
         lead = max(q.panel, key=lambda c: (q.panel[c][y0][0], c))
         if lead in kept and lead not in (big, other) and ch[lead] != 0:
@@ -1118,7 +1142,8 @@ def angle_movers(q):
                  {"fact": key1(big), "label": {"word": "story.big.now", "name": big, "year": {"src": f"fact:{key1(big)}.t.y"}}},
                  {"fact": "mv_dbig", "label": {"word": "story.big.moved", "name": big}}]
     return with_part({"angle": "movers", "shows": [q.shows(f"{y0}-{y1}", "change")], "about": [big, other], "layer": "change_dots", "big": big_items, "kicker": T("story.mv.kicker"),
-            "title": T("story.mv.title", big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
+            # the headline's verb says which way the biggest mover went ("rose to ..., rose most"); the plain "moved" only for no change
+            "title": T("story.mv.title" + ("_up" if ch[big] > 0 else "_down" if ch[big] < 0 else ""), big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
             "text": T("story.mv.text_ref" if whole else "story.mv.text", w=whole, y0=key0(big), y1=key1(big)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key1(big)}", "head": T("story.mv.claim", big=big)}, "notes": [], "members": True, "last": key1(big),
             "anns": anns, "score": round(size * surprise * sturdy, 4),
@@ -1488,7 +1513,9 @@ def angle_groups(q):
     order = sorted(kept, key=lambda g: (-gm[g], g))
     rows_data = {"up": {"title": ST("story.groups.up"), "rows": cols["up"]}, "down": {"title": ST("story.groups.down"), "rows": cols["down"]},
                  "footnote": ST("story.groups.foot")}
-    anns = [note("gp_all", "story.note.groups.all"), note("gp_vlo", "story.note.groups.wide", **bind)]   # numbers the title and text do not print
+    # numbers the title and text do not print; the widest group's lowest member set against that group's own simple mean (compared:
+    # the gap in points on a percent measure, else the mean as a multiple of it; the plain note where the two print alike)
+    anns = [note("gp_all", "story.note.groups.all"), compared(q, f, "gp_vlo", "story.note.groups.wide", "gp_vlo", "gp_vlo", gk(wide), at[wlo], gm[wide], **bind)]
     scale = float(q.defs.get(q.fmts["value"], {}).get("scale", 1))
     # the group means as glyphs (area = mean, at most fifteen, none below 0, the smallest still six px across at the largest's 110),
     # the mean of every grouped member as the ghost glyph, labelled by the words' table
