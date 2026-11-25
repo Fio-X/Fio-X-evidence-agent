@@ -2,7 +2,9 @@
 `resolved` is what runtime/illus_hero/run_hero.py resolve(request, renderer="people") returns (scene, palette, accent, composition knobs): the scene
 (energy.path|rank|series|tally ...), its units in order, each one lit or not (the lit count is what the rows give, recomputed by resolve, never typed
 here), the omission mark of a long ranking. One unit is one baked people figure (people.json, see its credit). This module places and paints; it makes
-no number and no word. Only <g> and <path> are written, every colour a hex: a lit figure in the page's palette, an unlit one in pale greys.
+no number and no word. Only <g> and <path> are written, every colour a hex. Each baked piece has a role (people.json roles): a lit figure wears the
+page accent on its whole outer garment (a darker shade of it, under the judge's strong line, on the far sleeve) and is otherwise one warm skin tone,
+three quiet greys and the page's ink; an unlit one is pale greys. So the picture holds one accent as drawn: no recolouring pass (one_accent) is run on it.
 `cols` = {"--accent": hex, "--bar": hex, "--t-title": hex}: the page's own tokens, resolved by the caller."""
 import colorsys
 import json
@@ -15,6 +17,7 @@ REG = json.load(open(os.path.join(HERE, "people.json")))
 CW, CH = REG["canvas"]["w"], REG["canvas"]["h"]
 FIG = REG["figures"]
 ORDER = [k for k in REG["order"] if k in FIG]
+ROLES = REG["roles"]
 SINGLE = ("path", "series", "rank")
 ROWS = ("tally",)
 KINDS = SINGLE + ROWS
@@ -24,56 +27,38 @@ def rgb(h): h = h.lstrip("#"); return tuple(int(h[i:i + 2], 16) for i in (0, 2, 
 def hex_of(c): return "#%02x%02x%02x" % tuple(max(0, min(255, int(round(v)))) for v in c)
 def hls(c): h, l, s = colorsys.rgb_to_hls(*(v / 255 for v in c)); return h * 360, l, s
 def from_hls(h, l, s): return tuple(v * 255 for v in colorsys.hls_to_rgb((h % 360) / 360, max(0.0, min(1.0, l)), max(0.0, min(1.0, s))))
-def hdiff(a, b): return (a - b + 180) % 360 - 180
-def chroma(c): return max(c) - min(c)
-def lum(c): return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 
 
-def is_skin(c):
-    r, g, b = c
-    return r > g > b and 0.18 < (r - b) / max(r, 1) < 0.62 and 60 < lum(c) < 200 and chroma(c) < 110
+def accent_shade(acc):
+    """the darker shade of the accent a lit figure's far sleeve or back panel wears: the accent's hue at paint.accent_shade lightness l and
+    chroma c (under the page judge's 0.30 line, so the accent stays the picture's only strong colour)."""
+    S = REG["paint"]["accent_shade"]; h, _l, _s = hls(rgb(acc)); l = S["l"]
+    return hex_of(from_hls(h, l, S["c"] / (1 - abs(2 * l - 1))))
 
 
-def palette_of(primary, cols):
-    H = REG["harmony"]; ph, pl, ps = hls(rgb(primary))
-    return {"primary": hls(rgb(primary)), "secondary": (ph + H["secondary_hue"], pl, ps), "accent": hls(rgb(cols["--accent"])), "neutral": hls(rgb(cols["--bar"]))}
+def skin_tone(name):
+    """the paint.skin tone nearest the drawing's own skin lightness (its first piece in the role skin)."""
+    own = next(p["fill"] for p, r in zip(FIG[name]["pieces"], ROLES[name]) if r == "skin"); l = hls(rgb(own))[1]
+    return min(REG["paint"]["skin"]["tones"], key=lambda t: abs(hls(rgb(t["base"]))[1] - l))
 
 
-def lit_map(fills, pal):
-    """fill hex -> hex for a lit figure (see people.json harmony)."""
-    H = REG["harmony"]; mapping = {}; chromatic = []; dark = []
-    for f, area in fills.items():
-        c = rgb(f); h, l, s = hls(c)
-        if is_skin(c) or (0.02 < h / 360 < 0.12 and 0.2 < s < 0.7 and 0.15 < l < 0.75): mapping[f] = f; continue
-        if chroma(c) < 30 or s < 0.12 or l > H["light_above"]:
-            nh = pal["neutral"][0]; mapping[f] = hex_of(from_hls(nh, l, min(s, 0.10) * 0.5 + 0.03)) if l > H["dark_below"] else f; continue
-        if l < H["dark_below"]: dark.append((f, area, h, l, s)); continue
-        chromatic.append((f, area, h, l, s))
-    chromatic.sort(key=lambda t: t[2]); fams = []
-    for t in chromatic:
-        if fams and abs(hdiff(t[2], fams[-1][-1][2])) < H["hue_gap"]: fams[-1].append(t)
-        else: fams.append([t])
-    if len(fams) > 1 and abs(hdiff(fams[0][0][2], fams[-1][-1][2])) < H["hue_gap"]: fams[0] = fams.pop() + fams[0]
-    fams.sort(key=lambda fam: -sum(t[1] for t in fam)); meta = []
-    for fam, role in zip(fams, ["primary", "secondary"] + ["accent"] * 10):
-        fh = math.degrees(math.atan2(sum(t[1] * math.sin(math.radians(t[2])) for t in fam), sum(t[1] * math.cos(math.radians(t[2])) for t in fam))) % 360
-        ph, pl, ps = pal[role]
-        for f, a, h, l, s in fam: mapping[f] = hex_of(from_hls(ph + H["hue_keep"] * hdiff(h, fh), l + (pl - l) * H["l_pull"], min(H["s_cap"], s + (ps - s) * H["s_pull"])))
-        meta.append((fh, ph, ps))
-    for f, a, h, l, s in dark:
-        best = min(meta, key=lambda m: abs(hdiff(h, m[0])), default=None)
-        mapping[f] = hex_of(from_hls(best[1] + H["hue_keep"] * hdiff(h, best[0]), l, s + (best[2] - s) * H["s_pull"])) if best and abs(hdiff(h, best[0])) < H["hue_gap"] else f
-    return mapping
+def lit_paints(name, cols):
+    """the hex of each piece of a lit figure, by its role (people.json paint.roles): accent, accent_shade, skin, skin_shade, ink or a grey."""
+    P = REG["paint"]; tone = skin_tone(name)
+    by = {"accent": cols["--accent"], "accent_shade": accent_shade(cols["--accent"]), "skin": tone["base"], "skin_shade": tone["shade"], "ink": cols["--t-title"],
+          **{k: v for k, v in P["greys"].items() if k != "doc"}}
+    return [by[P["roles"][r]] for r in ROLES[name]]
 
 
-def unlit_map(fills, pal):
-    U = REG["unlit"]; nh = pal["neutral"][0]
-    return {f: hex_of(from_hls(nh, U["l_base"] + U["l_span"] * hls(rgb(f))[1], U["s"])) for f in fills}
+def unlit_paints(name, cols):
+    """the hex of each piece of an unlit figure: a pale grey of the drawing's own lightness (people.json unlit)."""
+    U = REG["unlit"]; nh = hls(rgb(cols["--bar"]))[0]
+    return [hex_of(from_hls(nh, U["l_base"] + U["l_span"] * hls(rgb(p["fill"]))[1], U["s"])) for p in FIG[name]["pieces"]]
 
 
-def figure_svg(name, cx, gy, h, lit, mapping):
+def figure_svg(name, cx, gy, h, paints):
     f = FIG[name]; k = h / f["h"]
-    body = "".join(f'<path fill="{mapping[p["fill"]]}" d="{p["d"]}"/>' for p in f["pieces"])
+    body = "".join(f'<path fill="{c}" d="{p["d"]}"/>' for p, c in zip(f["pieces"], paints))
     return f'<g transform="translate({cx:.2f},{gy:.2f}) scale({k:.5f})">{body}</g>', (cx - f["w"] * k / 2, gy - h, cx + f["w"] * k / 2, gy)
 
 
@@ -114,12 +99,12 @@ def poly(pts): return "M" + "L".join(f"{x:.1f} {y:.1f}" for x, y in pts) + "Z"
 def disc(cx, cy, r, n=12): return [(cx + r * math.cos(2 * math.pi * k / n), cy + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
 
 
-def draw(resolved, cols, primary):
+def draw(resolved, cols):
     t0 = time.time(); scene, _pal, _acc, _c = resolved; comp = scene["composition"]; kind = scene["scene"].split(".")[1]
     items = scene["items"]; units = [i for i in items if "lit" in i.get("args", {})]
     ch = REG["kinds"].get(kind, {}).get("canvas_h", CH)
-    pal = palette_of(primary, cols); acc = cols["--accent"]; bar = cols["--bar"]; ink = cols["--t-title"]
-    lit_maps = {n: lit_map(FIG[n]["fills"], pal) for n in ORDER}; unlit_maps = {n: unlit_map(FIG[n]["fills"], pal) for n in ORDER}
+    acc = cols["--accent"]; bar = cols["--bar"]; ink = cols["--t-title"]
+    lit_paint = {n: lit_paints(n, cols) for n in ORDER}; unlit_paint = {n: unlit_paints(n, cols) for n in ORDER}
     parts = []; placed = []; omitted_at = None; G = REG["ground"]
     if kind in SINGLE:
         gy = G["y_single"] * ch; cut = None
@@ -142,7 +127,7 @@ def draw(resolved, cols, primary):
         raise ValueError(f"people: the {kind!r} layout is not drawn here")
     out_units = []; marks = []
     for it, n, cx, gy, h, ri in sorted(placed, key=lambda p: (-p[5], p[2])):
-        lit = bool(it["args"]["lit"]); svg, box = figure_svg(n, cx, gy, h, lit, lit_maps[n] if lit else unlit_maps[n]); parts.append(svg)
+        lit = bool(it["args"]["lit"]); svg, box = figure_svg(n, cx, gy, h, lit_paint[n] if lit else unlit_paint[n]); parts.append(svg)
         out_units.append(dict(fn=it["fn"], figure=n, lit=lit, row=ri, bbox=[round(v, 1) for v in box], ground=round(gy, 1), h=round(h, 1)))
         if "mark" in it: marks.append((cx, box[1]))
     M = REG["mark"]

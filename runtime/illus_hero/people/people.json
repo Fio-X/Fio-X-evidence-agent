@@ -1,21 +1,57 @@
 {
- "doc": "The people version of the story hero: real flat-colour people drawings (baked into this file by scripts/bake_people.py, see credit) placed like the line version places its units. One figure is one unit: a lit figure is painted in the page's palette (its own colour relations kept, see harmony), an unlit one in pale greys. Everything numeric is here; draw.py holds no other constants. Only <g> and <path> are drawn, colours as hex.",
+ "doc": "The people version of the story hero: real flat-colour people drawings (baked into this file by scripts/bake_people.py, see credit) placed like the line version places its units. One figure is one unit: a lit figure wears the page accent on its whole outer garment and is otherwise skin, greys and ink (see paint, roles), an unlit one is pale greys. Everything numeric is here; draw.py holds no other constants. Only <g> and <path> are drawn, colours as hex.",
  "credit": "Figure artwork: Humaaans by Pablo Stanley (humaaans.com). The official site offers it under CC0; the copies these shapes were baked from carried a CC BY 4.0 mark, so the credit stays.",
  "canvas": {
   "w": 1440,
   "h": 560,
   "doc": "w is fixed; the height is the layout's own kinds.<kind>.canvas_h (else canvas.h): the people row is a banner, the tally a deeper picture"
  },
- "harmony": {
-  "doc": "Palette for a lit figure: primary = the topic's accent colour, secondary = the same colour turned secondary_hue degrees, accent = the page's --accent, neutral = the page's --bar. A fill keeps its lightness relation and most of its saturation: skin tones stay, near-black and near-white stay dark and light, chromatic fills are grouped by hue (within hue_gap degrees), the family with the most painted area takes primary, the next secondary, the rest accent.",
-  "secondary_hue": 48,
-  "hue_gap": 35,
-  "l_pull": 0.45,
-  "s_pull": 0.6,
-  "hue_keep": 0.25,
-  "s_cap": 0.72,
-  "dark_below": 0.22,
-  "light_above": 0.93
+ "paint": {
+  "doc": "A lit figure, piece by piece (roles): its outer garment, the whole of it (top, and top_back, the far sleeve or back panel), is the only accent of the picture, the page's --accent, top_back a darker shade of it whose chroma stays under the page judge's 0.30 line (accent_shade: the accent's hue at lightness l, chroma c). Trousers, a skirt, the legs, an undershirt, shoes and a bag are greys; skin is one warm low-saturation tone (the one of skin.tones nearest the drawing's own skin lightness); hair and the drawing's line details are the page's ink (--t-title). No other hue is painted, so the picture is one accent as drawn (no recolouring pass after it).",
+  "roles": {
+   "top": "accent",
+   "top_back": "accent_shade",
+   "skin": "skin",
+   "skin_back": "skin_shade",
+   "hair": "ink",
+   "line": "ink",
+   "legs": "mid",
+   "legs_back": "dark",
+   "under": "dark",
+   "under_light": "light",
+   "shoe": "dark",
+   "headwear": "mid",
+   "bag": "light",
+   "bag_back": "mid",
+   "light_detail": "light"
+  },
+  "accent_shade": {
+   "l": 0.32,
+   "c": 0.27
+  },
+  "greys": {
+   "light": "#e2e0dc",
+   "mid": "#aba8a4",
+   "dark": "#625f5b",
+   "doc": "three quiet warm greys for clothing (chroma under 0.03)"
+  },
+  "skin": {
+   "tones": [
+    {
+     "base": "#d9b9a1",
+     "shade": "#c8a289"
+    },
+    {
+     "base": "#b8957a",
+     "shade": "#a67e64"
+    },
+    {
+     "base": "#906851",
+     "shade": "#785645"
+    }
+   ],
+   "doc": "warm, low saturation (HLS hue 20-26 degrees, saturation 0.27-0.42, chroma 0.20-0.26): light, mid, deep, each with the shade of its far limbs"
+  }
  },
  "unlit": {
   "l_base": 0.64,
@@ -95,6 +131,152 @@
   "humaaans-10",
   "humaaans-18"
  ],
+ "roles": {
+  "doc": "Per figure, the role of each piece in order (pieces[i] -> roles[i]); scripts/bake_people.py rewrites only figures, so a re-bake must re-read these (the test checks the lengths).",
+  "humaaans-11": [
+   "skin",
+   "hair",
+   "legs_back",
+   "legs",
+   "shoe",
+   "shoe",
+   "skin",
+   "top_back",
+   "under",
+   "top"
+  ],
+  "humaaans-8": [
+   "hair",
+   "skin",
+   "hair",
+   "legs_back",
+   "skin_back",
+   "skin",
+   "shoe",
+   "shoe",
+   "legs",
+   "skin",
+   "top_back",
+   "top",
+   "under"
+  ],
+  "humaaans-16": [
+   "skin",
+   "hair",
+   "legs_back",
+   "legs",
+   "shoe",
+   "shoe",
+   "skin_back",
+   "top_back",
+   "top",
+   "under"
+  ],
+  "humaaans-14": [
+   "skin",
+   "hair",
+   "headwear",
+   "line",
+   "skin_back",
+   "shoe",
+   "legs_back",
+   "skin",
+   "legs",
+   "shoe",
+   "skin",
+   "top_back",
+   "under",
+   "top"
+  ],
+  "humaaans-4": [
+   "skin",
+   "hair",
+   "skin_back",
+   "shoe",
+   "legs_back",
+   "skin",
+   "legs",
+   "shoe",
+   "skin",
+   "top_back",
+   "under",
+   "top",
+   "line",
+   "line"
+  ],
+  "humaaans-12": [
+   "hair",
+   "skin",
+   "hair",
+   "skin_back",
+   "skin",
+   "shoe",
+   "shoe",
+   "bag_back",
+   "bag",
+   "skin",
+   "top_back",
+   "under_light",
+   "top",
+   "line",
+   "light_detail"
+  ],
+  "humaaans-5": [
+   "skin",
+   "hair",
+   "skin_back",
+   "skin",
+   "shoe",
+   "shoe",
+   "legs_back",
+   "legs",
+   "skin",
+   "top_back",
+   "top"
+  ],
+  "humaaans-7": [
+   "skin",
+   "hair",
+   "skin_back",
+   "shoe",
+   "legs_back",
+   "skin",
+   "legs",
+   "shoe",
+   "top",
+   "skin",
+   "line"
+  ],
+  "humaaans-10": [
+   "skin",
+   "hair",
+   "skin_back",
+   "shoe",
+   "legs_back",
+   "skin",
+   "legs",
+   "shoe",
+   "skin",
+   "top_back",
+   "top"
+  ],
+  "humaaans-18": [
+   "skin",
+   "hair",
+   "skin_back",
+   "shoe",
+   "legs_back",
+   "skin",
+   "legs",
+   "shoe",
+   "skin",
+   "top_back",
+   "under_light",
+   "top",
+   "line",
+   "light_detail"
+  ]
+ },
  "figures": {
   "humaaans-11": {
    "w": 238.15,
