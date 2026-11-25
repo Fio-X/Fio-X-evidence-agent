@@ -5,7 +5,9 @@
 //! The index is built once from the catalogue's original files (`Raw`); `companions` is pure: the caller passes the rows
 //! it fetched for the main table and for each candidate, so a candidate that failed to fetch is simply not offered.
 
-use crate::l5geo::{family_exists, family_holds, time_freq, toks, wb_unit, Raw};
+#[cfg(test)]
+use crate::l5geo::family_exists;
+use crate::l5geo::{family_holds, time_freq, toks, wb_unit, Raw};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

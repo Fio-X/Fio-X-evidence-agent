@@ -894,6 +894,7 @@ fn measure_families() -> &'static [Family] {
 }
 
 /// Whether `id` is a registered measure family.
+#[cfg(test)]
 pub fn family_exists(id: &str) -> bool {
     measure_families().iter().any(|f| f.id == id)
 }
@@ -1372,6 +1373,7 @@ fn names_measure_after_place(left: &str, m: &str) -> bool {
 /// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
 /// forecasts, places below a country, two measures' relation, derived ratios, quarters and months, opinions); None for a
 /// question none of them takes. `this_year` is the program's clock year: a four-digit year after it is a forecast.
+#[cfg(test)]
 pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusal> {
     scope_refused_targets_zh(question_zh, this_year, &[])
 }

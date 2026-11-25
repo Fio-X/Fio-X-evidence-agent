@@ -20,7 +20,7 @@ use serde_json::{json, Map, Value};
 use crate::agent_loop::ToolRunner;
 use crate::next_flow::{
     record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared, Recorder, Stop,
-    Verdict, VISION_QUESTIONS,
+    TextAsk, Verdict, VISION_QUESTIONS,
 };
 use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_leaf::Recipe;
@@ -6072,7 +6072,10 @@ pub async fn reword(
     cancel: &AtomicBool,
 ) -> Result<BTreeMap<Target, String>, Stop> {
     let ask = drafts.ask(drafts.slot_ids());
-    let Ask::Text {
+    let Ask::Text(text_ask) = &ask else {
+        unreachable!("drafts ask for text")
+    };
+    let TextAsk {
         fields,
         numbers,
         periods,
@@ -6086,10 +6089,7 @@ pub async fn reword(
         unasked,
         terms,
         ..
-    } = &ask
-    else {
-        unreachable!("drafts ask for text")
-    };
+    } = &**text_ask;
     let listed: Vec<String> = fields
         .iter()
         .map(|(n, text)| format!("{n}. {text}"))
@@ -6135,7 +6135,7 @@ pub async fn reword(
                 .iter()
                 .map(|a| ask.decode(a).0)
                 .collect();
-            let fields_only = Ask::Text {
+            let fields_only = Ask::Text(Box::new(TextAsk {
                 fields: fields.clone(),
                 slots: Vec::new(),
                 numbers: numbers.clone(),
@@ -6149,7 +6149,7 @@ pub async fn reword(
                 members: members.clone(),
                 unasked: unasked.clone(),
                 terms: terms.clone(),
-            };
+            }));
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
             for answer in &answers {
@@ -6160,7 +6160,7 @@ pub async fn reword(
                     }
                 }
                 for (id, name) in answer["names"].as_object().into_iter().flatten() {
-                    let one = Ask::Text {
+                    let one = Ask::Text(Box::new(TextAsk {
                         fields: BTreeMap::new(),
                         slots: vec![id.clone()],
                         numbers: numbers.clone(),
@@ -6174,7 +6174,7 @@ pub async fn reword(
                         members: Vec::new(),
                         unasked: Vec::new(),
                         terms: Vec::new(),
-                    };
+                    }));
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
                         && drafts.slot_ids().contains(id)
@@ -10902,7 +10902,7 @@ mod tests {
         let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"]
             .map(String::from)
             .to_vec();
-        let ok = vec![
+        let ok = [
             target("ren", "EU27_2020", "2030"),
             target("ren", "EU27_2020", "2040"),
             target("other", "EU27_2020", "2050"),
@@ -10922,7 +10922,7 @@ mod tests {
                 "2040".to_string()
             ))
         );
-        let none = vec![
+        let none = [
             target("ren", "EU27_2020", "2024"),
             target("other", "EU27_2020", "2030"),
         ];
@@ -10994,12 +10994,15 @@ mod tests {
             .all(|e| e["group"] == "knowledge" && e["request"] == "targets" && e["ok"] == true));
     }
 
+    /// Every recipe's name with its verdict, in registry order.
+    type Verdicts<'a, T> = Vec<(&'a str, Result<T, String>)>;
+
     /// The first recipe, in registry order, whose conditions the tables meet (what the pick tries one after the other), with
     /// every recipe's verdict beside it.
     fn first_shape<'a>(
         tables: &[(&str, &[Value])],
         catalogue: &dyn Catalogue,
-    ) -> (Option<&'a str>, Vec<(&'a str, Result<(), String>)>) {
+    ) -> (Option<&'a str>, Verdicts<'a, ()>) {
         let all: Vec<(&str, Result<(), String>)> = Hubs
             .recipes()
             .iter()
@@ -11711,7 +11714,7 @@ mod tests {
     fn first_recipe<'a>(
         tables: &[(&str, &[Value])],
         catalogue: &dyn Catalogue,
-    ) -> (Option<&'a str>, Vec<(&'a str, Result<Shape, String>)>) {
+    ) -> (Option<&'a str>, Verdicts<'a, Shape>) {
         let all: Vec<(&str, Result<Shape, String>)> = Hubs
             .recipes()
             .iter()
@@ -12397,7 +12400,6 @@ mod tests {
                 .sort_by(|a, b| a["src"].as_str().cmp(&b["src"].as_str()))
         };
         by_src(&mut rust["rows"]);
-        let mut fill = fill;
         by_src(&mut fill["rows"]);
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
@@ -19411,9 +19413,10 @@ mod tests {
         assert_eq!(places_drawn(&ranked), Some(2));
         let mut drafts = q1_drafts();
         drafts.places_drawn = places_drawn(&fill);
-        let Ask::Text { places, .. } = drafts.ask(Vec::new()) else {
+        let Ask::Text(text_ask) = drafts.ask(Vec::new()) else {
             unreachable!()
         };
+        let TextAsk { places, .. } = *text_ask;
         assert_eq!(places, Some(3));
     }
 
@@ -31298,7 +31301,7 @@ for line in sys.stdin:
             assert_eq!(rows.len(), main.len() + 1, "{name}");
             assert_eq!(rows.last().unwrap()["src"], "target:ren-EU27_2020-2030");
             // no target registered for this main: no key and no row added
-            let p = coords(name, &main, &[other.clone()]);
+            let p = coords(name, &main, std::slice::from_ref(&other));
             assert!(p["shape"].get("target").is_none(), "{name}");
             assert_eq!(p["rows"].as_array().unwrap().len(), main.len(), "{name}");
         }
@@ -31324,7 +31327,7 @@ for line in sys.stdin:
         // members alone (the ordinary fetch): no whole, the year before still there
         let mut members = main.clone();
         members.retain(|r| r["dims"]["geo"] != "EU27_2020");
-        let p = coords("column", &members, &[target.clone()]);
+        let p = coords("column", &members, std::slice::from_ref(&target));
         assert!(p["shape"].get("whole").is_none());
         assert!(p["shape"].get("target").is_none());
         assert_eq!(p["shape"]["prev"], "2023");

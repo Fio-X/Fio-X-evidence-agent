@@ -984,7 +984,7 @@ fn year_of(key: &str, k: &str, queries: &BTreeMap<&str, &Value>) -> Result<i32, 
 /// - line_at: `start` carried at the `rate` a year from its year to the year `at` (a straight line, a scenario);
 /// - reach_year: the first whole year `start` carried at `rate` a year is at or above `target`; refused when the rate
 ///   is not above 0 or the year is past 2100.
-/// Each names what it read in `reads`; `n` holds the years a rate or a line spans.
+///   Each names what it read in `reads`; `n` holds the years a rate or a line spans.
 #[allow(clippy::too_many_arguments)]
 fn of_facts_over_years(
     key: &str,

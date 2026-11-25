@@ -419,7 +419,7 @@ mod tests {
         });
         assert!(check_registry(&[geo], &find).unwrap_err().contains("slice"));
         // No excerpt stored, and no entry at all.
-        assert!(check_registry(&[good.clone()], &|_| None)
+        assert!(check_registry(std::slice::from_ref(&good), &|_| None)
             .unwrap_err()
             .contains("no stored excerpt"));
         assert!(check_registry(&[], &find).is_err());

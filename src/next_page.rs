@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 use crate::next_flow::{
     change_word, level_question, number_not_allowed, place_count_free, placeholders, question_word,
     unanswered_word, worded_number, year_after_fact_period, year_after_period, Ask, Choice,
+    TextAsk,
 };
 use crate::shape_registry::{
     Concept, Relation, View, BODY_SENTENCES, CARD_FORMS, CONCEPTS, FRAMES, HERO_LABELS,
@@ -419,7 +420,7 @@ impl Drafts {
 
     /// The fourth ask: every drafted field by number, and the slots still needing a Chinese name.
     pub fn ask(&self, slots: Vec<String>) -> Ask {
-        Ask::Text {
+        Ask::Text(Box::new(TextAsk {
             fields: self
                 .fields
                 .iter()
@@ -438,7 +439,7 @@ impl Drafts {
             members: self.members.clone(),
             unasked: self.unasked.clone(),
             terms: self.terms.clone(),
-        }
+        }))
     }
 
     /// The number of the page title's field, which takes a label or a conclusion, never a question.
@@ -863,9 +864,10 @@ mod tests {
             Some((Relation::Ranking, View::Slice)),
         );
         assert!(level.level_title && !level.change_title);
-        let Ask::Text { levels, .. } = level.ask(vec![]) else {
+        let Ask::Text(text_ask) = level.ask(vec![]) else {
             unreachable!()
         };
+        let TextAsk { levels, .. } = *text_ask;
         assert_eq!(levels, ["1"]);
         let revise = |d: &Drafts, t: &str| {
             d.revised(&Choice::Text {

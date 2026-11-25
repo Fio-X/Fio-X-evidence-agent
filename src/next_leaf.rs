@@ -3013,7 +3013,8 @@ mod tests {
             }
         }
         // the economy topic's tally in its own style (geo), with its piece set's accent
-        for (family, accent) in [("gdp_pc", "#2b7fa6")] {
+        {
+            let (family, accent) = ("gdp_pc", "#2b7fa6");
             let ask = json!({"family": family, "lead": "members", "width": 1140.0, "accent": accent, "ground": "warm",
                              "subject": {"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}});
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{family}: {e:?}"));

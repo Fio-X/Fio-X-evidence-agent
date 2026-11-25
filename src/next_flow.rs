@@ -243,33 +243,7 @@ pub enum Ask {
     /// wording there that differs from its draft and ranks (ranking_word) is refused; empty on any other page.
     /// `titles`: the page title's field (next_page Drafts::titles): a wording there that asks (question_word) is refused,
     /// a title being a label or a conclusion (TITLE_RULE); empty when the ask holds no title.
-    Text {
-        fields: BTreeMap<String, String>,
-        slots: Vec<String>,
-        numbers: Vec<String>,
-        periods: Vec<String>,
-        changes: Vec<String>,
-        levels: Vec<String>,
-        scoped: Vec<String>,
-        titles: Vec<String>,
-        /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
-        /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
-        /// refused. Empty on a page with no set.
-        mark: String,
-        /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
-        /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
-        places: Option<usize>,
-        /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
-        /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
-        /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a finding_words() word
-        /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
-        members: Vec<String>,
-        /// The `members` the question does not write.
-        unasked: Vec<String>,
-        /// The question's own terms with a numeral that name no number (Drafts::terms): the fields and the names may keep
-        /// them as written, and the ask says so (terms_rule); the checks are as for any other wording.
-        terms: Vec<String>,
-    },
+    Text(Box<TextAsk>),
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
     Vision,
@@ -278,6 +252,36 @@ pub enum Ask {
     /// with a shape, the question's quantities by number in the order its blocks take them (empty: the question's order).
     /// A 0 keeps the one-block flow; the blocks, their tables and years are the program's.
     Split { ask: crate::answer_plan::SplitAsk },
+}
+
+/// The text step's request (Ask::Text), boxed so that Ask stays small.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextAsk {
+    pub fields: BTreeMap<String, String>,
+    pub slots: Vec<String>,
+    pub numbers: Vec<String>,
+    pub periods: Vec<String>,
+    pub changes: Vec<String>,
+    pub levels: Vec<String>,
+    pub scoped: Vec<String>,
+    pub titles: Vec<String>,
+    /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
+    /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
+    /// refused. Empty on a page with no set.
+    pub mark: String,
+    /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
+    /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
+    pub places: Option<usize>,
+    /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
+    /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
+    /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a finding_words() word
+    /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
+    pub members: Vec<String>,
+    /// The `members` the question does not write.
+    pub unasked: Vec<String>,
+    /// The question's own terms with a numeral that name no number (Drafts::terms): the fields and the names may keep
+    /// them as written, and the ask says so (terms_rule); the checks are as for any other wording.
+    pub terms: Vec<String>,
 }
 
 /// The image review's yes/no questions, id -> the definition shown to the model, in the order asked and recorded. Whether
@@ -823,7 +827,7 @@ impl Ask {
             Ask::Search => "search",
             Ask::Table { .. } => "table",
             Ask::Claims { .. } => "claims",
-            Ask::Text { .. } => "text",
+            Ask::Text(_) => "text",
             Ask::Vision => "vision",
             Ask::Split { .. } => "split",
         }
@@ -877,20 +881,21 @@ impl Ask {
                 }
                 json!({"type": "object", "additionalProperties": false, "required": required, "properties": properties})
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                members,
-                unasked,
-                terms,
-                ..
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    members,
+                    unasked,
+                    terms,
+                    ..
+                } = &**text_ask;
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
@@ -943,8 +948,8 @@ impl Ask {
                 }
                 example
             }
-            Ask::Text { slots, .. } => json!({"step": "text", "text": {},
-                "names": slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
+            Ask::Text(text_ask) => json!({"step": "text", "text": {},
+                "names": text_ask.slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
             Ask::Vision => {
                 let mut answers: Map<String, Value> = VISION_QUESTIONS
                     .iter()
@@ -988,20 +993,21 @@ impl Ask {
                 }
                 allowed
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                places,
-                members,
-                unasked,
-                ..
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    places,
+                    members,
+                    unasked,
+                    ..
+                } = &**text_ask;
                 let mut allowed = json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
                 "name_max_chars": NAME_MAX_CHARS, "numbers": numbers});
@@ -1055,7 +1061,7 @@ impl Ask {
     /// the check runs on the decoded answer as on any other.
     pub fn decode(&self, args: &Value) -> (Value, Vec<String>) {
         let objects: &[&str] = match self {
-            Ask::Text { .. } => &["text", "names"],
+            Ask::Text(_) => &["text", "names"],
             Ask::Table { items, .. } if !items.is_empty() => &["params"],
             Ask::Vision => &["answers"],
             _ => &[],
@@ -1090,7 +1096,7 @@ impl Ask {
             Ask::Table { .. } => &["pick"],
             Ask::Claims { relations, .. } if *relations > 1 => &["pick", "relation"],
             Ask::Claims { .. } => &["pick"],
-            Ask::Text { .. } => &["text", "names"],
+            Ask::Text(_) => &["text", "names"],
             Ask::Vision => &["answers"],
             Ask::Split { .. } => &[SPLIT_KEY, QUANTITIES_KEY],
         };
@@ -1322,21 +1328,22 @@ impl Ask {
                 };
                 Ok(Choice::Claims { picks, relation })
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                mark,
-                places,
-                members,
-                unasked,
-                ..
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    mark,
+                    places,
+                    members,
+                    unasked,
+                    ..
+                } = &**text_ask;
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
                 for (id, revised) in &text {
@@ -7693,7 +7700,7 @@ mod tests {
     }
 
     fn text_ask() -> Ask {
-        Ask::Text {
+        Ask::Text(Box::new(TextAsk {
             fields: BTreeMap::from([
                 ("1".to_string(), "{max.v.geo}最多（{max.v}）".to_string()),
                 ("2".to_string(), "各国发电量".to_string()),
@@ -7710,7 +7717,7 @@ mod tests {
             members: Vec::new(),
             unasked: Vec::new(),
             terms: Vec::new(),
-        }
+        }))
     }
 
     #[test]
@@ -8514,20 +8521,22 @@ mod tests {
             "1".to_string(),
             "{first.name}在{first.year}最高".to_string(),
         )]);
-        let ask = |periods: &[&str]| Ask::Text {
-            fields: fields.clone(),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: periods.iter().map(|p| p.to_string()).collect(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |periods: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: fields.clone(),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: periods.iter().map(|p| p.to_string()).collect(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -8572,23 +8581,25 @@ mod tests {
         ] {
             assert_eq!(level_question(change), None, "{change}");
         }
-        let ask = |changes: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "变化多大".to_string()),
-                ("2".to_string(), "各自变了多少".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: changes.iter().map(|c| c.to_string()).collect(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |changes: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "变化多大".to_string()),
+                    ("2".to_string(), "各自变了多少".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: changes.iter().map(|c| c.to_string()).collect(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -8649,20 +8660,22 @@ mod tests {
     /// as the example; a wording with none passes, and so does every field of a page with no level title.
     #[test]
     fn a_change_word_is_refused_in_a_level_title() {
-        let ask = |levels: &[&str]| Ask::Text {
-            fields: BTreeMap::from([("1".to_string(), "各国温室气体排放量".to_string())]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: levels.iter().map(|c| c.to_string()).collect(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |levels: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "各国温室气体排放量".to_string())]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: levels.iter().map(|c| c.to_string()).collect(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         for (title, word) in [
@@ -8750,23 +8763,25 @@ mod tests {
     /// drafted, and every field of a page not scoped, pass as before.
     #[test]
     fn a_ranking_word_is_refused_only_in_a_reworded_field_of_a_scoped_page() {
-        let ask = |scoped: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "变化多大".to_string()),
-                ("2".to_string(), "{max.v.geo}最多".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: vec!["1".to_string()],
-            levels: Vec::new(),
-            scoped: scoped.iter().map(|s| s.to_string()).collect(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |scoped: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "变化多大".to_string()),
+                    ("2".to_string(), "{max.v.geo}最多".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: vec!["1".to_string()],
+                levels: Vec::new(),
+                scoped: scoped.iter().map(|s| s.to_string()).collect(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -8823,23 +8838,25 @@ mod tests {
     /// passes the title check on a change page that is scoped, so on every page kind.
     #[test]
     fn a_question_in_the_title_field_is_refused_and_a_label_or_a_conclusion_passes() {
-        let ask = |titles: &[&str], changes: &[&str], scoped: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "各方的变化".to_string()),
-                ("2".to_string(), "各自变化的方向和幅度".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: changes.iter().map(|c| c.to_string()).collect(),
-            levels: Vec::new(),
-            scoped: scoped.iter().map(|s| s.to_string()).collect(),
-            titles: titles.iter().map(|t| t.to_string()).collect(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |titles: &[&str], changes: &[&str], scoped: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "各方的变化".to_string()),
+                    ("2".to_string(), "各自变化的方向和幅度".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: changes.iter().map(|c| c.to_string()).collect(),
+                levels: Vec::new(),
+                scoped: scoped.iter().map(|s| s.to_string()).collect(),
+                titles: titles.iter().map(|t| t.to_string()).collect(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -9155,20 +9172,22 @@ mod tests {
             vec!["每百人".to_string()]
         );
         assert!(number_free_terms("欧盟各国失业率最新排名").is_empty());
-        let ask = |terms: Vec<String>| Ask::Text {
-            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
-            slots: vec!["s1".to_string()],
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms,
+        let ask = |terms: Vec<String>| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+                slots: vec!["s1".to_string()],
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms,
+            }))
         };
         let with = ask(vec!["五岁以下".to_string()]);
         let schema = with.schema();
@@ -9195,20 +9214,22 @@ mod tests {
     /// counts no place stays a number.
     #[test]
     fn a_count_of_places_passes_only_when_the_page_draws_that_many() {
-        let ask = |places: Option<usize>| Ask::Text {
-            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places,
-            members: Vec::new(),
-            unasked: Vec::new(),
-            terms: Vec::new(),
+        let ask = |places: Option<usize>| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let said = |text: &str| json!({"step": "text", "text": {"1": text}, "names": {}});
         for (text, n) in [
@@ -9267,7 +9288,7 @@ mod tests {
     /// checked as usual; any other string, and every other key, is left as sent.
     #[test]
     fn a_stringified_object_is_decoded_once_and_only_where_an_object_is_due() {
-        let text = Ask::Text {
+        let text = Ask::Text(Box::new(TextAsk {
             fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
             slots: vec!["s1".into()],
             numbers: Vec::new(),
@@ -9281,7 +9302,7 @@ mod tests {
             members: Vec::new(),
             unasked: Vec::new(),
             terms: Vec::new(),
-        };
+        }));
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
         assert!(text.check(&good).is_ok());
@@ -14984,28 +15005,30 @@ mod tests {
     #[test]
     fn a_reworded_field_types_no_drawn_name_the_question_does_not_write_and_a_title_says_no_standing(
     ) {
-        let ask = |drafts: &[&str], members: &[&str], question: &str| Ask::Text {
-            fields: drafts
-                .iter()
-                .enumerate()
-                .map(|(i, d)| ((i + 1).to_string(), d.to_string()))
-                .collect(),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: vec!["1".to_string()],
-            mark: String::new(),
-            places: None,
-            members: members.iter().map(|m| m.to_string()).collect(),
-            unasked: members
-                .iter()
-                .filter(|m| !question.contains(**m))
-                .map(|m| m.to_string())
-                .collect(),
-            terms: Vec::new(),
+        let ask = |drafts: &[&str], members: &[&str], question: &str| {
+            Ask::Text(Box::new(TextAsk {
+                fields: drafts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| ((i + 1).to_string(), d.to_string()))
+                    .collect(),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: vec!["1".to_string()],
+                mark: String::new(),
+                places: None,
+                members: members.iter().map(|m| m.to_string()).collect(),
+                unasked: members
+                    .iter()
+                    .filter(|m| !question.contains(**m))
+                    .map(|m| m.to_string())
+                    .collect(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         // the composition (q3): parts and places, none of them written by the question
