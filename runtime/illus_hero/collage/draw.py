@@ -19,9 +19,7 @@ round again in the same seeded order (composition: red_repeats), never two of th
 the picture (composition: uses_max); K over max_uses x the masked figures is a PackError (unavailable). The accent places follow one spread
 rule for every K (accent_places; composition: red_rule, red_adjacent). Behind the queue, right after the paper, the backdrop (far_slots;
 composition: far, far_ids, far_pieces, far_layers): layers of pale figures, each paler and smaller than the one in front, their ends fading into
-the paper, no figure twice in a layer; they are not among the N. Between the far layers and the nearest one, a soft dark mass behind the hero
-(gradient-filled curve under a gradient mask; composition: dark_box); in front of the queue's feet, engraved ground strokes that grow with y
-(composition: ground). An accent figure's lines lie over its accent at red_ink, once; the queue's accent at queue_red_opacity, the hero's full.
+the paper, no figure twice in a layer; they are not among the N. An accent figure's lines lie over its accent at red_ink, once; the queue's accent at queue_red_opacity, the hero's full.
 
 Same request, same bytes: the figures and their places come from random.Random seeded with the sha256 of the canonical JSON of the sorted
 member codes (for a proportion its share), K, N, the width, the knobs and the pack's sha256; no clock, no hash(), no unseeded random."""
@@ -140,19 +138,6 @@ def far_slots(layer, rng):
         e = max(0.0, min(1.0, (x - x0) / (layer["edge"] * (x1 - x0)), (x1 - x) / (layer["edge"] * (x1 - x0))))
         out.append((h, x, y, e * e * (3 - 2 * e)))
     return out
-
-
-def ground_strokes(cfg, kn, rng):
-    """The ground (collage_renderer.ground): short engraved strokes in front of the queue's feet line, more, longer and heavier the lower
-    they lie (the footing grows with y; no band): {stroke width: path d}."""
-    G = cfg["ground"]; (hx, hy0), (fx, fy), _ = depth_rule(kn); y0 = G["top"] * CH; d = {}
-    line = lambda x: hy0 - (hy0 - fy) * (x - hx) / (fx - hx)
-    for _ in range(G["n"]):
-        x = rng.random() * CW; t = rng.random() ** G["bias"]; y = CH - t * (CH - y0)
-        if y < line(x) - G["under_feet"]: continue
-        u = (y - y0) / (CH - y0); L = G["len"][0] + (G["len"][1] - G["len"][0]) * u; w = G["width"][0 if u < 0.5 else 1]
-        d.setdefault(w, []).append(f"M{num(x)} {num(y)}h{num(L)}")
-    return {w: "".join(v) for w, v in sorted(d.items())}
 
 
 def grid_bits(hexs, gw, gh):
@@ -281,20 +266,7 @@ def draw(codes, k, n, width, accent, cfg, kn):
                        f'<path d="M0 0H{num(w)}V{num(hb)}H0Z" fill="{tone(paper, 1 - (1 - L["fill"]) * e)}" mask="url(#clg-f{j})"/>'
                        f'<g opacity="{num(L["ink"] * e)}"><image href="{href(f"{fid}.{t}.lines")}" {size}/></g></g>'); j += 1
         far_layers.append(cnt)
-    for L in F["layers"][:F["behind_dark"]]: far_layer(L)
-    # the dark mass (collage_renderer.dark): one soft-edged shade behind the hero (a curved shape, a horizontal gradient that fades to the paper
-    # on its right, under a vertical gradient mask that fades its top and foot), so the hero reads light and red against dark
-    D = cfg["dark"]; bx, by, bw, bh = D["box"][0] * CW, D["box"][1] * CH, D["box"][2] * CW, D["box"][3] * CH
-    blob = (f'M{num(bx)} {num(by + bh * 0.12)}C{num(bx + bw * 0.35)} {num(by - bh * 0.04)} {num(bx + bw * 0.8)} {num(by + bh * 0.02)} {num(bx + bw)} {num(by + bh * 0.3)}'
-            f'C{num(bx + bw * 1.04)} {num(by + bh * 0.6)} {num(bx + bw * 0.9)} {num(by + bh * 0.9)} {num(bx + bw * 0.7)} {num(by + bh)}H{num(bx)}Z')
-    stops_h = "".join(f'<stop offset="{num(o)}" stop-color="{tone(paper, D["tone"])}" stop-opacity="{num(a)}"/>' for o, a in D["h_stops"])
-    stops_v = "".join(f'<stop offset="{num(o)}" stop-color="#ffffff" stop-opacity="{num(a)}"/>' for o, a in D["v_stops"])
-    out.append(f'<defs><linearGradient id="clg-dh" x1="0" y1="0" x2="1" y2="0">{stops_h}</linearGradient><linearGradient id="clg-dv" x1="0" y1="0" x2="0" y2="1">{stops_v}</linearGradient>'
-               f'<mask id="clg-dm"><path d="{blob}" fill="url(#clg-dv)"/></mask></defs><path d="{blob}" fill="url(#clg-dh)" mask="url(#clg-dm)"/>')
-    for L in F["layers"][F["behind_dark"]:]: far_layer(L)
-    # the ground in front of the queue: engraved strokes that grow with y
-    gs = ground_strokes(cfg, kn, rng); gi = tone(paper, cfg["ground"]["tone"])
-    for w, d in gs.items(): out.append(f'<path d="{d}" fill="none" stroke="{gi}" stroke-width="{num(w)}" opacity="{num(cfg["ground"]["opacity"])}"/>')
+    for L in F["layers"]: far_layer(L)
     qfill = tone(paper, kn["queue_fill"])
     for j, i in enumerate(draw_order):
         h, x, y = sl[i]
@@ -311,6 +283,5 @@ def draw(codes, k, n, width, accent, cfg, kn):
                 red_visible_min=min(seen.values()) if seen else None)
     comp["red_repeats"] = len(comp["red"]) - len(set(comp["red"]))
     comp.update(red_rule="spread", red_adjacent=sum(1 for a, b in zip(flags, flags[1:]) if a == b == "r"), red_ok_count=masked, max_uses=cap,
-                uses_max=max(uses.values()) if uses else 0, far=len(far_ids), far_ids=far_ids, far_pieces=far_used, far_layers=far_layers,
-                dark_box=[round(v, 2) for v in (bx, by, bw, bh)], ground={str(w): d.count('M') for w, d in gs.items()})
+                uses_max=max(uses.values()) if uses else 0, far=len(far_ids), far_ids=far_ids, far_pieces=far_used, far_layers=far_layers)
     return {"inner": "".join(out), "composition": comp}
