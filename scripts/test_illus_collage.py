@@ -210,10 +210,9 @@ class Collage(unittest.TestCase):
             self.assertEqual((comp["lit"], comp["objects"], len(comp["red"])), (k, 30, k), share)
             self.assertEqual(comp["hero"] is not None, k >= 1, share)
             if k: self.assertIn(comp["hero"], comp["red"]); self.assertEqual(comp["queue_flags"].count("r"), k - 1)
-        flags = R.build_collage(prop_req(0.3, count=9))[5]["queue_flags"]      # K / N = 0.3 = stretch_share: spread single figures, not the stretch
-        self.assertEqual(9 / 30 > R.CR["stretch_share"], False); self.assertEqual(flags[0] + flags[-1], "gg"); self.assertTrue(all(len(r) == 1 for r in re.findall(r"r+", flags)), flags)
-        flags = R.build_collage(prop_req(0.43, count=13))[5]["queue_flags"]     # above it: groups of 5 from right behind the hero
-        self.assertEqual(re.findall(r"r+", flags), ["rrrrr", "rrrrr", "rr"]); self.assertTrue(flags.startswith("r"), flags)
+        for k in (9, 13):          # one rule for every K: spread single figures, a grey figure between every two, none touching the hero
+            flags = R.build_collage(prop_req(round(k / 30, 3), count=k))[5]["queue_flags"]
+            self.assertEqual(flags[0] + flags[-1], "gg", k); self.assertTrue(all(len(r) == 1 for r in re.findall(r"r+", flags)), flags)
         r = child(prop_req(0.105, count=3)); self.assertEqual(r["scene"], "labour.proportion"); self.assertEqual(accent_figures(r["svg"], ACCENT), (3, 30))
         self.assertEqual(r["svg"], R.build_collage(prop_req(0.105, count=3))[0])
         self.assertNotEqual(R.build_collage(prop_req(0.43, count=13))[0], R.build_collage(prop_req(0.4333, count=13))[0])    # the share seeds it
@@ -270,23 +269,52 @@ class Collage(unittest.TestCase):
             self.assertEqual(accent_figures(svg, ACCENT), (k, 30), k); self.assertEqual(hero_faults(svg), [], k)
             flags = comp["queue_flags"]; self.assertEqual(len(flags), 29); self.assertEqual(flags.count("r"), k - 1)
             runs = [len(r) for r in re.findall(r"r+", flags)]
-            if k / 30 > R.CR["stretch_share"]:
-                greys = flags.count("g"); want = -(-(k - 1) // G)
-                self.assertRegex(flags, r"^r", k)                                               # one stretch from the near end, right behind the hero
-                self.assertRegex(flags, r"^(r+g)*r+g*$", k)                                     # its groups split by one grey figure each
-                self.assertNotIn("gg", flags.rstrip("g"), k)
-                self.assertEqual(len(runs), min(want, 1 + greys), k)
-                self.assertTrue(all(r <= G for r in runs[:-1]), (k, runs))
-                if len(runs) == want: self.assertTrue(all(r <= G for r in runs), (k, runs))
-            else:
+            if 2 * (k - 1) <= 27:
                 self.assertEqual(flags[0] + flags[-1], "gg", k); self.assertTrue(all(r == 1 for r in runs), (k, runs))   # spread, single figures
-        self.assertEqual(re.findall(r"r+", R.build_collage(top_req(30, 13))[5]["queue_flags"]), ["rrrrr", "rrrrr", "rr"])
+                self.assertEqual(comp["red_adjacent"], 0, k)
+            self.assertEqual(comp["red_rule"], "spread", k)
         comp = R.build_collage(top_req(30, 29))[5]; masked = sum(f["red_ok"] for f in Pack.index_of()["figures"])
         self.assertGreater(29, masked); self.assertEqual(comp["red_repeats"], 29 - len(set(comp["red"]))); self.assertGreater(comp["red_repeats"], 0)
         ids, flags = comp["queue_ids"], comp["queue_flags"]
         red = [f for f, c in zip(ids, flags) if c == "r"]   # the masked figures come round again, never twice within any `group` accent figures in a row
         for i in range(len(red) - G + 1): self.assertEqual(len(set(red[i:i + G])), G, red[i:i + G])
         self.assertNotIn(comp["hero"], ids[:R.CR["group"]])
+
+    def test_no_knife_edge_between_k_over_n_just_under_and_over_the_old_line(self):
+        """The old stretch_share (0.3) switched the accent from spread single figures to a stretch of groups between K / N = 0.29 and 0.31: one
+        rule now, so the neighbours of any share give the same layout family, no adjacent accent figures, and red mass centres that differ little."""
+        self.assertNotIn("stretch_share", R.CR)
+        for make in (lambda k: prop_req(round(k / 30, 4), count=k), lambda k: top_req(30, k)):
+            comps = {k: R.build_collage(make(k))[5] for k in (8, 9, 10, 11)}          # 8/30 = 0.27, 9/30 = 0.30, 10/30 = 0.33, 11/30 = 0.37
+            for k, c in comps.items():
+                self.assertEqual((c["red_rule"], c["red_adjacent"], c["layout"]), ("spread", 0, f"collage-{k}of30"), k)
+                self.assertTrue(all(len(r) == 1 for r in re.findall(r"r+", c["queue_flags"])), (k, c["queue_flags"]))
+            mid = lambda f: sum(i for i, ch in enumerate(f) if ch == "r") / max(1, f.count("r"))
+            for a, b in ((8, 9), (9, 10), (10, 11)):
+                fa, fb = comps[a]["queue_flags"], comps[b]["queue_flags"]
+                self.assertLessEqual(abs(mid(fa) - mid(fb)), 1.5, (a, b))                # the accent mass does not jump along the queue
+                self.assertEqual((fa[0], fb[0]), ("g", "g"), (a, b))                       # neither puts an accent figure against the hero
+                ha, hb = comps[a]["hero_box"], comps[b]["hero_box"]; self.assertEqual((round(ha[0] + ha[2] / 2, 1), round(ha[1] + ha[3], 1)), (round(hb[0] + hb[2] / 2, 1), round(hb[1] + hb[3], 1)), (a, b))   # the hero in the same place
+        for share, k in ((0.29, 9), (0.31, 9)):          # shares that round to the same K give the same flags
+            self.assertEqual(R.build_collage(prop_req(share, count=k))[5]["queue_flags"], R.build_collage(prop_req(0.3, count=9))[5]["queue_flags"])
+
+    def test_k13_and_k7_accent_figures_are_spaced_and_one_figure_stands_at_most_twice(self):
+        masked = sum(f["red_ok"] for f in Pack.index_of()["figures"] if f["usable"])
+        for req in (top_req(30, 13), top_req(30, 7), prop_req(0.43, count=13), prop_req(0.233, count=7), top_req(27, 13), top_req(30, 29)):
+            svg, w, h, secs, scene, comp = R.build_collage(req)
+            self.assertEqual(comp["red_ok_count"], masked); self.assertEqual(comp["max_uses"], 2)          # the pack's red_ok as it is, not a fixed number
+            ids = [comp["hero"]] + comp["queue_ids"] + comp["far_ids"]
+            self.assertLessEqual(max(ids.count(f) for f in set(ids)), 2, comp["layout"]); self.assertEqual(comp["uses_max"], max(ids.count(f) for f in set(ids)))
+            if comp["lit"] <= 14: self.assertEqual(comp["red_adjacent"], 0, comp["layout"]); self.assertNotIn("rr", comp["queue_flags"])
+            self.assertGreater(comp["far"], 0); self.assertNotIn("clg-sf", svg); self.assertEqual(accent_figures(svg, ACCENT), (comp["lit"], comp["objects"]))
+        sys.path.insert(0, COLLAGE); import draw as CD          # K over max_uses x the masked figures: unavailable, never a third use
+        cfg = dict(R.CR, max_uses=1); kn = R.collage_knobs(top_req(30, 3))
+        with self.assertRaisesRegex(CD.PackError, "at most 1 times"): CD.draw([f"M{i}" for i in range(30)], masked + 1, 30, 1140, ACCENT, cfg, kn)
+
+    def test_the_backdrop_fills_the_top_of_the_picture(self):
+        comp = R.build_collage(top_req(30, 3))[5]; rows = R.CR["far"]["rows"]
+        self.assertLessEqual(min(r["foot"] - r["h"] for r in rows), 0.15)          # the backdrop's tops reach the top sixth: no empty paper band above the queue
+        self.assertGreaterEqual(comp["far"], 20)
 
     def test_knobs_have_ranges_and_off_range_or_unknown_knobs_are_refused(self):
         ck = R.REG["composition_knobs"]; mine = [k for k, s in ck.items() if s.get("renderers") == ["collage"]]
@@ -308,7 +336,10 @@ class Collage(unittest.TestCase):
         svg = R.build_collage({**top_req(10, 3), "accent": "#123456"})[0]; self.assertEqual(accent_figures(svg, "#123456"), (3, 10))
         paper = json.loads(text(os.path.join(COLLAGE, "pack.json")))["paper"]; ck = R.REG["composition_knobs"]
         tone = lambda f: "#" + "".join(f"{round(int(paper[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))
-        fills = set(re.findall(r'fill="(#[0-9a-f]{6})"', self.out["n30k12"][0]))
+        out = self.out["n30k12"][0]; far = set(re.findall(r'fill="(#[0-9a-f]{6})" mask="url\(#clg-f\d+\)"', out))
+        fills = set(re.findall(r'fill="(#[0-9a-f]{6})" mask="url\(#clg-[sc]', out) + re.findall(r'fill="(#000000)"', out))
+        for f in far:          # the backdrop's blocks: the paper darkened (one factor on all three channels), never the accent
+            r = [int(f[i:i + 2], 16) / int(paper[i:i + 2], 16) for i in (1, 3, 5)]; self.assertLess(max(r) - min(r), 0.02, f); self.assertLessEqual(max(r), 1.0, f)
         self.assertEqual(fills, {ACCENT, "#000000", tone(R.CR["hero_fill"]), tone(ck["queue_fill"]["default"])})     # one accent, the rest the paper's greys
         self.assertEqual(svg.count('<path d="M0 0H'), svg.count("<path "))       # every path a figure's box
         self.assertEqual(svg.count('<path d="M0 0H1440V560H0Z"'), 1)              # the grain the only full-frame one: no ground band, one sheet of paper
