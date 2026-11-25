@@ -83,21 +83,21 @@ class OpeningCaption(unittest.TestCase):
             self.assertIn(">西班牙</span>", got[0])
             self.assertFalse(re.search(r"[0-9]", re.sub(r"<[^>]+>", "", re.sub(r'<span data-src="fact:[^"]*">[^<]*</span>', "", got[0]))), got[0])   # every digit a fact
             self.assertIn('<div class="opening"><svg aria-hidden="true" ', html)          # the picture hidden, the line read
-            self.assertEqual(re.sub(r"<[^>]+>", "", got[0]), f"红色的人按西班牙 {top:.1f}% 的失业率画")
+            self.assertEqual(re.sub(r"<[^>]+>", "", got[0]), f"红色的人表示西班牙 {top:.1f}% 的失业率")
             self.assertFalse(re.search(r"[A-Za-z]", re.sub(r"<[^>]+>", "", got[0])), got[0])   # no Latin letter (the real run's leak)
 
     def test_a_kicker_with_no_chinese_name_gives_the_plain_word_for_a_share(self):
         for kick in ("Unemployment by sex and age - annual data", "失业率 2025", ""):
             got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
-            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人按西班牙 10.5% 的比例画"], kick)
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人表示西班牙 10.5% 的比例"], kick)
 
     def test_the_layout_note_in_brackets_is_not_part_of_the_measure_name(self):
         for kick, name in (("失业率（最近时点排名）", "失业率"), ("失业率 (latest)", "失业率"), ("失业率（最近一年）", "失业率")):
             got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
-            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], [f"红色的人按西班牙 10.5% 的{name}画"], kick)
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], [f"红色的人表示西班牙 10.5% 的{name}"], kick)
         for kick in ("（最近时点排名）", "Unemployment（最近）"):
             got = captions(page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], self.PROP, kicker=kick)[1])
-            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人按西班牙 10.5% 的比例画"], kick)
+            self.assertEqual([re.sub(r"<[^>]+>", "", g) for g in got], ["红色的人表示西班牙 10.5% 的比例"], kick)
 
     def test_the_charts_head_the_measure_in_chinese_where_the_table_has_only_an_english_title(self):
         """The head of each chart was the English table title (the request's measure words); the page's Chinese name stands there."""

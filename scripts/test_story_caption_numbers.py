@@ -48,7 +48,7 @@ class CaptionNumbers(unittest.TestCase):
             self.assertTrue(NUMBER.search(got[0]), top)        # the scan saw a number at all
 
     def test_the_scan_catches_a_stray_number(self):
-        ok = '红色的人按<span data-src="name:zh_names:geo:ES">西班牙</span> <span data-src="fact:hi">10.5%</span> 的失业率画'
+        ok = '红色的人表示<span data-src="name:zh_names:geo:ES">西班牙</span> <span data-src="fact:hi">10.5%</span> 的失业率'
         self.assertEqual(scan(ok, "hi", ""), [])
         self.assertTrue(scan(ok.replace("的失业率", "的 27 国失业率"), "hi", ""))                       # a digit in the words
         self.assertTrue(scan(ok.replace('data-src="fact:hi"', 'data-src="fact:lo"'), "hi", ""))         # another fact
