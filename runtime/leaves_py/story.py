@@ -151,7 +151,7 @@ def seg_html(sg, what):
 
 def notes_items(spec, layer, kn):
     """The short notes of a section (hero.leaves.<layer>.notes: [{"num": ledger src, "text": segs}], the first knob `notes` of them), checked:
-    [(num src, segs)]. The number is a ledger entry holding a digit."""
+    [(num src, segs, unit)]. The number is a ledger entry holding a digit; unit is what the number cell prints under it (note_unit)."""
     got = ((spec["hero"].get("leaves") or {}).get(layer) or {}).get("notes") or []
     if not isinstance(got, list): raise FX.Refused(f"page: {layer}'s notes are no list")
     items = []
@@ -163,22 +163,41 @@ def notes_items(spec, layer, kn):
 
 
 def note_unit(spec, num, sg):
-    """A note's (number, words) with the number's unit moved: a fact whose unit is words prints its number alone, and its unit stands once
-    in the note's words, in brackets before them unless a ledger entry in the words already prints it. A percent sign, a ratio and any
-    other ledger entry are left as they are."""
+    """A note's (number, words, unit) with the number's unit moved: a fact whose unit is words prints its number alone, and its unit stands
+    once in the note: in its words when a ledger entry there already prints it (unit ""), else under the bold number in the number cell, so
+    the unit follows the number it belongs to and no note's words open with it in brackets (11-26). A percent sign, a ratio and any other
+    ledger entry are left as they are (unit "")."""
     m = re.fullmatch(r"fact:([a-z0-9_]+)", num)
     q = (spec.get("facts") or {}).get(m[1]) if m else None
-    if not isinstance(q, dict) or "fmt" not in q: return num, sg
+    if not isinstance(q, dict) or "fmt" not in q: return num, sg, ""
     u = FX.unit(spec, q).strip()
-    if not FX.long_unit(u) or FX.digit(u) or f"{num}.n" not in FX.LEDGER: return num, sg
+    if not FX.long_unit(u) or FX.digit(u) or f"{num}.n" not in FX.LEDGER: return num, sg, ""
     said = any(isinstance(x, dict) and "src" in x and FX.text(x["src"]).rstrip().endswith(u) for x in sg)
-    return f"{num}.n", (sg if said else [{"w": word("paren", v=u)}] + sg)
+    return f"{num}.n", sg, ("" if said else u)
+
+
+UNIT_EM = 6   # a note's unit under its number wraps at this many of its own font size (the css's max-width)
+
+
+def unit_px(ns):
+    """The font size of a note's unit under its number: 2 px under the note's words, never under the page's 12 px floor."""
+    return max(12, ns - 2)
+
+
+def note_cell(num, u, ns):
+    """A note's number cell, (width px, height px): the bold number one line at ns + 2 (line height 1.2) and, when it carries one, its unit
+    under it at unit_px, as wide as its words up to UNIT_EM of its size and wrapping there (line height 1.3)."""
+    w, h = K.tw(num, ns + 2), (ns + 2) * 1.2
+    if not u: return w, h
+    us = unit_px(ns)
+    return max(w, min(K.tw(u, us), UNIT_EM * us)), h + 2 + -(-K.tw(u, us) // (UNIT_EM * us)) * us * 1.3
 
 
 def notes_html(spec, layer, kn):
     """The notes of a section as a list: a bold number and the words that say what it is."""
-    items = [f'<li class="note"><b class="n">{FX.entry(num, "span", None)}</b><span class="nt">{seg_html(sg, f"{layer}'s note {j + 1}")}</span></li>'
-             for j, (num, sg) in enumerate(notes_items(spec, layer, kn))]
+    unit = lambda u: f'<span class="u">{html.escape(u, quote=False)}</span>' if u else ""
+    items = [f'<li class="note"><b class="n">{FX.entry(num, "span", None)}{unit(u)}</b><span class="nt">{seg_html(sg, f"{layer}'s note {j + 1}")}</span></li>'
+             for j, (num, sg, u) in enumerate(notes_items(spec, layer, kn))]
     return f'<ul class="notes" style="--lead:{kn["lead"]}px;--ns:{kn["note_size"]}px">{"".join(items)}</ul>' if items else ""
 
 
@@ -340,7 +359,7 @@ def repeats(layer, notes, printed):
     ledger entries the title or the text already prints (the same fact, whatever its part: .n and .r are one), so no card only says again."""
     base = lambda src: re.sub(r"\.(n|r)$", "", src)
     have = {base(m) for m in re.findall(r'data-src="((?:fact|series|record):[^"]*)"', printed)}
-    for j, (num, sg) in enumerate(notes):
+    for j, (num, sg, _) in enumerate(notes):
         nums = {base(num)} | {base(x["src"]) for x in sg if isinstance(x, dict) and "src" in x}
         if nums <= have:
             raise FX.Refused(f"page: {layer}'s note {j + 1} ({num}) prints only numbers its section's title or text already prints; a note adds a number and what it is set against")
@@ -358,7 +377,7 @@ def pieces(spec, c, secs, kn):
                 f'{f"<p>{x_html}</p>" if x_html else ""}')
         notes = notes_items(spec, layer, kn)
         repeats(layer, notes, t_html + x_html)
-        items = [(FX.text(num), plain(seg_html(sg, "a note"))) for num, sg in notes]
+        items = [(FX.text(num), plain(seg_html(sg, "a note")), u) for num, sg, u in notes]
         out[i] = dict(kicker=kicker, t_html=t_html, x_html=x_html, head=head, note_list=notes_html(spec, layer, kn), title=plain(t_html), text=plain(x_html), items=items)
     return out
 
@@ -370,10 +389,12 @@ def col_height(pc, w, kn, with_notes):
 
 
 def notes_height(pc, w, kn):
-    """The notes list of a section w px wide: a card each, its number then its words (a card has 14 px padding each side, a 3 px rule, a 12 px gap)."""
+    """The notes list of a section w px wide: a card each, its number cell (note_cell) then its words, as tall as the taller of the two (a card
+    has 14 px padding each side, a 3 px rule, a 12 px gap)."""
     ns, tot = kn["note_size"], 0.0
-    for num, txt in pc["items"]:
-        tot += NOTE_PAD + 4 + count_lines(txt, ns, w - 28 - 3 - 12 - K.tw(num, ns + 2)) * ns * 1.5
+    for num, txt, u in pc["items"]:
+        cw, ch = note_cell(num, u, ns)
+        tot += NOTE_PAD + 4 + max(count_lines(txt, ns, w - 28 - 3 - 12 - cw) * ns * 1.5, ch)
     return tot + NOTE_GAP * max(0, len(pc["items"]) - 1)
 
 
@@ -657,6 +678,8 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
        "border-left:3px solid var(--t-sec);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
        ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--t-title);flex:none}"  # ink, not the accent: the accent is for the one mark the page is about, and the page has one focal point (11-24)
+       # a note's unit under its number (note_cell): lighter and smaller, wrapping at UNIT_EM of its size
+       f".story .note .n .u{{display:block;max-width:{UNIT_EM}em;margin-top:2px;font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-sec)}}"
        ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
        ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
        ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"

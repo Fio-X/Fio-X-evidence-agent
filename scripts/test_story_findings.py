@@ -2666,8 +2666,10 @@ class ChangeNotes(unittest.TestCase):
                 for item in re.findall(r'<li class="note">(.*?)</li>', sec, re.S):
                     for src in re.findall(r'data-src="fact:([a-z0-9_]+?)(?:\.n)?"', item): self.assertIn(src, composed["facts"])
                     self.assertFalse(re.search(r"[0-9]", re.sub(r"<[^>]+>", "", re.sub(r'<span data-src="[^"]*">[^<]*</span>', "", item))), item)
-                    num, txt = (re.sub(r"<[^>]+>", "", x) for x in re.match(r'<b class="n">(.*?)</b><span class="nt">(.*)</span>$', item, re.S).groups())
-                    w = (int(col.group(1)) if col else story.PAGE_W - 640 - 36) - 28 - 3 - 12 - K.tw(num, 16)
+                    cell, txt = re.match(r'<b class="n">(.*?)</b><span class="nt">(.*)</span>$', item, re.S).groups()
+                    num, txt = re.sub(r"<[^>]+>", "", re.sub(r'<span class="u">.*?</span>', "", cell)), re.sub(r"<[^>]+>", "", txt)
+                    unit = re.search(r'<span class="u">([^<]*)</span>', cell)
+                    w = (int(col.group(1)) if col else story.PAGE_W - 640 - 36) - 28 - 3 - 12 - story.note_cell(num, unit[1] if unit else "", 14)[0]
                     lines = K.lay([(txt, None)], 14, w)
                     self.assertLessEqual(len(lines), 3, txt)
                     self.assertTrue(all(sum(K.tw(u, 14) for u, _ in ln) <= w + 14 for ln in lines), txt)   # a line past the box by under one glyph is its closing mark
@@ -2873,6 +2875,11 @@ def unit_shape(kind):
         # the value format under a name of its own: the facts child reads "x" as a ratio's format (no unit), so the page would print none
         req = {**req, "fmts": {**req["fmts"], "value": "val"}, "fmt_defs": {**req["fmt_defs"], "val": {**FMT_DEFS["x"], "suffix": "%"}}}
         return req, names, "%", req["words"]["measure"]
+    if kind == "ktoe":   # a Eurostat energy amount in thousand tonnes of oil equivalent (a reviewed unit name, unit-short-zh.tsv's KTOE)
+        req, names = eu27_plain(whole=True)
+        req = {**req, "fmts": {**req["fmts"], "value": "val"}, "fmt_defs": {**req["fmt_defs"], "val": {**FMT_DEFS["x"], "suffix": " 千吨油当量"}},
+               "words": {"measure": "最终能源消费", "unit": "千吨油当量"}}
+        return req, names, "千吨油当量", req["words"]["measure"]
     if kind == "co2":
         req, unit, measure, head = linear_request(WB_T + "@2", "country", WB12, 2016, 2024, text=True), "吨二氧化碳当量/人", CO2_LONG, "碳排放"
         ends = WB12
@@ -2990,7 +2997,7 @@ def heads_of(page_html):
 
 class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
     """A run of numbers of one unit that is words in a sentence writes the unit after its last number only; a big number (the header's,
-    a claim's) and a short note's bold number print alone, the unit once in the words beside them; a percent sign stays on each number.
+    a claim's) and a short note's bold number print alone, the unit once beside them (a note's under its number); a percent sign stays on each number.
     On a tonnes-per-head, a US-dollars-per-head and a percent shape, every number printed a ledger entry recomputed from the facts."""
 
     PICKS = ["movers", "rank", "ends", "members"]
@@ -3073,16 +3080,65 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
             tails = [c["head"][-1]["w"] for c in th["claims"] if c["num"].endswith(".n")]
             self.assertEqual(sorted(set(tails)), sorted({paren(unit), paren(other)}), (kind, tails))
 
-    def test_a_note_s_bold_number_prints_alone_and_its_words_say_the_unit_once(self):
-        for kind in ("co2", "usd", "pct"):
+    def test_a_note_s_bold_number_is_followed_by_its_unit_once_and_no_words_open_with_a_bracket(self):
+        """11-26 (a page printed 1.6 then the unit in brackets opening the words): a note's number whose unit is words prints alone with
+        its unit under it in the number cell, lighter, and the unit stands once in the note; the words never open with a bracket. On a
+        World Bank tonnes-per-head, a US-dollars-per-head and a Eurostat thousand-tonnes-of-oil shape; a percent page keeps its signs."""
+        paren = FN.WD.WORDS["paren"].replace("{v}", "")[0]
+        for kind in ("co2", "usd", "ktoe", "pct"):
             composed, facts, page_html, unit = unit_page(self, kind, self.PICKS)
             notes = re.findall(r'<li class="note"><b class="n">(.*?)</b><span class="nt">(.*?)</span></li>', page_html, re.S)
             self.assertTrue(notes, kind)
-            for num, words in notes:
-                self.numbers(num, facts)
-                if kind == "pct": continue
+            moved = 0
+            for cell, words in notes:
+                self.numbers(cell, facts)
+                self.assertFalse(flat(words).lstrip().startswith(paren), (kind, flat(words)))
+                num, rest = re.fullmatch(r'(<span data-src="[^"]+">[^<]*</span>)(.*)', cell, re.S).groups()
+                if kind == "pct":
+                    self.assertEqual(rest, "", kind)   # a percent sign stays on its number; no unit cell
+                    continue
                 self.assertNotIn(unit, flat(num), kind)
-                self.assertEqual(flat(words).count(unit), 1, (kind, flat(words)))
+                self.assertIn(rest, ("", f'<span class="u">{unit}</span>'), kind)
+                if rest:   # moved under the number: once in the note
+                    moved += 1
+                    self.assertEqual(flat(cell + words).count(unit), 1, (kind, flat(cell), flat(words)))
+                else:      # a ledger entry in the words prints it (as before: each such entry keeps its unit)
+                    self.assertIn(unit, flat(words), (kind, flat(words)))
+            if kind != "pct": self.assertGreaterEqual(moved, 1, kind)
+
+    def test_note_unit_puts_a_worded_unit_under_the_number_once(self):
+        """note_unit and notes_html directly: a fact whose unit is words (tonnes CO2-equivalent per head, a Eurostat thousand tonnes of oil
+        equivalent) prints its bare number with the unit after it in the number cell; words whose ledger entry already prints the unit, a
+        percent, and a ratio with no unit are left as they were; no note's words open with a bracket."""
+        import facts as FX
+        for u in ("吨二氧化碳当量/人", "千吨油当量"):   # test-only values below
+            spec = {"fmts": {"t": {"suffix": " " + u}, "p": {"suffix": "%"}, "r": {"suffix": ""}},
+                    "facts": {"a": {"fmt": "t"}, "b": {"fmt": "t"}, "c": {"fmt": "pct"}, "r": {"fmt": "x"}},
+                    "hero": {"leaves": {"rankbar": {"notes": []}}}}
+            ledger = {"fact:a": f"1.6 {u}", "fact:a.n": "1.6", "fact:b": f"13.1 {u}", "fact:b.n": "13.1", "fact:c": "12%", "fact:r": "12.4"}
+            words = [{"w": "涨得最多，是平均的 "}, {"src": "fact:r"}, {"w": " 倍"}]
+            said = [{"w": "比最低的 "}, {"src": "fact:b"}, {"w": " 多"}]
+            old, FX.LEDGER = FX.LEDGER, ledger
+            try:
+                self.assertEqual(story.note_unit(spec, "fact:a", words), ("fact:a.n", words, u))
+                self.assertEqual(story.note_unit(spec, "fact:a", said), ("fact:a.n", said, ""))     # the words already print the unit
+                self.assertEqual(story.note_unit(spec, "fact:c", words), ("fact:c", words, ""))     # a percent sign stays on its number
+                self.assertEqual(story.note_unit(spec, "fact:r", said), ("fact:r", said, ""))       # a ratio has no unit
+                spec["hero"]["leaves"]["rankbar"]["notes"] = [{"num": "fact:a", "text": words}, {"num": "fact:a", "text": said},
+                                                              {"num": "fact:c", "text": words}]
+                got = re.findall(r'<li class="note"><b class="n">(.*?)</b><span class="nt">(.*?)</span></li>',
+                                 story.notes_html(spec, "rankbar", {"notes": 3, "lead": 24, "note_size": 14}), re.S)
+            finally:
+                FX.LEDGER = old
+            self.assertEqual([c for c, _ in got], [f'<span data-src="fact:a.n">1.6</span><span class="u">{u}</span>',
+                                                   '<span data-src="fact:a.n">1.6</span>', '<span data-src="fact:c">12%</span>'], u)
+            self.assertEqual([flat(c + w).count(u) for c, w in got[:2]], [1, 1], u)
+            self.assertFalse([w for _, w in got if flat(w).startswith(FN.WD.WORDS["paren"][0])], u)
+            # the cell is as wide as the wider of the number and the unit up to UNIT_EM of its size, and taller by the unit's lines
+            w0, h0 = story.note_cell("1.6", "", 14)
+            w1, h1 = story.note_cell("1.6", u, 14)
+            self.assertTrue(w0 < w1 <= story.UNIT_EM * story.unit_px(14) and h1 > h0, (u, w0, w1, h0, h1))
+        self.assertEqual(story.unit_px(12), 12)   # never under the page's 12 px floor
 
 
 class MembersChangeReadsItsWay(unittest.TestCase):
