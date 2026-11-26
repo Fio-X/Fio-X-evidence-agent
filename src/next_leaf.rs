@@ -3033,7 +3033,11 @@ mod tests {
             let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a",
                              "subject": {"proportion": {"share": 0.105, "figures": 30, "declared": {"count": 3, "total": 30}}}});
             let got = hero(&child, &ask).unwrap_or_else(|e| panic!("collage proportion: {e:?}"));
-            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "collage proportion");
+            assert_eq!(
+                hero_faults(&got.svg),
+                Vec::<String>::new(),
+                "collage proportion"
+            );
             assert_eq!(got.scene, "labour.proportion");
         }
         // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion (a people topic)
