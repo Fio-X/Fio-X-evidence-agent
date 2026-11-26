@@ -81,11 +81,12 @@ class Sync(unittest.TestCase):
 class Isolated(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.mkdtemp(prefix="short-measure-")
-        cls.leaves = os.path.join(cls.tmp, "run", "leaves_py")
-        os.makedirs(cls.leaves)
+        scratch = tempfile.mkdtemp(prefix="short-measure-")
+        leaves = os.path.join(scratch, "run", "leaves_py")
+        os.makedirs(leaves)
+        cls.tmp, cls.leaves = scratch, leaves
         cls.names = shipped_leaves()
-        for n in cls.names: shutil.copy2(os.path.join(LEAVES, n), os.path.join(cls.leaves, n))
+        for n in cls.names: shutil.copy2(os.path.join(LEAVES, n), os.path.join(leaves, n))
 
     @classmethod
     def tearDownClass(cls):
