@@ -309,7 +309,7 @@ fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
     .map(|n| (n, len))
 }
 
-/// The first count after 前 or 后 (前五, 前 3), as in a top or bottom n.
+/// The first count after the Chinese word for "top" or "bottom" (top five, top 3), as in a top or bottom n.
 fn count_after(q: &str, mark: char) -> Option<usize> {
     let chars: Vec<char> = q.chars().collect();
     chars

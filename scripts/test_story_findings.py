@@ -2685,7 +2685,7 @@ SUPERLATIVE_TITLES = {"story.rank.title_top": ["{n:hi}", "{f:rhi}", "{n:lo}", "{
 
 
 class SuperlativeTitles(unittest.TestCase):
-    """The headlines that name the highest and the lowest ("X 最高，达 N；Y 最低，只有 N") hold a verb of the judge's list once the places'
+    """The headlines that name the highest and the lowest (the highest-and-lowest wording with a number after each name) hold a verb of the judge's list once the places'
     names are taken out, on a Eurostat percent shape and a World Bank shape with units; their slots are the same facts as before."""
 
     def has_verb(self, text, names):

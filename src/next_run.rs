@@ -11950,7 +11950,7 @@ mod tests {
         assert!(a.target.is_some());
     }
 
-    /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
+    /// naming Germany beside the EU (places_zh Germany, EU) still scopes the page by EU27_2020 alone. With no reviewed name
     /// for the aggregate there is no scope at all, never a raw word.
     #[test]
     fn the_scope_is_the_datas_aggregate_by_its_reviewed_name_or_none() {

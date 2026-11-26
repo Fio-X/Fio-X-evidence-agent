@@ -270,7 +270,7 @@ pub struct TextAsk {
     /// refused. Empty on a page with no set.
     pub mark: String,
     /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
-    /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
+    /// ("four countries", "two countries") is no typed number (place_count_free); None, none is.
     pub places: Option<usize>,
     /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
     /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
