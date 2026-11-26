@@ -479,6 +479,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             runtime_dir.join("illus_hero/frame.py"),
             include_str!("../runtime/illus_hero/frame.py"),
         ),
+        // run_hero.py imports it (the one accent pass over the old renderers' replies); left out, the hero child died at import
+        (
+            runtime_dir.join("illus_hero/one_accent.py"),
+            include_str!("../runtime/illus_hero/one_accent.py"),
+        ),
         // the hand-drawn line drawing the hero child imports for a topic whose renderer is "line" (run_hero.py)
         (
             runtime_dir.join("illus_hero/line/draw.py"),
@@ -1057,6 +1062,75 @@ mod tests {
             .filter(|name| !root.path().join("runtime/leaves_py").join(name).is_file())
             .collect();
         assert!(missing.is_empty(), "not materialized: {missing:?}");
+    }
+
+    /// A python file a child imports from its own folder must land in the run's runtime beside it: a file left out of the embed list
+    /// kills the child at its first import (one_accent.py was left out of illus_hero and every opening picture fell back to the strip).
+    /// Reads every materialized .py, takes the module names of its import lines, and for each name that is a file or a package in the
+    /// source folder of the same path requires the same entry in the run's runtime.
+    #[test]
+    fn materializes_every_locally_imported_python_module() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let root = tempfile::tempdir().expect("temporary artifact root");
+        materialize_extension(root.path()).expect("materialize runtime");
+        let src_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        let run_root = root.path().join("runtime");
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for e in fs::read_dir(dir).expect("read_dir").flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "py") {
+                    out.push(p);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(&run_root, &mut files);
+        assert!(!files.is_empty(), "no python file materialized");
+        let mut missing = Vec::new();
+        for file in files {
+            let rel = file.strip_prefix(&run_root).expect("under the run runtime");
+            let src_dir = src_root.join(rel).parent().expect("parent").to_path_buf();
+            let run_dir = file.parent().expect("parent").to_path_buf();
+            let text = fs::read_to_string(&file).expect("read materialized python");
+            for line in text.lines() {
+                let t = line.trim_start();
+                let names: Vec<&str> = if let Some(rest) = t.strip_prefix("from ") {
+                    rest.split_whitespace().take(1).collect()
+                } else if let Some(rest) = t.strip_prefix("import ") {
+                    rest.split('#')
+                        .next()
+                        .unwrap_or("")
+                        .split(',')
+                        .map(|n| n.split_whitespace().next().unwrap_or(""))
+                        .collect()
+                } else {
+                    continue;
+                };
+                for name in names {
+                    let top = name.split('.').next().unwrap_or("");
+                    if top.is_empty() || !top.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    {
+                        continue;
+                    }
+                    let as_file = src_dir.join(format!("{top}.py"));
+                    let as_pkg = src_dir.join(top).join("__init__.py");
+                    if as_file.is_file() && !run_dir.join(format!("{top}.py")).is_file() {
+                        missing.push(format!("{}: imports {top}.py", rel.display()));
+                    }
+                    if as_pkg.is_file() && !run_dir.join(top).join("__init__.py").is_file() {
+                        missing.push(format!("{}: imports package {top}", rel.display()));
+                    }
+                }
+            }
+        }
+        missing.sort();
+        missing.dedup();
+        assert!(
+            missing.is_empty(),
+            "imported but not materialized: {missing:?}"
+        );
     }
 
     /// Every asset the tool source reads by `new URL("./assets/<name>", import.meta.url)` lands in a run's runtime/assets: a
