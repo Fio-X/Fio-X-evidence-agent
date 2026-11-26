@@ -96,7 +96,7 @@ class Isolated(unittest.TestCase):
                            capture_output=True, text=True, cwd=self.tmp, timeout=300)
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         out = json.loads(p.stdout)
-        self.assertEqual(os.path.dirname(out["file"]), os.path.realpath(self.leaves))
+        self.assertEqual(os.path.realpath(os.path.dirname(out["file"])), os.path.realpath(self.leaves))
         self.assertTrue(out["pages"])
         return out
 
