@@ -3151,6 +3151,26 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
         self.assertLessEqual(story.note_cell("1.6", "千吨油当量按最终能源消费口径", 14)[0], story.UNIT_EM * us)
         self.assertEqual(story.unit_html("吨/人"), '<span class="u">吨/<wbr>人</span>')
 
+    def test_a_note_s_unit_reads_at_4_5_to_1_on_the_note_s_tint(self):
+        """The unit under a note's number (12 px, small text) is held to the page's text_contrast gate (WCAG 4.5:1) on the note's
+        ground: the title colour mixed into white at 6% (the rule) and at 10% (margin for a note on a tinted section)."""
+        rule = re.search(r"\.story \.note \.n \.u\{[^}]*?color:var\((--[\w-]+)\)", story.CSS)
+        self.assertTrue(rule, "the .u rule names its colour by a token")
+        ground = re.search(r"\.story \.note\{[^}]*?background:color-mix\(in srgb,var\((--[\w-]+)\) (\d+)%,transparent\)", story.CSS)
+        self.assertTrue(ground, "the note's ground is a mix of a token into the page")
+        with open(os.path.join(HERE, "..", "runtime", "leaves_py", "tokens.css"), encoding="utf-8") as f: css = f.read()
+        tok = dict(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b)", css))
+        rgb = lambda h: [int(c * 2, 16) for c in h[1:]] if len(h) == 4 else [int(h[i:i + 2], 16) for i in (1, 3, 5)]
+        lum = lambda c: sum(w * ((v / 255) / 12.92 if v / 255 <= 0.04045 else ((v / 255 + 0.055) / 1.055) ** 2.4)
+                            for w, v in zip((0.2126, 0.7152, 0.0722), c))
+        unit, ink, page = rgb(tok[rule.group(1)]), rgb(tok[ground.group(1)]), rgb(tok["--bg"])
+        self.assertEqual(int(ground.group(2)), 6)
+        for pct in (6, 10):
+            bg = [p + (i - p) * pct / 100 for p, i in zip(page, ink)]
+            hi, lo = sorted((lum(unit), lum(bg)), reverse=True)
+            self.assertGreaterEqual((hi + 0.05) / (lo + 0.05), 4.5, (rule.group(1), pct))
+        self.assertGreater(lum(unit), lum(rgb(tok["--t-title"])), "the unit stays lighter than the number")
+
 
 class MembersChangeReadsItsWay(unittest.TestCase):
     """The members angle prints the best and the worst member's change as its size (the larger value less the smaller): the header's big

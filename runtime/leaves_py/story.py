@@ -699,7 +699,7 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        # a note's unit under its number (note_cell): lighter and smaller, on one line up to UNIT_EM of its size, past that broken after a
        # slash (unit_html's break point), inside a word only when one alone runs past the cap
        f".story .note .n .u{{display:block;max-width:{UNIT_EM}em;width:max-content;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere;"
-       "font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-sec)}"
+       "font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-dek)}"  # lighter than the number, yet 4.5:1 on the note's tint (--t-sec falls short)
        ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
        ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
        ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"
