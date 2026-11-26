@@ -87,7 +87,11 @@ CLOTH = {
     "856590_3": dict(poly=[(-10, 80), (30, 80), (34, 96), (40, 104), (48, 114), (56, 126), (63, 138), (70, 141), (77, 131), (85, 118), (94, 106), (104, 98), (114, 96), (124, 100), (134, 104), (144, 108), (154, 112), (190, 112), (190, 258), (182, 262), (172, 266), (162, 268), (152, 270), (142, 284), (137, 298), (133, 312), (131, 326), (130, 340), (131, 354), (133, 368), (136, 382), (140, 396), (128, 402), (116, 404), (104, 404), (92, 402), (80, 399), (68, 396), (56, 392), (48, 388), (46, 372), (46, 356), (48, 340), (50, 326), (52, 312), (52, 298), (50, 284), (46, 272), (40, 262), (30, 256), (20, 252), (10, 250), (-10, 250)],
                      cut=[]),
     "856580_0": dict(poly=[(96, 230), (100, 216), (106, 212), (108, 224), (112, 236), (118, 246), (126, 255), (136, 264), (148, 274), (158, 284), (168, 292), (180, 298), (192, 302), (204, 305), (216, 306), (228, 304), (238, 300), (248, 296), (280, 296), (280, 530), (80, 530), (86, 500), (90, 470), (92, 440), (94, 410), (96, 390), (98, 370), (97, 350), (95, 330), (92, 310), (91, 290), (90, 265), (90, 240)],
-                     cut=[[(58, 360), (70, 352), (84, 350), (98, 354), (104, 364), (102, 376), (94, 386), (80, 390), (66, 386), (58, 374)]]),
+                     cut=[[(58, 360), (70, 352), (84, 350), (98, 354), (104, 364), (102, 376), (94, 386), (80, 390), (66, 386), (58, 374)]],
+                     # the dark sleeve above the basket (the same dress): without it the skirt alone reads as a red cut flat at the waist
+                     fill=[[(182, 176), (181, 166), (182, 154), (184, 142), (188, 132), (194, 123), (200, 116), (208, 112), (216, 111), (224, 113),
+                            (230, 117), (235, 123), (239, 131), (241, 139), (243, 147), (245, 155), (247, 162), (240, 168), (230, 170), (220, 169),
+                            (211, 168), (204, 170), (196, 174), (188, 177)]]),
     "856579_0": dict(poly=[(60, 100), (110, 96), (122, 100), (132, 106), (142, 110), (154, 112), (166, 112), (178, 110), (188, 106), (198, 100), (210, 96), (270, 96), (270, 180), (262, 184), (250, 188), (238, 192), (228, 198), (224, 206), (219, 218), (215, 230), (213, 242), (212, 254), (212, 266), (213, 278), (216, 290), (220, 302), (226, 316), (232, 326), (242, 332), (256, 334), (280, 334), (280, 530), (60, 530), (60, 334), (74, 334), (88, 333), (100, 330), (110, 324), (116, 314), (120, 302), (123, 290), (124, 278), (124, 266), (123, 254), (121, 242), (119, 230), (116, 218), (112, 206), (106, 196), (98, 190), (88, 186), (76, 184), (60, 184)],
                      cut=[[(146, 212), (148, 204), (158, 198), (170, 196), (182, 196), (194, 200), (200, 210), (196, 220), (184, 226), (172, 228), (160, 227), (150, 220)]]),
     "856587_0": dict(poly=[(130, 96), (140, 96), (150, 104), (160, 110), (170, 114), (180, 116), (190, 114), (200, 108), (208, 100), (214, 90), (220, 80), (228, 72), (240, 66), (250, 50), (320, 50), (320, 420), (308, 426), (296, 427), (284, 428), (272, 428), (260, 429), (248, 430), (236, 431), (224, 433), (212, 436), (202, 440), (194, 446), (190, 456), (190, 468), (192, 480), (186, 486), (176, 489), (164, 490), (152, 488), (142, 484), (156, 484), (159, 470), (158, 452), (161, 434), (163, 416), (161, 398), (163, 380), (165, 362), (163, 344), (162, 326), (164, 308), (162, 290), (159, 272), (157, 256), (152, 242), (142, 232), (132, 228), (125, 224), (119, 219), (115, 212), (108, 206), (104, 200), (96, 196), (90, 190)],
@@ -103,6 +107,26 @@ CLOTH = {
 # reaches the shoulders and the collar and covers the sleeves, the face, hair, headscarf, hands and held objects stay out, no bite at the
 # neck, no straight line across the chest. Every one is red_ok with a clothing solidity of at least the renderer's hero_solidity (0.55).
 HERO_OK = {"856576_2", "856578_0", "856579_0", "856579_1", "856581_1", "856584_1"}
+# The figures that pass the automatic rule (red_ok, solidity >= 0.55) but failed the same check by eye (hero-size render, 100% of the
+# largest tier, the accent under the lines): why each may stand in the queue but not be the hero. Every figure the rule admits is on
+# HERO_OK or here (the build stops otherwise), so a new mask is judged by eye before it can be the hero.
+HERO_NO = {
+    "856576_0": "the red runs past the shawl's lines on the left",
+    "856580_0": "red only on the skirt and the sleeve, the basket and the white shawl cover the chest: no red at the collar",
+    "856582_2": "red fills the gap inside the akimbo arm and between the legs, haloes the hand and touches the cheek",
+    "856583_1": "red top is a near-flat cut over the white chemise's V; the left of the dress and its sleeve stay grey along a wobbly line",
+    "856583_3": "the shirt cut has straight vertical sides; a grey strip down the right of the jacket and the right leg",
+    "856584_0": "red top is a flat line across the chest over the chemise; the hem is cut straight above the feet",
+    "856586_1": "the basket cut is a rounded blob that leaves the skirt below it grey; the red top crosses the white kerchief",
+    "856587_0": "a red wedge fills the background between the sleeve and the body; the white chemise is red; a filled block behind the scales",
+    "856587_2": "red fills the background between the legs; a straight vertical red edge against the basket at the shoulder",
+    "856589_1": "a blob that cuts across the bodice and the skirt with a curve no engraved line follows",
+    "856590_0": "red top is a flat line across the chest over the chemise; a straight vertical cut down the skirt under the basket",
+    "856590_3": "the hand on the chest and the strap are red; red fills between the hanging pan's straps and the leg",
+    "856591_1": "red top is a horizontal cut across the neck's skin; a straight diagonal cut through the shawl at the right shoulder",
+    "856592_1": "a back view; a straight vertical cut down the back, a bite at the neck and a pale halo round the scale pan",
+}
+assert not HERO_OK & set(HERO_NO)
 TIERS = (("l", 480), ("m", 240), ("s", 120))
 LEVELS = 32                 # alpha levels of a lines piece
 INK = 42                    # the grey of the engraving lines
@@ -183,7 +207,7 @@ def cloth_mask(pid, a):
     yy, xx = np.mgrid[-it:it + 1, -it:it + 1]; disk = xx * xx + yy * yy <= it * it   # a round element: where it bridges a gap the edge is an arc, not a diamond's zigzag
     body = ndi.binary_fill_holes(ndi.binary_closing(np.pad(a > 0.5, it), structure=disk))[it:-it, it:-it]
     cl = pm & body                       # the light parts of a garment the cut left open (inside or at its edge) are still the garment: no holes
-    if v.get("fill"):                   # light cloth the outline lost (a dotted shawl at the neck): hand-set, added whole
+    if v.get("fill"):                   # light cloth the outline lost (a dotted shawl at the neck), or a part of the garment a held object cuts off (a sleeve above a basket): hand-set inside the outline, added whole
         f = Image.new("L", (w, h), 0); df = ImageDraw.Draw(f)
         for c in v["fill"]: df.polygon([(x * s, y * s) for x, y in smooth(c)], fill=255)
         cl = cl | (np.asarray(f) > 127)
@@ -255,7 +279,7 @@ def main():
     rows = [r for r in csv.DictReader(open(os.path.join(src, "index.tsv"), encoding="utf-8"), delimiter="\t")
             if r["id"].startswith("met_gam_") and r["id"][len("met_gam_"):] not in UNUSABLE]
     rows.sort(key=lambda r: r["id"])
-    missing = sorted((set(CLOTH) | HERO_OK) - {r["id"][len("met_gam_"):] for r in rows})
+    missing = sorted((set(CLOTH) | HERO_OK | set(HERO_NO)) - {r["id"][len("met_gam_"):] for r in rows})
     if missing: sys.exit(f"clothing polygons for figures not in the pack: {missing}")
     blob = bytearray(); pieces = []; figures = []
 
@@ -270,6 +294,8 @@ def main():
         facing = r.get("facing") or "n/a"
         hero_ok = r["id"][len("met_gam_"):] in HERO_OK
         if hero_ok and not (info["red_ok"] and info["solidity"] >= 0.55): sys.exit(f"{r['id']}: on the hero list but not red_ok with solidity >= 0.55")
+        if info["red_ok"] and info["solidity"] >= 0.55 and r["id"][len("met_gam_"):] not in HERO_OK | set(HERO_NO):
+            sys.exit(f"{r['id']}: may be the hero by the rule but is on neither HERO_OK nor HERO_NO (check it by eye first)")
         figures.append(dict(id=r["id"], facing=facing, red_ok=info["red_ok"], hero_ok=hero_ok, usable=info["usable"], solidity=info["solidity"],
                             cloth_share=info["cloth_share"], grid=info["grid"]))
         for tier, kind, data, w, h, foot in ps: add(f"{r['id']}.{tier}.{kind}", r["id"], tier, kind, data, w, h, foot, facing, info["red_ok"])

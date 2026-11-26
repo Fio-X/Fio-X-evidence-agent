@@ -2,7 +2,7 @@
 renderers are [collage]): N engraving cut-outs (pack.bin, indexed by pack.json, built once by scripts/build_collage_pack.py) in one queue
 on a whole sheet of paper. The queue's front figure is the hero, large in the left-front third, the darkest and clearest figure; the rest
 of the queue stands right behind it and recedes up and to the right, near-large to far-small in one continuous sweep, every figure by
-one depth rule. K of the N wear the accent on their clothing under the engraving lines; the hero is the front-most of the K. Standard
+one depth rule; a short queue is seen closer (close_knobs: larger figures, standing closer, heads in the top third). K of the N wear the accent on their clothing under the engraving lines; the hero is the front-most of the K. Standard
 library only and no pixel work: the picture is layered SVG over the 1440x560 frame, every raster a PNG or JPEG data URL taken from the
 pack as it is.
 
@@ -91,10 +91,25 @@ def depth_rule(kn):
     return h0, f0, (lambda y: k * (y - yh))
 
 
-def queue_slots(q, kn, cfg):
+def close_knobs(n, kn, cfg):
+    """(the knobs the queue is drawn at, how close the view is): a short queue is seen from closer, so its few figures fill the sheet as the
+    long queue and its far crowd do. close = 1 - the ramp from 1 at n <= close.ramp[0] to 0 at n >= close.ramp[1] (the far crowd's ramp: the
+    queue steps back as the crowd comes in, with no jump at any n); each knob in close.shift moves by its shift x close (the hero and the far end
+    larger, the far end nearer and lower, so the queue is shorter, its figures tighter and their heads in the top third), the hero's feet at most
+    the sheet's foot. At n >= close.ramp[1] the knobs are the request's as they are."""
+    C = cfg["close"]; a, b = C["ramp"]; c = 1.0 - max(0.0, min(1.0, (n - a) / (b - a)))
+    if c <= 0: return kn, 0.0
+    out = {k: v + C["shift"].get(k, 0.0) * c for k, v in kn.items()}
+    out["hero_foot"] = min(1.0, out["hero_foot"])
+    return out, c
+
+
+def queue_slots(q, kn, cfg, close=0.0, half=0.0):
     """The q queue places behind the hero, near to far: (height, centre x, foot y). The first stands queue_gap x the hero's height right of
     the hero; each next one a spacing factor x the mean width of the two further on, the factor the largest on fac (bisected) that keeps the
-    last centre at or left of the far end."""
+    last centre at or left of the far end and every place's widest figure inside the sheet (half: the pack's widest half-width per height,
+    so no counted figure is cut by the right edge). Seen close (close_knobs), fac's top falls toward close.fac_max: a short queue stays a queue of people
+    standing close and ends where its last figure stands, short of the far end, rather than spreading its few figures over the width."""
     Q = cfg["queue"]; asp = Q["aspect"]; (hx, hy0), (fx, fy), hy = depth_rule(kn)
     yp = lambda x: hy0 - (hy0 - fy) * (x - hx) / (fx - hx)
     first = hx + kn["queue_gap"] * kn["hero_h"] * CH
@@ -105,10 +120,11 @@ def queue_slots(q, kn, cfg):
             y = yp(cx); h = hy(y); sl.append((h, cx, y))
             cx = cx + fac * 0.5 * asp * (h + hy(yp(cx + Q["probe"])))
         return sl
-    lo, hi = Q["fac"]
+    lo, hi = Q["fac"]; hi = hi + (cfg["close"]["fac_max"] - hi) * close
     for _ in range(25):
         f = (lo + hi) / 2
-        if q and build(f)[-1][1] > fx: hi = f
+        b = build(f)
+        if q and (b[-1][1] > fx or max(x + half * h for h, x, _ in b) > CW): hi = f
         else: lo = f
     return build(lo)
 
@@ -201,7 +217,9 @@ def draw(codes, k, n, width, accent, cfg, kn):
         hero = ok[0]
         order.remove(hero)
     q = n - (1 if hero else 0)
-    sl = queue_slots(q, kn, cfg)
+    req_kn = kn; kn, close = close_knobs(n, kn, cfg)        # the queue's geometry at the view's distance; its tones stay the request's
+    half = max(p["w"] / p["h"] for p in index["pieces"] if p["id"].endswith(".lines") and p["id"].split(".")[0] in figs) / 2
+    sl = queue_slots(q, kn, cfg, close, half)
     flags = accent_places(k - 1, q, sl, cfg) if hero else "g" * q
 
     def tier_of(h):
@@ -279,11 +297,11 @@ def draw(codes, k, n, width, accent, cfg, kn):
         far_layers.append(cnt)
     for L, m in zip(F["layers"], far_counts(n, cfg)):
         if m: far_layer(dict(L, n=m))
-    qfill = tone(paper, kn["queue_fill"])
+    qfill = tone(paper, req_kn["queue_fill"])
     for j, i in enumerate(draw_order):
         h, x, y = sl[i]
         r = flags[i] == "r"      # an accent figure's lines at red_ink, never faded with distance: the engraving stays legible over the accent
-        figure(str(j), chosen[i], h, x, y, cfg["queue_red_opacity"] if r else 0, qfill, cfg["red_ink"] if r else kn["queue_ink"] * (fl[0] + fl[1] * min(1.0, h / fl[2])))
+        figure(str(j), chosen[i], h, x, y, cfg["queue_red_opacity"] if r else 0, qfill, cfg["red_ink"] if r else req_kn["queue_ink"] * (fl[0] + fl[1] * min(1.0, h / fl[2])))
     hero_box = figure("h", hero, hh, hx, hy, True, tone(paper, cfg["hero_fill"]), 1.0) if hero else None
     out.append(f'<defs><mask id="clg-grain"><image href="{href("grain")}" width="{CW}" height="{CH}" preserveAspectRatio="none"/></mask></defs>'
                f'<path d="M0 0H{CW}V{CH}H0Z" fill="#000000" opacity="{num(index["grain_opacity"])}" mask="url(#clg-grain)"/>')
@@ -292,7 +310,8 @@ def draw(codes, k, n, width, accent, cfg, kn):
                 hero_box=[round(v, 2) for v in hero_box] if hero else None, queue_feet=[round(s[2], 2) for s in sl],
                 queue_heights=[round(s[0], 2) for s in sl], queue_x=[round(s[1], 2) for s in sl], queue_ids=list(chosen),
                 red=sorted([chosen[i] for i in range(q) if flags[i] == "r"] + ([hero] if hero else [])),
-                red_visible_min=min(seen.values()) if seen else None)
+                red_visible_min=min(seen.values()) if seen else None, close=round(close, 4),
+                queue_far=[round(kn["queue_far_x"] * CW, 2), round(kn["queue_far_foot"] * CH, 2)], queue_gap=round(kn["queue_gap"], 4))
     comp["red_repeats"] = len(comp["red"]) - len(set(comp["red"]))
     comp.update(red_rule="spread", red_adjacent=sum(1 for a, b in zip(flags, flags[1:]) if a == b == "r"), red_ok_count=masked, max_uses=cap,
                 uses_max=max(uses.values()) if uses else 0, far=len(far_ids), far_ids=far_ids, far_pieces=far_used, far_layers=far_layers)

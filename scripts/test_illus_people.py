@@ -3,7 +3,10 @@
 count the rows give; every unit is one figure; `omitted` is the members the request had minus the units drawn; the figures fill at least the registered
 share of the picture height; the reply is only <g> and <path> with hex colours, translate/scale transforms and path data of M L C Z (the grammar
 next_leaf.rs hero_faults accepts, mirrored here); the baked registry holds no arcs, no fill-rule and no text, and carries the figure credit; the
-groups layout is `unavailable`; and only the people topic takes this renderer (for the layouts the scene renderer does not draw).
+groups layout is `unavailable`; and only the people topic takes this renderer (for the layouts the scene renderer does not draw). Colour: every baked
+piece has a role; drawn with no recolouring pass (one_accent is never called), the picture's only strong colour is the page
+accent, every colour beyond the neutrals is the accent's hue or one of the registered skin tones, and the accent's hue lands only on the whole outer
+garment (top, top_back) of the lit figures, never on trousers, legs or anything else.
 Run: python3 -I -B scripts/test_illus_people.py"""
 import json
 import os
@@ -17,6 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "runtime", "illus_hero", "people"))
 sys.path.insert(0, os.path.join(ROOT, "runtime", "illus_hero"))
 import draw as PD  # noqa: E402
 import run_hero as R  # noqa: E402
+import one_accent as OA  # noqa: E402
 
 SPECS = json.load(open(os.path.join(ROOT, "fixtures", "illus-vary-specs.json")))
 NAMES = ["st1", "st2", "st3", "st4"]
@@ -33,9 +37,6 @@ def members_of(sub):
 
 
 def cols(): return R.page_colours(["--accent", "--bar", "--t-title"])
-
-
-def primary(): return R.page_accent()
 
 
 def hero_grammar_faults(svg):
@@ -61,7 +62,7 @@ class PeopleHero(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.res = {n: R.resolve(req(n), renderer="people") for n in NAMES}
-        cls.out = {n: PD.draw(cls.res[n], cols(), primary()) for n in NAMES}
+        cls.out = {n: PD.draw(cls.res[n], cols()) for n in NAMES}
 
     def test_lit_figures_are_the_resolved_lit_count(self):
         for n in NAMES:
@@ -95,6 +96,50 @@ class PeopleHero(unittest.TestCase):
                 fills = findall(r'fill="(#[0-9a-f]{6})"', g); top = max(sat(f) for f in fills)
                 if lit["lit"]: self.assertGreater(top, 60, n)
                 else: self.assertLess(top, 30, n)
+
+    def test_every_piece_has_a_role_and_every_role_a_paint(self):
+        P = PD.REG["paint"]
+        for name, f in PD.FIG.items():
+            roles = PD.ROLES[name]; self.assertEqual(len(roles), len(f["pieces"]), name)
+            self.assertIn("top", roles, name); self.assertTrue(set(roles) <= set(P["roles"]), name)
+        for h in [t[k] for t in P["skin"]["tones"] for k in ("base", "shade")] + [v for k, v in P["greys"].items() if k != "doc"]: self.assertRegex(h, r"^#[0-9a-f]{6}$")
+        self.assertLessEqual(max(OA.chroma(v) for k, v in P["greys"].items() if k != "doc"), 0.03)
+        for t in P["skin"]["tones"]:
+            for k in ("base", "shade"):
+                hh, _l, ss = OA.hls(t[k]); self.assertTrue(15 <= hh <= 32 and ss <= 0.45 and OA.chroma(t[k]) < OA.STRONG, t[k])   # warm, low saturation, under the line
+
+    def test_one_accent_as_drawn_without_the_recolouring_pass(self):
+        acc = cols()["--accent"]; ha = OA.hls(acc)[0]; skins = {t[k] for t in PD.REG["paint"]["skin"]["tones"] for k in ("base", "shade")}
+        for n in NAMES:
+            svg = self.out[n]["inner"]; painted = {h.lower() for h in OA.HEX.findall(svg)}
+            self.assertEqual(OA.strong_colours(svg), [acc], n)
+            off = [h for h in painted if OA.chroma(h) > OA.GREY_CHROMA and h not in skins and abs((OA.hls(h)[0] - ha + 180) % 360 - 180) > OA.ACCENT_HUE]
+            self.assertEqual(off, [], n)                                              # one hue family beyond the neutrals and the skin
+
+    def test_the_accent_is_on_the_lit_figures_outer_garment_only(self):
+        acc = cols()["--accent"]; ha = OA.hls(acc)[0]
+        red = lambda h: OA.chroma(h) > OA.GREY_CHROMA and abs((OA.hls(h)[0] - ha + 180) % 360 - 180) <= OA.ACCENT_HUE
+        for n in NAMES:
+            groups = re.findall(r'<g transform="translate[^"]*">(.*?)</g>', self.out[n]["inner"]); units = self.out[n]["units"]
+            self.assertEqual(len(groups), len(units), n); lit_tops = 0
+            for g, u in zip(groups, units):
+                fills = re.findall(r'fill="(#[0-9a-f]{6})"', g); roles = PD.ROLES[u["figure"]]; self.assertEqual(len(fills), len(roles), n)
+                for f, r in zip(fills, roles):
+                    garment = r in ("top", "top_back")
+                    self.assertEqual(red(f), u["lit"] and garment, (n, u["figure"], r, f))
+                    if u["lit"] and r == "top": self.assertEqual(f, acc, n); lit_tops += 1
+            self.assertGreaterEqual(lit_tops, self.res[n][0]["composition"]["lit"], n)
+
+    def test_build_people_runs_no_recolouring_pass(self):
+        real = R.one_accent
+        def refuse(*_a): raise AssertionError("build_people called one_accent")
+        R.one_accent = refuse
+        try:
+            for n in ("st1", "st4"):
+                sys.modules.pop("draw", None); svg = R.build_people(req(n))[0]
+                self.assertEqual(OA.strong_colours(svg), [R.page_accent()], n)
+        finally:
+            R.one_accent = real; sys.modules["draw"] = PD
 
     def test_the_baked_registry_is_in_the_grammar(self):
         reg = PD.REG; self.assertIn("Pablo Stanley", reg["credit"]); self.assertTrue(PD.ORDER)
