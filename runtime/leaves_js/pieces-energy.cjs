@@ -161,4 +161,99 @@ function biomass() {
   P('M396,34 q-8,-8 0,-14 q10,-6 2,-14 M404,30 q8,-6 2,-12', { cls: 'wave' });                                // steam
   return { els: k.E, box: [0, -8, 420], base: 190, below: 17 };
 }
-module.exports = { turbine, solar, dam, biomass };
+
+// ---- pieces of the other topics (the strip picks a topic's list by the page's measure family: pieces-energy.json topic_pieces)
+// every one stands on the ground line y = 190, strokes only, one accent element each, nothing smaller than 6 units as a closed shape
+
+// emissions 1: a works with two chimneys, smoke, the second chimney's band in the accent
+function stack() {
+  const k = kit(), { L, P, R, C } = k; ground(k, 0, 300, 190, 2);
+  R(40, 120, 150, 70, M); L(40, 140, 190, 140, FINE); for (const x of [58, 90, 122, 154]) R(x, 150, 16, 20, MID);
+  for (const [x, top, acc] of [[205, 40, false], [248, 62, true]]) { L(x, 190, x + 3, top, M); L(x + 26, 190, x + 23, top, M); L(x + 3, top, x + 23, top, MID);
+    P(`M${x + 2},${top + 12} L${x + 24},${top + 12} L${x + 24},${top + 20} L${x + 2},${top + 20} Z`, acc ? ACC : FINE); }
+  P('M218,34 q-10,-12 2,-22 q12,-8 0,-18 M262,56 q-9,-10 1,-18 q10,-6 2,-16', { cls: 'wave' });
+  return { els: k.E, box: [0, -10, 300], base: 190, below: 17 };
+}
+// emissions 2: a cloud over a roof line, drops of hatch, the cloud's outline in the accent
+function cloud() {
+  const k = kit(), { L, P, R } = k; ground(k, 0, 300, 190, 1);
+  P('M60,96 C42,96 38,66 62,62 C64,36 100,28 116,48 C128,24 168,26 176,52 C204,40 230,56 222,80 C240,84 240,100 220,100 L60,100 Z', ACC);
+  for (let x = 74; x < 214; x += 18) { L(x, 112, x - 6, 130, HT); L(x + 8, 120, x + 2, 136, HT); }
+  for (const x of [40, 120, 200]) { R(x, 160, 50, 30, M); P(`M${x - 4},160 L${x + 25},142 L${x + 54},160`, MID); }
+  return { els: k.E, box: [0, 20, 300], base: 190, below: 17 };
+}
+// emissions 3: a stand of five conifers of different heights, the tallest in the accent
+function forest() {
+  const k = kit(), { L, P } = k; ground(k, 0, 300, 190, 1);
+  [[50, 90, 0], [105, 60, 1], [160, 110, 0], [215, 76, 0], [262, 98, 0]].forEach(([x, h, acc]) => { const o = acc ? ACC : M;
+    L(x, 190, x, 190 - h * 0.25, MID); for (let i = 0; i < 3; i++) { const y = 190 - h * (0.2 + i * 0.28), w = 26 - i * 6; P(`M${x - w},${y} L${x},${y - h * 0.4} L${x + w},${y} Z`, i === 0 ? o : FINE); } });
+  return { els: k.E, box: [0, 40, 300], base: 190, below: 17 };
+}
+// people 1: a crowd of seven figures of different heights (children, adults), one in the accent
+function crowd() {
+  const k = kit(), { L, P, C } = k; ground(k, 0, 300, 190, 1);
+  [[30, 70], [70, 100], [112, 84], [152, 108], [194, 64], [232, 96], [272, 78]].forEach(([x, h], i) => { const o = i === 3 ? ACC : M;
+    C(x, 190 - h, 8, o); P(`M${x - 11},190 L${x - 8},${190 - h + 18} Q${x},${190 - h + 12} ${x + 8},${190 - h + 18} L${x + 11},190`, o); L(x, 190 - h + 26, x, 190, FINE); });
+  return { els: k.E, box: [0, 70, 300], base: 190, below: 17 };
+}
+// people 2: three ages side by side: an elder with a cane, an adult, a child, a bench under them; the elder in the accent
+function ages() {
+  const k = kit(), { L, P, C, R } = k; ground(k, 0, 300, 190, 1);
+  R(40, 150, 220, 8, MID); L(52, 158, 52, 190, FINE); L(248, 158, 248, 190, FINE);
+  C(90, 74, 10, ACC); P('M78,150 L80,92 Q92,84 104,92 L108,150', ACC); L(112, 110, 126, 190, ACC); L(76, 100, 70, 150, FINE);
+  C(160, 66, 10, M); P('M146,150 L148,86 Q160,78 172,86 L174,150', M);
+  C(224, 108, 8, M); P('M213,150 L215,120 Q224,114 233,120 L235,150', M);
+  return { els: k.E, box: [20, 50, 260], base: 190, below: 17 };
+}
+// trade 1: a stack of containers, three by three, one in the accent
+function containers() {
+  const k = kit(), { L, R } = k; ground(k, 0, 300, 190, 1);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const x = 40 + c * 72, y = 190 - (r + 1) * 40; R(x, y, 70, 38, r === 1 && c === 1 ? ACC : M);
+    for (let i = 1; i < 6; i++) L(x + i * 11.6, y + 3, x + i * 11.6, y + 35, HT); }
+  return { els: k.E, box: [0, 60, 300], base: 190, below: 17 };
+}
+// trade 2: a quay crane over a ship carrying containers, the crane's boom in the accent
+function crane() {
+  const k = kit(), { L, P, R } = k; waves(k, 0, 300, 188, 3, 20);
+  P('M20,168 L280,168 L262,188 L40,188 Z', M); for (let i = 0; i < 4; i++) R(60 + i * 46, 146, 40, 22, i === 2 ? FINE : MID);
+  L(70, 188, 76, 40, M); L(120, 188, 114, 40, M); L(76, 40, 114, 40, MID); L(74, 110, 118, 110, FINE); P('M60,40 L236,40 L236,48 L60,48 Z', ACC); L(236, 48, 236, 100, FINE); R(226, 100, 20, 12, FINE);
+  return { els: k.E, box: [0, 30, 300], base: 190, below: 10 };
+}
+// trade 3: coin stacks of four heights, the tallest in the accent
+function coins() {
+  const k = kit(), { P, EL } = k; ground(k, 0, 300, 190, 1);
+  [[60, 3, 0], [120, 5, 0], [180, 8, 1], [240, 4, 0]].forEach(([x, n, acc]) => { for (let i = 0; i < n; i++) { const y = 186 - i * 9; EL(x, y, 26, 7, i === n - 1 && acc ? ACC : M); if (i) P(`M${x - 26},${y} L${x - 26},${y + 9}`, FINE); P(`M${x + 26},${y} L${x + 26},${y + 9}`, FINE); } });
+  return { els: k.E, box: [0, 100, 300], base: 190, below: 17 };
+}
+// migration 1: a signpost with three arrow boards, the longest in the accent
+function signpost() {
+  const k = kit(), { L, P } = k; ground(k, 0, 300, 190, 2);
+  L(150, 190, 150, 30, M); L(156, 190, 156, 30, MID);
+  [[48, 1, 90, 0], [86, -1, 80, 0], [124, 1, 110, 1]].forEach(([y, d, w, acc]) => { const x1 = 153 + d * w; P(`M153,${y - 14} L${x1 - d * 14},${y - 14} L${x1},${y} L${x1 - d * 14},${y + 14} L153,${y + 14} Z`, acc ? ACC : M); L(158 + d * 8, y, x1 - d * 22, y, HT); });
+  return { els: k.E, box: [20, 20, 260], base: 190, below: 17 };
+}
+// migration 2: a route over hills as a dashed line with arrow heads, the last arrow in the accent
+function route() {
+  const k = kit(), { L, P } = k; ground(k, 0, 300, 190, 4);
+  P('M20,160 C70,100 110,170 160,120 S240,70 276,92', MID); P('M20,168 C70,108 110,178 160,128 S240,78 276,100', FINE);
+  [[70, 128], [150, 134], [220, 94]].forEach(([x, y]) => P(`M${x - 10},${y - 8} L${x + 4},${y} L${x - 10},${y + 8}`, FINE));
+  P('M262,76 L282,92 L260,106', ACC);
+  return { els: k.E, box: [10, 60, 280], base: 190, below: 17 };
+}
+// migration 3: a border fence of posts and rails with a gate, the gate's flag in the accent
+function fence() {
+  const k = kit(), { L, P, R } = k; ground(k, 0, 300, 190, 1);
+  for (let x = 20; x <= 280; x += 26) if (x < 150 || x > 190) L(x, 190, x, 120, MID);
+  L(20, 140, 138, 140, MID); L(20, 162, 138, 162, MID); L(190, 140, 280, 140, MID); L(190, 162, 280, 162, MID);
+  L(150, 190, 150, 110, M); L(176, 190, 176, 110, M); L(150, 120, 176, 150, FINE); L(150, 150, 176, 120, FINE);
+  L(163, 110, 163, 70, MID); P('M163,70 L196,80 L163,92 Z', ACC);
+  return { els: k.E, box: [10, 60, 280], base: 190, below: 17 };
+}
+// neutral: a cairn of three stones and a short ruler line, the top stone in the accent
+function cairn() {
+  const k = kit(), { L, P, R } = k; ground(k, 0, 300, 190, 1);
+  P('M90,190 L100,150 L200,150 L210,190', M); P('M112,150 L120,118 L180,118 L188,150', M); P('M128,118 L134,92 L166,92 L172,118', ACC);
+  L(40, 176, 80, 176, FINE); for (let x = 40; x <= 80; x += 10) L(x, 176, x, 170, FINE);
+  return { els: k.E, box: [20, 80, 260], base: 190, below: 17 };
+}
+module.exports = { turbine, solar, dam, biomass, stack, cloud, forest, crowd, ages, containers, crane, coins, signpost, route, fence, cairn };

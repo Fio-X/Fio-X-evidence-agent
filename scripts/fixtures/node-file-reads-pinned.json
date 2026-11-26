@@ -71,7 +71,8 @@
    "imports sys": 1,
    "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
    "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
-   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2
   },
   "runtime/leaves_py/dumbbell.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
@@ -131,15 +132,31 @@
    "imports sankey (runtime/leaves_py/sankey.py), which breaks the rule": 1,
    "imports scmp (runtime/leaves_py/scmp.py), which breaks the rule": 1,
    "imports stacked100 (runtime/leaves_py/stacked100.py), which breaks the rule": 1,
-   "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
-   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
-   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1,
-   "imports dumbbell (runtime/leaves_py/dumbbell.py), which breaks the rule": 1,
+   "imports story (runtime/leaves_py/story.py), which breaks the rule": 1,
    "imports line (runtime/leaves_py/line.py), which breaks the rule": 1,
    "imports rank_lines (runtime/leaves_py/rank_lines.py), which breaks the rule": 1,
-   "imports stacked_area (runtime/leaves_py/stacked_area.py), which breaks the rule": 1,
+   "imports dumbbell (runtime/leaves_py/dumbbell.py), which breaks the rule": 1,
+   "imports waterfall (runtime/leaves_py/waterfall.py), which breaks the rule": 1,
    "imports waffle (runtime/leaves_py/waffle.py), which breaks the rule": 1,
-   "imports waterfall (runtime/leaves_py/waterfall.py), which breaks the rule": 1
+   "imports stacked_area (runtime/leaves_py/stacked_area.py), which breaks the rule": 1,
+   "imports gap_axis (runtime/leaves_py/gap_axis.py), which breaks the rule": 1,
+   "imports winners_losers (runtime/leaves_py/winners_losers.py), which breaks the rule": 1,
+   "imports event_chain (runtime/leaves_py/event_chain.py), which breaks the rule": 1,
+   "imports target_path (runtime/leaves_py/target_path.py), which breaks the rule": 1,
+   "imports pair_bars (runtime/leaves_py/pair_bars.py), which breaks the rule": 1,
+   "imports thesis_claims (runtime/leaves_py/thesis_claims.py), which breaks the rule": 1,
+   "imports risk_notes (runtime/leaves_py/risk_notes.py), which breaks the rule": 1,
+   "imports small_multiples (runtime/leaves_py/small_multiples.py), which breaks the rule": 1,
+   "imports member_map (runtime/leaves_py/member_map.py), which breaks the rule": 1,
+   "imports change_dots (runtime/leaves_py/change_dots.py), which breaks the rule": 1,
+   "imports rank_slope (runtime/leaves_py/rank_slope.py), which breaks the rule": 1,
+   "imports tile_map (runtime/leaves_py/tile_map.py), which breaks the rule": 1,
+   "imports unit_grid (runtime/leaves_py/unit_grid.py), which breaks the rule": 1,
+   "imports glyph_row (runtime/leaves_py/glyph_row.py), which breaks the rule": 1,
+   "imports dot_strip (runtime/leaves_py/dot_strip.py), which breaks the rule": 1,
+   "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
   },
   "runtime/leaves_py/sankey.py": {
    "imports os": 1,
@@ -184,6 +201,66 @@
   "runtime/leaves_py/words.py": {
    "imports os": 1,
    "calls open()": 1
+  },
+  "runtime/leaves_py/event_chain.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/findings.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/gap_axis.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/member_map.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
+   "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/change_dots.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/pair_bars.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/rank_slope.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/risk_notes.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/small_multiples.py": {
+   "imports target_path (runtime/leaves_py/target_path.py), which breaks the rule": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/story.py": {
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
+   "imports scmp (runtime/leaves_py/scmp.py), which breaks the rule": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1,
+   "imports column (runtime/leaves_py/column.py), which breaks the rule": 2
+  },
+  "runtime/leaves_py/target_path.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/thesis_claims.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/tile_map.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/unit_grid.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/glyph_row.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/dot_strip.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/winners_losers.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   }
  }
 }

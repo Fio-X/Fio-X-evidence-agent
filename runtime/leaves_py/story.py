@@ -1,0 +1,714 @@
+"""story page: a long page of sections, the page recipe `page_story` (run.py KINDS, knobs.py RECIPES). The opening picture, the header,
+then the sections in the order the request lists them, then the end line, the unanswered lines and the sources (scmp.shell).
+Nothing here belongs to a topic: the sections, the leaf each one draws, their kickers, titles and texts all come from the request
+(knobs.spec.sections); this file lays them out and checks them.
+
+spec.sections: [{"id": code, "layer": a story leaf (STORY_LAYERS), "kicker"?: words, "title"?: wording, "text"?: wording}, ...] in page
+order. A section with a title is a titled section: a kicker (a pill), the title (h2), the text (p), then its picture. A section with no
+title is a bare block (the thesis, the one-axis answer, the notes under the page): its picture alone. Each leaf stands at most once
+(its data is hero.leaves.<layer>, its knobs hero.style.<layer>). A title or text is a wording filled like the dek:
+FX.worded(spec, F, "sections.<i>.title" | "sections.<i>.text", wording), so a number in it is a ledger entry marked with its src.
+The kicker holds no digit or placeholder (it labels the chart for a screen reader).
+Pictures given by another child: illus_hero (the opening picture, over the header) or, when none could be made, illus_strip (the
+page-bottom strip), each with its size [w, h] in `sizes`.
+
+Page checks made here (each refuses the page naming the section):
+ * the title test: every titled section's title prints at least one number from the ledger (a fact, series or record entry; a year
+   or a name alone is no number), so no section is headed by words alone;
+ * one fact, one writing: a ledger entry printed more than once on the page prints the same text every time;
+ * one headline, once: the page's title and dek (the lead finding's conclusion and text) are no section's title or text again;
+ * every section's layer is drawn, none twice, none that is no story leaf; every picture drawn is placed.
+A section that draws the header's big numbers (layer bignums, html) is a bare block placed as it is. A picture that is a chart (every leaf but the text blocks) is its own module of the browser check (pub-visual, data-module-id the
+section's id, its svg the pub-chart named by the section's kicker and described by its title read aloud)."""
+import html
+import re
+import unicodedata
+
+import facts as FX
+import prod
+import scmp
+import wbkit as K
+from words import word
+
+NODE = "page_story"
+# the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "unit_grid", "glyph_row", "dot_strip", "risk_notes"]
+TEXT_BLOCKS = {"thesis_claims": "story.claims.label", "risk_notes": "story.notes.title"}  # a block of words drawn as svg, and the word that names it for a screen reader
+# the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
+HTML_BLOCKS = ("bignums",)
+SVG_LAYERS = [n for n in STORY_LAYERS if n not in HTML_BLOCKS]
+CODE = re.compile(r"[a-z][a-z0-9_]{0,31}")
+PAGE_W = 1140
+# the two text blocks run the page's whole width (their own default is a column; the page puts them under the header and
+# above the sources, where a column leaves the right of the page empty): the leaf's width knob, set here over the request's
+# The page's type scale (12, 14, 16 and 24 px, the numbers 58, the page title's): its leaves' label, head and value sizes, so no leaf adds a tier of its own.
+FIXED = {**{n: {"width": PAGE_W} for n in TEXT_BLOCKS}, "bignums": {"cols": 3, "width": PAGE_W, "size": 58},
+         "thesis_claims": {"width": PAGE_W, "size": 14, "num_size": 24}, "risk_notes": {"width": PAGE_W, "size": 14, "title_size": 16},
+         "winners_losers": {"size": 12, "value_size": 16}, "rankbar": {"size": 14, "row_h": 24}, "pair_bars": {"size": 12, "head_size": 14, "width": PAGE_W}}
+
+
+def cl_bignums(f, occ):
+    """The header's big numbers: column.cl_bignums over the story's leaves.bignums ({"bignums": [{fact, label}]}), three to a row in
+    a box 720 px wide (FIXED over the request's style)."""
+    import column
+    d = (f.h.get("leaves") or {}).get("bignums")
+    if d is None: raise FX.Refused("the hero names no leaves.bignums")
+    st = dict(f.h.get("style") or {})
+    st["bignums"] = {**st.get("bignums", {}), **FIXED["bignums"]}
+    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}, "unit_to_label": True})(), occ)
+
+
+def rank_style(h):
+    """The rank bar's knob the data names: leaves.rankbar.highlight is the code of the row drawn in the accent (the whole's, or
+    the highest member's when the page has no whole); the leaf's own data shape has no such key and ignores it."""
+    code = ((h.get("leaves") or {}).get("rankbar") or {}).get("highlight")
+    return {"rankbar": {"highlight_row": code}} if isinstance(code, str) and code else {}
+
+
+# How the titled sections sit on the page (the node story_layout's knobs, read from hero.style.story_layout): "side" puts a section's words in
+# a column beside its picture (text_share of the page's width, the picture the rest less the gutter), "stack" puts the words over a picture
+# as wide as the page; with pair on, two titled sections that follow each other and whose leaves PLACE calls "pair" share one row, each
+# the words over its picture, half the page less half the gutter wide.
+LAYOUT = "story_layout"
+prod.KNOBS[LAYOUT] = dict(
+    layout=("side", ("side", "stack"), "titled sections: words beside the picture, or over it"),
+    text_share=(0.34, (0.25, 0.5, 0.01), "share of the page's width the words' column takes beside a picture"),
+    gutter=(36, (16, 64, 2), "space between the words and the picture, or between two paired pictures, in px"),
+    pair=("on", ("on", "off"), "two narrow pictures in a row"),
+    notes=(2, (0, 3, 1), "short notes beside a chart's words: a bold number and what it is, a leader towards the picture"),
+    note_size=(14, (12, 16, 2), "a note's words in px (its number 2 px larger)"),
+    lead=(28, (12, 80, 4), "a note's leader towards the picture, in px"),
+    legend=("on", ("on", "off"), "the 'how to read this page' block under the thesis"))
+# What each leaf's picture takes when it sits on a titled section: beside its words ("side"), paired with a neighbour that is also
+# "pair" ("pair"), or across the page ("stack": the picture needs the page's width, e.g. panels linked left to right).
+PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "change_dots": "side", "rank_slope": "side", "tile_map": "side", "unit_grid": "side", "glyph_row": "side", "dot_strip": "stack", "gap_axis": "stack", "event_chain": "stack",
+         "winners_losers": "side", "pair_bars": "pair", "rankbar": "pair"}
+
+
+# The chart name's size (px) of the leaves a section draws with a head (their title_size knob's default; FIXED sets none).
+HEAD_TITLE_PX = 16
+# The narrowest picture (px) each leaf draws without refusing; a place that would be narrower falls back (pair to side, side to stack).
+NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "unit_grid": 500, "glyph_row": 420, "dot_strip": 560, "pair_bars": 500, "rankbar": 480}
+
+
+def layout_knobs(h):
+    k = lambda n: K.knob(h, LAYOUT, n)
+    return dict(layout=k("layout"), share=k("text_share"), gutter=k("gutter"), pair=k("pair") == "on", notes=k("notes"), note_size=k("note_size"),
+                lead=k("lead"), legend=k("legend") == "on")
+
+
+def plan(spec):
+    """The rows of the page: [("bare", [index]), ("side"|"stack", [index]), ("pair", [index, index])] in order, and each titled
+    section's picture width in px: ({index: width}, rows). A bare block (no title) is its own row at the page's width."""
+    secs = sections(spec); kn = layout_knobs(spec["hero"])
+    text_w = round(PAGE_W * kn["share"]); side_w = PAGE_W - text_w - kn["gutter"]; half_w = (PAGE_W - kn["gutter"]) // 2
+    rows, width, i = [], {}, 0
+    leaves = spec["hero"].get("leaves") or {}
+    def need(layer):
+        """The leaf's narrowest picture (NEEDS), or wider when its head (the chart name in bold, the unit beside it, as wbkit.head
+        lays them from x 8) needs more: a measure's whole reviewed name may run past half the page (q4 11-23)."""
+        d = leaves.get(layer) or {}
+        if not (isinstance(d, dict) and d.get("title") and d.get("unit")): return NEEDS.get(layer, 0)
+        size = FIXED.get(layer, {}).get("size", 13)
+        head = 8 + K.tw(K.plain(d["title"], "title"), HEAD_TITLE_PX) + 8 + K.tw(K.plain(d["unit"], "unit"), size) + 8
+        return max(NEEDS.get(layer, 0), head)
+    def mode(s):
+        m = "stack" if kn["layout"] == "stack" else PLACE.get(s[2], "stack")
+        if m == "pair" and half_w < need(s[2]): m = "side"
+        if m == "side" and side_w < need(s[2]): m = "stack"
+        return m
+    while i < len(secs):
+        s = secs[i]
+        if s[4] is None: rows.append(("bare", [s[0]])); width[s[0]] = PAGE_W; i += 1; continue
+        m = mode(s)
+        nxt = secs[i + 1] if i + 1 < len(secs) else None
+        if m == "pair" and kn["pair"] and nxt is not None and nxt[4] is not None and mode(nxt) == "pair":
+            rows.append(("pair", [s[0], nxt[0]])); width[s[0]] = width[nxt[0]] = half_w; i += 2; continue
+        if m == "pair": m = "side" if side_w >= need(s[2]) else "stack"
+        rows.append((m, [s[0]])); width[s[0]] = side_w if m == "side" else PAGE_W; i += 1
+    return width, rows, dict(kn, text_w=text_w)
+
+
+def width_of(f):
+    """The picture width each titled section's leaf draws at, as a style over the leaf's width knob ({layer: {"width": px}}); run.leaf's by_page."""
+    width, _, _ = plan(f.spec)
+    return {s[2]: {"width": width[s[0]]} for s in sections(f.spec) if s[4] is not None}
+
+
+def seg_html(sg, what):
+    """A note's segments as html: words escaped, a number a ledger entry marked with its src, a name marked with its name row, a word of the table."""
+    out = []
+    for x in sg:
+        if not isinstance(x, dict) or sum(k in x for k in ("w", "src", "word", "name")) != 1: raise FX.Refused(f"page: {what} holds a segment that is not one of w, src, word, name")
+        if "w" in x:
+            if FX.digit(x["w"]): raise FX.Refused(f"page: {what}: the words {x['w']!r} hold a digit; a number must come as a ledger entry")
+            out.append(html.escape(x["w"], quote=False))
+        elif "src" in x: out.append(FX.entry(x["src"], "span", None))
+        elif "name" in x: out.append(f'<span data-src="{html.escape(K.name_row(x["name"], x.get("kind", "place")))}">{html.escape(prod.NAME(x["name"]))}</span>')
+        else: out.append(html.escape(word(x["word"]), quote=False))
+    return "".join(out)
+
+
+def notes_items(spec, layer, kn):
+    """The short notes of a section (hero.leaves.<layer>.notes: [{"num": ledger src, "text": segs}], the first knob `notes` of them), checked:
+    [(num src, segs, unit)]. The number is a ledger entry holding a digit; unit is what the number cell prints under it (note_unit)."""
+    got = ((spec["hero"].get("leaves") or {}).get(layer) or {}).get("notes") or []
+    if not isinstance(got, list): raise FX.Refused(f"page: {layer}'s notes are no list")
+    items = []
+    for j, n in enumerate(got[:int(kn["notes"])]):
+        if not isinstance(n, dict) or not isinstance(n.get("num"), str) or not isinstance(n.get("text"), list): raise FX.Refused(f"page: {layer}'s note {j + 1} is no {{num, text}}")
+        if not FX.digit(FX.text(n["num"])): raise FX.Refused(f"page: {layer}'s note {j + 1} number {n['num']} prints no digit")
+        items.append(note_unit(spec, n["num"], n["text"]))
+    return items
+
+
+def note_unit(spec, num, sg):
+    """A note's (number, words, unit) with the number's unit moved: a fact whose unit is words prints its number alone, and its unit stands
+    once in the note: in its words when a ledger entry there already prints it (unit ""), else under the bold number in the number cell, so
+    the unit follows the number it belongs to and no note's words open with it in brackets (11-26). A percent sign, a ratio and any other
+    ledger entry are left as they are (unit "")."""
+    m = re.fullmatch(r"fact:([a-z0-9_]+)", num)
+    q = (spec.get("facts") or {}).get(m[1]) if m else None
+    if not isinstance(q, dict) or "fmt" not in q: return num, sg, ""
+    u = FX.unit(spec, q).strip()
+    if not FX.long_unit(u) or FX.digit(u) or f"{num}.n" not in FX.LEDGER: return num, sg, ""
+    said = any(isinstance(x, dict) and "src" in x and FX.text(x["src"]).rstrip().endswith(u) for x in sg)
+    return f"{num}.n", sg, ("" if said else u)
+
+
+UNIT_EM = 10   # a note's unit under its number stands on one line up to this many of its own font size (the css's max-width), so the
+# number cell grows to fit a unit of up to about ten characters (the Chinese unit for tonnes of CO2 equivalent per person is nine) and the words keep the rest of the card
+
+
+def unit_px(ns):
+    """The font size of a note's unit under its number: 2 px under the note's words, never under the page's 12 px floor."""
+    return max(12, ns - 2)
+
+
+def unit_lines(u, us):
+    """The lines a note's unit at us px takes under its number (as the css lays it): one line up to UNIT_EM of its size; a longer unit
+    breaks after a slash (the html's break point there), and only a part that alone runs past the cap breaks inside it."""
+    cap, lines = UNIT_EM * us, [""]
+    for part in re.split(r"(?<=/)", u):
+        if lines[-1] and K.tw(lines[-1] + part, us) > cap: lines.append("")
+        for ch in part:
+            if lines[-1] and K.tw(lines[-1] + ch, us) > cap: lines.append("")
+            lines[-1] += ch
+    return lines
+
+
+def unit_html(u):
+    """A note's unit under its number: the words escaped, a break point after each slash (the css keeps the rest of the words whole)."""
+    return f'<span class="u">{html.escape(u, quote=False).replace("/", "/<wbr>")}</span>' if u else ""
+
+
+def note_cell(num, u, ns):
+    """A note's number cell, (width px, height px): the bold number one line at ns + 2 (line height 1.2) and, when it carries one, its unit
+    under it at unit_px in its unit_lines (line height 1.3), the cell as wide as the wider of the number and the unit's longest line."""
+    w, h = K.tw(num, ns + 2), (ns + 2) * 1.2
+    if not u: return w, h
+    us = unit_px(ns)
+    lines = unit_lines(u, us)
+    return max(w, max(K.tw(x, us) for x in lines)), h + 2 + len(lines) * us * 1.3
+
+
+def notes_html(spec, layer, kn):
+    """The notes of a section as a list: a bold number and the words that say what it is."""
+    items = [f'<li class="note"><b class="n">{FX.entry(num, "span", None)}{unit_html(u)}</b><span class="nt">{seg_html(sg, f"{layer}'s note {j + 1}")}</span></li>'
+             for j, (num, sg, u) in enumerate(notes_items(spec, layer, kn))]
+    return f'<ul class="notes" style="--lead:{kn["lead"]}px;--ns:{kn["note_size"]}px">{"".join(items)}</ul>' if items else ""
+
+
+# What the page's picture kinds need explained: (swatch, word) a layer adds to the legend block under the thesis; the accent line is always there.
+LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", "story.legend.chain"), "small_multiples": ("pale", "story.legend.members"),
+          "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rank_slope": ("ink", "story.legend.slope"),
+          "unit_grid": ("accent", "grid.legend"), "glyph_row": ("area", "glyph.legend"), "dot_strip": ("dash", "dot.legend")}
+
+
+# The small multiples' line on a page with no target (the findings name it in leaves.small_multiples.legend): the whole as a pale
+# line when it is drawn, never a target's dashed level; a page with a target keeps LEGEND's line.
+LEGEND_NO_TARGET = ("story.legend.members_ref", "story.legend.members_plain")
+# The dot strip's line on a page whose strip draws no target (the findings name it in leaves.dot_strip.legend): the average's rule only.
+DOT_NO_TARGET = ("dot.legend_plain",)
+
+
+def legend_rows(layers, leaves=None):
+    """The accent line, then each picture kind's line once (the map and the tile map share one); the small multiples' word is the
+    one its leaf data names when it is one of LEGEND_NO_TARGET; the grid's swatch is ink when a lit glyph its headline does not
+    name is drawn in ink (`leaves` with accent_only, as accent_only gives them)."""
+    out = [("accent", "story.legend.accent")]
+    named = ((leaves or {}).get("small_multiples") or {}).get("legend")
+    for n in layers:
+        row = LEGEND.get(n)
+        if n == "small_multiples" and named in LEGEND_NO_TARGET: row = (row[0], named)
+        dot = ((leaves or {}).get("dot_strip") or {}).get("legend")
+        if n == "dot_strip" and dot in DOT_NO_TARGET: row = ("pale", dot)
+        if n == "rank_slope" and not ((leaves or {}).get("rank_slope") or {}).get("ref"): row = None   # no whole drawn, no black line to explain
+        grid = (leaves or {}).get("unit_grid") or {}
+        if n == "unit_grid" and grid.get("accent_only") is not None:
+            mem = [m for m in grid.get("members") or [] if isinstance(m, dict)]
+            lit = {m.get("code") for m in mem if m.get("flag")} if any("flag" in m for m in mem) else {m.get("code") for m in mem}
+            if lit - set(grid["accent_only"]): row = ("ink", row[1])
+        if row and row not in out: out.append(row)
+    return out
+
+
+# The leaves whose accent falls on members (rows, cells, lead dots, lit glyphs, each printed with its name row): on a titled section
+# the accent keeps only the members its headline names ({name.<code>} in its title wording), so the legend's accent line ("red is
+# what this section's headline names") holds for every section; a headline naming none leaves none in the accent. The others
+# marked keep their labels, numbers and places in the leaf's plain look. ACCENT_DATA: the data's "accent" list is no more than the
+# accent colour (change_dots: a row's colours and its name's weight; small_multiples: a cell's colours), so it is narrowed here.
+# ACCENT_ONLY: the marked list does more (rank_slope's accent keeps a row's label in a dense chart and draws it over the others,
+# dot_strip's lead names the rows on leaders, unit_grid's lit glyphs are the rule's, recomputed and counted), so it stays and the
+# leaf is given "accent_only" (wbkit.accent_only), the colour alone. The map leaves (member_map, tile_map) fill every member by its
+# value: given "accent_only" they fill by steps of one grey and only the named members in the accent (wbkit.map_fills).
+ACCENT_DATA = ("change_dots", "small_multiples")
+ACCENT_ONLY = ("rank_slope", "dot_strip", "unit_grid", "member_map", "tile_map")
+NAMED = re.compile(r"\{name\.([A-Za-z0-9_]+)\}")
+
+
+def headline_names(title):
+    """The member codes a section's title wording names ({name.<code>}), sorted."""
+    return sorted(set(NAMED.findall(title or "")))
+
+
+DOT_LEAD_MAX = 12   # the dot strip's own limit on its leaders (dot_strip.LEAD_MAX; a test keeps the two equal): a longer list stays as the findings gave it
+
+
+def unbracketed(text):
+    """`text` without what stands in brackets (any open and close punctuation, nested too, by the Unicode category: Ps opens, Pe closes),
+    the brackets themselves gone; an unclosed bracket takes the rest of the text with it."""
+    depth, out = 0, []
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if cat == "Ps": depth += 1
+        elif cat == "Pe": depth = max(0, depth - 1)
+        elif not depth: out.append(ch)
+    return "".join(out)
+
+
+def measure_name(spec):
+    """The measure's Chinese name the page's kicker prints over the headline, without the layout note in brackets (the kicker may read
+    "<measure> (latest rank)"): None when what is left is empty, holds a digit, or holds no Chinese character (an English table title:
+    no reviewed Chinese name). A Chinese name with an acronym in it (GDP per head) is a name."""
+    kick = unbracketed(str(spec.get("kicker") or "")).strip()
+    han = any(unicodedata.name(ch, "").startswith("CJK UNIFIED IDEOGRAPH") for ch in kick)
+    return kick if kick and han and not FX.digit(kick) else None
+
+
+def chinese_heads(spec, leaves):
+    """The leaves' data with the measure named in Chinese: where the findings child had only the English table title (the table has no
+    reviewed Chinese name) a leaf's head, and a row that is labelled by the measure (the two ends' row), carry that title as one literal word
+    with Latin letters; the page's own Chinese name of the measure (measure_name) stands there instead. Any other wording is left alone,
+    as is a page with no such name; the source line keeps the table's own title."""
+    name = measure_name(spec)
+    out = dict(leaves)
+    if not name: return out
+
+    def swap(x, english):
+        if isinstance(x, list) and len(x) == 1 and x[0] == {"w": english}: return [{"w": name}]
+        if isinstance(x, list): return [swap(v, english) for v in x]
+        if isinstance(x, dict): return {k: swap(v, english) for k, v in x.items()}
+        return x
+    for layer, d in leaves.items():
+        t = d.get("title") if isinstance(d, dict) else None
+        if isinstance(t, list) and len(t) == 1 and isinstance(t[0], dict) and set(t[0]) == {"w"} and re.search(r"[A-Za-z]", str(t[0]["w"])):
+            out[layer] = swap(d, t[0]["w"])
+    return out
+
+
+def accent_only(spec):
+    """hero.leaves with each titled section's leaf narrowed to the codes its headline names: in ACCENT_DATA its "accent" list, in
+    ACCENT_ONLY given "accent_only" (a copy; the spec is not changed)."""
+    leaves = dict(spec["hero"].get("leaves") or {})
+    for _, _, layer, _, title, _ in sections(spec):
+        d, named = leaves.get(layer), headline_names(title)
+        if title is None or not isinstance(d, dict): continue
+        rows, nm = {r.get("code") for r in d.get("rows") or [] if isinstance(r, dict)}, set(named)
+        if layer in ACCENT_DATA and isinstance(d.get("accent"), list): leaves[layer] = {**d, "accent": [c for c in d["accent"] if c in named]}
+        elif layer == "glyph_row" and isinstance(d.get("accent"), (list, str)):
+            # its one glyph's accent (a code, or a list of one) is no more than the colour and its name's weight; a group's or a period's
+            # glyph is named by its own words, no name row a headline can name, so it is drawn without the accent
+            leaves[layer] = {**d, "accent": [c for c in ([d["accent"]] if isinstance(d["accent"], str) else d["accent"]) if c in named]}
+        elif layer == "rankbar" and isinstance(d.get("highlight"), str):
+            # the rows its headline names are all in the accent (both ends of a "highest ... lowest" title), the whole's row as it was
+            leaves[layer] = {**d, "highlight": ",".join(dict.fromkeys([d["highlight"], *sorted(nm & rows)]))} if rows else d
+        elif layer == "rank_slope" and isinstance(d.get("accent"), list):
+            acc = list(dict.fromkeys([*sorted(nm & rows), *d["accent"]]))[:3]   # the named rows first, at most the leaf's three
+            leaves[layer] = {**d, "accent": acc, "accent_only": named}
+        elif layer == "dot_strip" and isinstance(d.get("lead"), list):
+            lead = list(dict.fromkeys([*d["lead"], *sorted(nm & rows)]))   # a named row of the strip is named on a leader and drawn in the accent
+            leaves[layer] = {**d, "lead": lead if len(lead) <= DOT_LEAD_MAX else d["lead"], "accent_only": named}
+        elif layer in ACCENT_ONLY: leaves[layer] = {**d, "accent_only": named}
+    return leaves
+
+
+def legend_html(layers, box=None, leaves=None):
+    """The 'how to read this page' block: the accent line, then a line for each picture kind on the page that needs one (no number in it);
+    `box` is the layout's (x, y, w, h) of it."""
+    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers, leaves))
+    return f'<section class="sec" data-id="legend" data-layout="bare"{place(box)}><div class="legend" data-legend="story"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
+
+
+def place(box):
+    """The absolute place of a box (x, y, w, h) as a style attribute; every block of a story page stands where the layout put it."""
+    return f' style="left:{box[0]:g}px;top:{box[1]:g}px;width:{box[2]:g}px;height:{box[3]:g}px"' if box else ""
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# The page's layout, made once at the size phase (run.py) and kept for the page phase: every section's box on the page (x, y, w, h), where
+# its words and its picture stand inside the box, and the page's whole height. The panel layer 1 is told is the page itself, so each story
+# layer reports its texts at the place its picture has on the page, and layer 1's rules (out of the panel, over another text, on a line)
+# run over the real page. The words are html, whose height the browser settles: each block's height is counted here by the same text
+# widths as the pictures' words (wbkit.tw), kept a little on the generous side (a line is counted when it is 3 % short of full), and the
+# page puts the pictures at the counted places, so the pictures stand where the layout says whatever the words come to.
+TOP_GAP, SEC_GAP, KICK_H, KICK_GAP = 20, 54, 38, 22     # px: the first row's top, between two rows, a kicker pill with its margin, the words over a picture
+H2_LH, P_LH, H2_MB, NOTES_MT, NOTE_PAD, NOTE_GAP = 33.6, 28.8, 8, 20, 20, 12   # h2 24px/1.4, p 16px/1.8, its margin, the notes' top margin, a card's padding, between two cards
+LEGEND_PAD, LEGEND_GAP = 28, 26
+
+
+def count_lines(text, size, w):
+    """How many lines the words take in a column w px wide at this size (at least one for words)."""
+    return max(1, len(K.lay([(text, None)], size, w * 0.97))) if text else 0
+
+
+def repeats(layer, notes, printed):
+    """A note adds to its section's title and text: refuse a note whose numbers (its own and the ledger entries in its words) are all
+    ledger entries the title or the text already prints (the same fact, whatever its part: .n and .r are one), so no card only says again."""
+    base = lambda src: re.sub(r"\.(n|r)$", "", src)
+    have = {base(m) for m in re.findall(r'data-src="((?:fact|series|record):[^"]*)"', printed)}
+    for j, (num, sg, _) in enumerate(notes):
+        nums = {base(num)} | {base(x["src"]) for x in sg if isinstance(x, dict) and "src" in x}
+        if nums <= have:
+            raise FX.Refused(f"page: {layer}'s note {j + 1} ({num}) prints only numbers its section's title or text already prints; a note adds a number and what it is set against")
+
+
+def pieces(spec, c, secs, kn):
+    """What each titled section prints around its picture, {index: dict(kicker, t_html, x_html, head, notes: [(num src, segs)], note_list,
+    title, text, items)}: the markup, and its plain words for the layout to count."""
+    out = {}
+    for i, sid, layer, kicker, title, text in secs:
+        if title is None: continue
+        t_html = FX.worded(spec, c.F, f"sections.{i}.title", title)
+        x_html = FX.worded(spec, c.F, f"sections.{i}.text", text) if text is not None else ""
+        head = (f'{f"<div class=kick>{prod.esc(kicker)}</div>" if kicker else ""}<h2 data-section="{sid}">{t_html}</h2>'
+                f'{f"<p>{x_html}</p>" if x_html else ""}')
+        notes = notes_items(spec, layer, kn)
+        repeats(layer, notes, t_html + x_html)
+        items = [(FX.text(num), plain(seg_html(sg, "a note")), u) for num, sg, u in notes]
+        out[i] = dict(kicker=kicker, t_html=t_html, x_html=x_html, head=head, note_list=notes_html(spec, layer, kn), title=plain(t_html), text=plain(x_html), items=items)
+    return out
+
+
+def col_height(pc, w, kn, with_notes):
+    """The words' column of a titled section w px wide: the kicker, the title, the text, and (with_notes) the notes under them."""
+    h = (KICK_H if pc["kicker"] else 0) + count_lines(pc["title"], 24, w) * H2_LH + H2_MB + count_lines(pc["text"], 16, w) * P_LH
+    return h + (NOTES_MT + notes_height(pc, w, kn) if with_notes and pc["items"] else 0)
+
+
+def notes_height(pc, w, kn):
+    """The notes list of a section w px wide: a card each, its number cell (note_cell) then its words, as tall as the taller of the two (a card
+    has 14 px padding each side, a 3 px rule, a 12 px gap)."""
+    ns, tot = kn["note_size"], 0.0
+    for num, txt, u in pc["items"]:
+        cw, ch = note_cell(num, u, ns)
+        tot += NOTE_PAD + 4 + max(count_lines(txt, ns, w - 28 - 3 - 12 - cw) * ns * 1.5, ch)
+    return tot + NOTE_GAP * max(0, len(pc["items"]) - 1)
+
+
+def legend_height(layers, leaves=None):
+    """The legend block (padding 14 px a side): its title's line, 20 px, and its items' lines. With the title the items fill one line when they fit
+    beside it; otherwise they take the lines under it, each (a row of items that wraps) 40 px high but the last, 20, a 26 px gap between two."""
+    title = K.tw(word("story.legend.title"), 14)
+    items = [26 + 8 + K.tw(word(w), 12) for _, w in legend_rows(layers, leaves)]
+    if title + 28 + sum(items) + LEGEND_GAP * (len(items) - 1) <= PAGE_W - 36: return LEGEND_PAD + 20
+    rows, cur = 1, 0.0
+    for w in items:
+        if cur and cur + LEGEND_GAP + w > PAGE_W - 36: rows += 1; cur = 0.0
+        cur += w + (LEGEND_GAP if cur else 0)
+    return LEGEND_PAD + 20 + 28 + (rows - 1) * (40 + LEGEND_GAP) + 20
+
+
+def bignums_height(markup):
+    """The header's big numbers (column.cl_bignums' html): a row of cells, each its number's line at the size it was fitted to and its label's lines."""
+    w = int(re.search(r"width:(\d+)px", markup)[1]); cols = int(re.search(r"repeat\((\d+),1fr\)", markup)[1]); cell = (w - 22 - (cols - 1) * 24) / cols
+    heights = []
+    for m in re.finditer(r'<div class="bn"(?: data-hot)?><div class="bv" style="font-size:(\d+)px[^"]*">.*?</div><div class="bl">(.*?)</div></div>', markup):
+        heights.append(int(m[1]) * 1.2 + count_lines(plain(m[2]), 12, cell) * 17)
+    rows = [heights[i:i + cols] for i in range(0, len(heights), cols)]
+    return sum(max(r) for r in rows) + 18 * (len(rows) - 1)
+
+
+def layout(spec, c, drew, html_h):
+    """The page's layout: {"boxes": {section index: dict(x, y, w, h, fx, fy, how, ...)}, "legend": (x, y, w, h) or None, "H": the page's height}.
+    `drew` is {layer: (w, h)} as drawn, `html_h` {layer: height} of a layer that is html (bignums). fx, fy: where its picture stands in its box."""
+    secs = sections(spec); width, rows, kn = plan(spec)
+    pcs = pieces(spec, c, secs, kn)
+    layer_of = {s[0]: s[2] for s in secs}
+    boxes, legend, y = {}, None, TOP_GAP
+    for r, (how, ids) in enumerate(rows):
+        if r: y += SEC_GAP
+        row_h = 0.0
+        for n, i in enumerate(ids):
+            layer = layer_of[i]; pc = pcs.get(i)
+            fw, fh = (PAGE_W, html_h[layer]) if layer in HTML_BLOCKS else drew[layer]
+            if pc is None: b = dict(x=0, w=PAGE_W, h=fh, fx=0, fy=0, how="bare")
+            elif how == "side":
+                col = col_height(pc, kn["text_w"], kn, True)
+                b = dict(x=0, w=PAGE_W, h=max(col, fh), fx=kn["text_w"] + kn["gutter"], fy=0, how="side", cw=kn["text_w"], col=col)
+            elif how == "stack":
+                top = max(col_height(pc, 640, kn, False), notes_height(pc, PAGE_W - 640 - kn["gutter"], kn) if pc["items"] else 0)
+                b = dict(x=0, w=PAGE_W, h=top + KICK_GAP + fh, fx=0, fy=top + KICK_GAP, how="stack", top=top, cw=640, col=col_height(pc, 640, kn, False))
+            else:
+                hw = width[i]; col = col_height(pc, hw, kn, True)
+                b = dict(x=n * (hw + kn["gutter"]), w=hw, h=col + KICK_GAP + fh, fx=0, fy=col + KICK_GAP, how="pair", cw=hw, col=col)
+            b["y"] = y; boxes[i] = b; row_h = max(row_h, b["h"])
+        y += row_h
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids):
+            y += SEC_GAP; lh = legend_height(list(layer_of.values()), spec["hero"].get("leaves")); legend = (0, y, PAGE_W, lh); y += lh
+    return dict(boxes=boxes, legend=legend, H=y, pieces=pcs, drew={k: tuple(v) for k, v in drew.items()})
+
+
+# The page's layout the size phase made (None when it could not: a leaf that refuses at its own layer line).
+PAGE_LAYOUT = None
+
+
+# The panel a story page tells layer 1 at the size phase: the page's width and the page's height (the layout's); a size of 0 is no panel.
+SECTION_MAX_H = 3 * PAGE_W   # the height told when a leaf refuses before the layout can be made (its own layer line then refuses it)
+
+
+class Frame:
+    """What a story page's layers read: the hero (leaves and styles), each leaf's data with the accent_only its section's headline
+    gives (accent_only; a spec that is no story keeps its leaves, and story_page refuses it); the page itself has no picture of its own."""
+    def __init__(f, c, spec):
+        try: h = {**spec["hero"], "leaves": chinese_heads(spec, accent_only(spec))}
+        except FX.Refused: h = spec["hero"]
+        f.c, f.spec, f.h, f.W, f.H = c, spec, h, PAGE_W, SECTION_MAX_H
+
+
+def sections(spec):
+    """spec.sections as a checked list of (index, id, layer, kicker, title, text); refuses a list that is no story."""
+    secs = spec.get("sections")
+    if not isinstance(secs, list) or not secs: raise FX.Refused("story: the spec lists no sections")
+    out, ids, layers = [], set(), set()
+    for i, s in enumerate(secs):
+        if not isinstance(s, dict): raise FX.Refused(f"story: section {i + 1} is no object")
+        sid, layer = s.get("id"), s.get("layer")
+        if not (isinstance(sid, str) and CODE.fullmatch(sid)): raise FX.Refused(f"story: section {i + 1}'s id {sid!r} is no code (a-z, 0-9, _)")
+        if sid in ids: raise FX.Refused(f"story: the section id {sid} comes twice")
+        if layer not in STORY_LAYERS: raise FX.Refused(f"story: section {sid} names the layer {layer!r}; one of {'|'.join(STORY_LAYERS)}")
+        if layer in layers: raise FX.Refused(f"story: the layer {layer} is drawn by two sections (each leaf stands once on a page)")
+        ids.add(sid); layers.add(layer)
+        for k in ("kicker", "title", "text"):
+            if s.get(k) is not None and not (isinstance(s[k], str) and s[k].strip()): raise FX.Refused(f"story: section {sid}'s {k} is no text")
+        if s.get("title") is None and (s.get("kicker") is not None or s.get("text") is not None):
+            raise FX.Refused(f"story: section {sid} has a kicker or text but no title (a bare block holds its picture alone)")
+        out.append((i, sid, layer, s.get("kicker"), s.get("title"), s.get("text")))
+    return out
+
+
+def plain(markup):
+    return html.unescape(re.sub(r"<[^>]*>", "", markup))
+
+
+def printed(markup):
+    """The ledger entries a piece of markup prints: [(src, text)] of its data-src marks."""
+    return [(html.unescape(a), html.unescape(b)) for a, b in re.findall(r'<(?:span|b|tspan)\b[^>]*data-src="([^"]*)"[^>]*>([^<]*)</', markup)]
+
+
+def text_desc(svg):
+    """A block of svg words as one line of markup for its described-by text: each drawn <text> in order, a marked tspan kept as a
+    span with its mark, every other tag dropped."""
+    lines = []
+    for t in re.findall(r"<text\b[^>]*>(.*?)</text>", svg, re.S):
+        t = re.sub(r'<tspan\b[^>]*?data-src="([^"]*)"[^>]*>([^<]*)</tspan>', r'<span data-src="\1">\2</span>', t)
+        lines.append(re.sub(r"<(?!/?span\b)[^>]*>", "", t).strip())
+    return " ".join(l for l in lines if l)
+
+
+def number_entries(markup):
+    """The entries that are numbers the data give: a fact, series or record entry whose text holds a digit (a year, a name or a
+    unit alone is not one)."""
+    return [(s, t) for s, t in printed(markup) if s.split(":", 1)[0] in ("fact", "series", "record") and FX.digit(t)]
+
+
+def root(body, layer, size, extra="", origin=(0.0, 0.0)):
+    """A leaf's drawn svg, byte for byte as it was drawn, in its own svg root (class the layer, its drawn size from the panel's record `size`, (w, h)).
+    The drawn svg stands at the page's coordinates (the layout's translate), so the root's viewBox starts at that place: the picture shows from there."""
+    w, h = size if isinstance(size, (tuple, list)) and len(size) == 2 else (None, None)
+    if not (isinstance(w, (int, float)) and isinstance(h, (int, float)) and w > 0 and h > 0): raise FX.Refused(f"story: the layer {layer} has no drawn size")
+    return f'<svg class="{layer}" viewBox="{origin[0]:g} {origin[1]:g} {w:g} {h:.0f}" width="{w:g}" height="{h:.0f}" role="img"{extra}>{body}</svg>'
+
+
+def overlay(items, size):
+    """The words a leaf drew with no ledger entry (wbkit.OVERLAY), as html over its picture: each line absolutely placed at its baseline, in the
+    picture's own pixels (the picture is shown at its drawn size). Empty when the leaf drew none."""
+    if not items: return ""
+    w, h = size
+    out = []
+    for t in items:
+        tf = {"start": "", "middle": "transform:translateX(-50%);", "end": "transform:translateX(-100%);"}[t["anchor"]]
+        font = f'font-family:{K.SERIF};' if t["serif"] else ""
+        out.append(f'<span style="left:{t["x"]:.1f}px;top:{t["y"] - t["size"] * 0.88:.1f}px;font-size:{t["size"]}px;color:{t["fill"]};font-weight:{t["weight"]};'
+                   f'{"font-style:italic;" if t["italic"] else ""}{font}{tf}">{html.escape(t["text"], quote=False)}</span>')
+    return f'<div class="ov" style="width:{w:g}px;height:{h:.0f}px">{"".join(out)}</div>'
+
+
+def chart(body, layer, size, sid, label, desc, over="", pos="", origin=(0.0, 0.0)):
+    """A section's picture as its own module of the browser check: the svg named by `label`, described by the hidden `desc` (markup)."""
+    svg = root(body, layer, size, f' aria-label="{html.escape(label)}" aria-describedby="desc-{sid}" tabindex="0"', origin).replace(f'class="{layer}"', f'class="{layer} pub-chart"', 1)
+    return (f'<div class="fig pub-visual" data-module-id="{sid}" data-layer="{layer}"{pos}>{svg}'
+            f'{over}<p id="desc-{sid}" hidden>{desc}</p></div>')
+
+
+def opening_caption(spec, drawn_as):
+    """The line under the opening picture when it is drawn as a share of figures (drawn_as.illus_hero, the picture child's scene name, ends in
+    ".proportion"): the lead section's picture.caption (findings.py: the member, the claim's own fact, the measure's slot) as html; "" otherwise.
+    The page does not know the topic's renderer: only the child's reply says whether the share was drawn (layer 1 passes its scene name on)."""
+    if not str((drawn_as or {}).get("illus_hero") or "").endswith(".proportion"): return ""
+    lead = next((s for s in spec.get("sections") or [] if isinstance(s, dict) and s.get("title") is not None), None)
+    cap = ((lead or {}).get("picture") or {}).get("caption")
+    if not cap: return ""
+    if not isinstance(cap, list): raise FX.Refused("page: the opening picture's caption is no list of segments")
+    # the measure's slot: the page's kicker, the measure's Chinese name the header prints over the headline; a kicker that holds a digit or a
+    # Latin letter (no reviewed Chinese name) gives the plain word for a share instead
+    kick = measure_name(spec)
+    fill = {"w": kick} if kick else {"word": "story.opening.share"}
+    cap = [fill if g == {"slot": "measure"} else g for g in cap]
+    return f'<p class="opening-cap" data-cap="proportion">{seg_html(cap, "the opening picture caption")}</p>'
+
+
+def story_page(panel, got, sizes, placeholders, drew, over=None, left_out=None, drawn_as=None):
+    """The page around the layers the panel drew (`got`, layer -> svg), as the module docstring says; {"html"} or {"refused": [...]}."""
+    c, spec, f = panel.c, panel.spec, panel.f
+    secs = sections(spec)
+    off = [f"page: no layer {l}" for _, _, l, *_ in secs if not isinstance(got.get(l), str)]
+    given = [n for n in ("illus_hero", "illus_strip") if n in got]
+    off += [f"page: {n} is no layer the page places" for n in got if n not in STORY_LAYERS and n not in given]
+    off += [f"page: {n} is no layer the story lists" for n in got if n in STORY_LAYERS and n not in {s[2] for s in secs}]
+    if len(given) > 1: off.append("page: the opening picture and the strip come together; one stands in for the other")
+    for n in given:
+        wh = sizes.get(n)
+        if not (isinstance(wh, list) and len(wh) == 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in wh)):
+            off.append(f"page: {n} comes with no size [w, h]")
+    if off: return {"refused": off}
+    if PAGE_LAYOUT is None: return {"refused": ["page: the size phase made no layout (a leaf refused before it, or no size line came)"]}
+    page_kick = str(spec.get("kicker") or "").strip()
+    body, marks, parts = [], [], {}
+    _, rows, kn = plan(spec)
+    boxes = PAGE_LAYOUT["boxes"]
+    for i, sid, layer, kicker, title, text in secs:
+        svg, box, origin = got[layer], boxes[i], (0.0, 0.0)
+        if layer not in HTML_BLOCKS:  # the layer's svg stands in its box as the size phase's layout put it (run.py wraps it in that translate)
+            m = re.fullmatch(r'<g transform="translate\(([-\d.]+),([-\d.]+)\)">(.*)</g>', svg, re.S)
+            at = (box["x"] + box["fx"], box["y"] + box["fy"])
+            if not m or (float(m[1]), float(m[2])) != (round(at[0], 1), round(at[1], 1)): return {"refused": [f"page: the layer {layer} stands at {m and m[1:3]}, not where the layout puts it {at}"]}
+            if tuple(drew.get(layer) or ()) != tuple(PAGE_LAYOUT["drew"][layer]): return {"refused": [f"page: the layer {layer} drew {drew.get(layer)}, not the size the layout counted {PAGE_LAYOUT['drew'][layer]}"]}
+            origin = (float(m[1]), float(m[2]))   # the layer's svg goes on the page as it is drawn, translate and all (the page holds each layer byte for byte)
+        pos = f' style="left:{box["fx"]:g}px;top:{box["fy"]:g}px"'
+        if layer in HTML_BLOCKS:  # html, not a picture: placed as it is (a bare block; its numbers are ledger entries)
+            if title is not None: return {"refused": [f"page: section {i + 1} ({sid}) draws html and cannot carry a title"]}
+            marks += printed(svg)
+            parts[i] = (sid, "", svg)
+            continue
+        words_over = overlay((over or {}).get(layer), drew.get(layer)) if (over or {}).get(layer) else ""
+        if layer in TEXT_BLOCKS:  # a block of words drawn as a picture: named by its registered word and described by its own texts, marks kept
+            alt = f' aria-label="{html.escape(word(TEXT_BLOCKS[layer]))}" aria-describedby="desc-{sid}"'
+            fig = (f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer), alt, origin)}{words_over}'
+                   f'<p id="desc-{sid}" hidden>{html.escape(word(TEXT_BLOCKS[layer]), quote=False)}{html.escape(word("story.lead.join"), quote=False)}{text_desc(svg)}</p></div>')  # opens with its name: a reader hears what the block is before its numbers
+        else: fig = None
+        head, note_list = "", ""
+        if title is not None:
+            pc = PAGE_LAYOUT["pieces"][i]; t_html, x_html = pc["t_html"], pc["x_html"]
+            if not number_entries(t_html):
+                return {"refused": [f"page: the title test: section {i + 1} ({sid}) has a title that prints no number from the ledger: {plain(t_html)!r}"]}
+            if kicker is not None and (re.search(r"[{}]", kicker) or FX.digit(kicker)):
+                return {"refused": [f"page: section {i + 1} ({sid}) has a kicker with a digit or a placeholder: {kicker!r}"]}
+            marks += printed(t_html) + printed(x_html)
+            head, note_list = pc["head"], pc["note_list"]
+            marks += printed(note_list)
+        if fig is None:
+            label = (kicker or "").strip() or page_kick
+            if not label: return {"refused": [f"page: section {i + 1} ({sid}) has no kicker and the page none to name its chart"]}
+            desc = re.sub(r'<span data-src="name:[^"]*">([^<0-9]*)</span>', r"\1", t_html) if title is not None else ""  # markup: its numbers keep their marks, and so does a name with a digit in it (a code)
+            desc = html.escape(label, quote=False) + (html.escape(word("story.lead.join"), quote=False) + desc if desc else "")  # it opens with the chart's name, words before any mark
+            fig = chart(svg, layer, drew.get(layer), sid, label, desc, words_over, pos, origin)
+        marks += printed(svg)
+        parts[i] = (sid, head, fig, note_list)
+    def sec(i, how):
+        sid, head, fig, *rest = parts[i]; note_list = rest[0] if rest else ""; b = boxes[i]
+        if how == "bare" or not head: top = ""
+        elif how == "stack": top = f'<div class="top" style="height:{b["top"]:g}px"><div class="col">{head}</div>{note_list}</div>'  # the words and the notes over a picture as wide as the page
+        else: top = f'<div class="col" style="width:{b["cw"]:g}px">{head}{note_list}</div>'
+        return f'<section class="sec" data-id="{sid}" data-layout="{how}"{place((b["x"], b["y"], b["w"], b["h"]))}>{top}{fig}</section>'
+    layer_of = {s[0]: s[2] for s in secs}
+    for how, ids in rows:
+        for i in ids: body.append(sec(i, "pair" if how == "pair" else how))
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of], PAGE_LAYOUT["legend"], accent_only(spec)))
+    note = opening_caption(spec, drawn_as) if "illus_hero" in got else ""
+    marks += printed(note)
+    by = {}
+    for s, t in marks: by.setdefault(s, set()).add(t)
+    twice = sorted(s for s, ts in by.items() if len(ts) > 1)
+    if twice: return {"refused": [f"page: one fact, one writing: {twice[0]} prints {sorted(by[twice[0]])} on this page"]}
+    # one headline, once: the page's title and dek print no sentence a titled section prints again as its title or text
+    heads = {"title": plain(FX.placed(c.t(spec["title"]))), "dek": plain(FX.placed(FX.worded(spec, c.F, "dek", spec["dek"])))}
+    for i, sid, *_ in secs:
+        pc = (PAGE_LAYOUT["pieces"] or {}).get(i)
+        for part, words in heads.items():
+            again = [k for k in ("title", "text") if pc and words.strip() and pc[k].strip() == words.strip()]
+            if again: return {"refused": [f"page: one headline, once: the page's {part} is printed again as the {again[0]} of section {i + 1} ({sid}): {words!r}"]}
+    opening = ""
+    if "illus_hero" in got:
+        w, h = sizes["illus_hero"]
+        # a picture that leaves members out (a ranking draws its head and tail) says so in words, with no number
+        cap = f'<p class="opening-cap">{word("story.hero.left_out")}</p>' if (left_out or {}).get("illus_hero") else ""
+        svg = f'<svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}"><g data-layer="illus_hero">{got["illus_hero"]}</g></svg>'
+        # the picture is hidden from a screen reader; a line under it with a number is read (the picture alone, as before, hides the block)
+        hidden = svg.replace("<svg ", '<svg aria-hidden="true" ', 1)
+        opening = f'<div class="opening">{hidden}{cap}{note}</div>' if note else f'<div class="opening" aria-hidden="true">{svg}{cap}</div>'
+    strip = ""
+    if "illus_strip" in got:
+        import column
+        strip = column.strip_shell(got["illus_strip"], *sizes["illus_strip"])
+    head = scmp.page_head(c, spec, wide=True)
+    page = scmp.shell(c, spec, opening + head + f'<div class="story" style="--tw:{kn["text_w"]}px;--gut:{kn["gutter"]}px;height:{PAGE_LAYOUT["H"]:g}px">' + "".join(body) + "</div>" + strip, CSS)
+    left = placeholders(page)
+    return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": page}
+
+
+# The story's layout over the page's tokens: the opening picture and the sections 1140 wide; a titled section's words in a column
+# 640 wide over its picture.
+CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.opening-cap{margin:4px 0 0;font:400 12px/18px var(--sans);color:var(--t-sec);text-align:center}"
+       # every block stands where the layout put it (story.layout): the story is a positioned box as high as the layout, each section a box in it, its words and its picture placed in that
+       ".story{width:1140px;position:relative}.story .sec{position:absolute;margin:0}.story .col{position:absolute;left:0;top:0;max-width:640px;margin:0}"
+       ".story .kick{display:inline-block;min-width:30px;padding:0 10px;box-sizing:border-box;height:28px;line-height:28px;border-radius:14px;"
+       "background:var(--t-title);color:#fff;font:700 12px/28px var(--sans);letter-spacing:.1em;margin-bottom:10px}"
+       ".story h2{margin:0 0 8px;font:700 24px/1.4 var(--serif);color:var(--t-title)}.story .col p{margin:0;font:400 16px/1.8 var(--sans);color:var(--t-body)}"
+       ".story .fig svg,.story .blk svg{display:block;max-width:100%;height:auto}"
+       # the words a leaf draws with no ledger entry stand over its picture as html, each at its baseline in the picture's pixels
+       ".story .fig,.story .blk{position:absolute}.story .ov{position:absolute;left:0;top:0;pointer-events:none}"
+       ".story .ov span{position:absolute;white-space:nowrap;line-height:1;font-family:var(--sans)}"
+       # a section with its words beside its picture, and two sections in a row
+       ".story .sec[data-layout=side] .col,.story .sec[data-layout=pair] .col{max-width:none}"
+       # the short notes: a card with a bold number and its words; beside a picture a leader runs from the card towards it
+       ".story .notes{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:12px}"
+       ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
+       "border-left:3px solid var(--t-sec);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
+       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--t-title);flex:none}"  # ink, not the accent: the accent is for the one mark the page is about, and the page has one focal point (11-24)
+       # a note's unit under its number (note_cell): lighter and smaller, on one line up to UNIT_EM of its size, past that broken after a
+       # slash (unit_html's break point), inside a word only when one alone runs past the cap
+       f".story .note .n .u{{display:block;max-width:{UNIT_EM}em;width:max-content;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere;"
+       "font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-dek)}"  # lighter than the number, yet 4.5:1 on the note's tint (--t-sec falls short)
+       ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
+       ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
+       ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"
+       # the legend block under the thesis
+       ".story .legend{display:flex;align-items:baseline;gap:28px;flex-wrap:wrap;padding:14px 18px;background:color-mix(in srgb,var(--t-title) 5%,transparent);"
+       "font:400 12px/1.6 var(--sans);color:var(--t-body)}.story .legend b{font:700 14px var(--sans);color:var(--t-title)}"
+       ".story .legend ul{list-style:none;margin:0;padding:0;display:flex;gap:26px;flex-wrap:wrap}.story .legend li{display:flex;align-items:center;gap:8px}"
+       ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
+       ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
+       ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}.story .sw.ink{background:var(--t-title)}"
+       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--t-title) 16%,#eeeeec),color-mix(in srgb,var(--t-title) 72%,#eeeeec))}"
+       ".story .sw.area{width:14px;height:14px;border-radius:50%;background:var(--bar)}")

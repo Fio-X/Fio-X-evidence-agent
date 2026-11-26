@@ -1,0 +1,522 @@
+"""Reusable low-poly parts (pure python, see mesh.py). Every part is a function returning a list of Mesh objects, built around a local origin
+(ground point under the part, z up, +y away from the viewer; yaw turns it about z). Knobs are keyword arguments with defaults and ranges:
+  wind_turbine(height=40 [20..80], blade_len=22 [8..45], rotor_deg=0 [0..120], yaw=0 [-90..90])
+  arch_dam(width=60 [30..120], height=26 [10..60], base_t=9, crest_t=3.2, arc_deg=70 [30..110], level=...)    (place with a terrain-sampled base)
+  solar_array(rows=5 [1..12], cols=12 [1..30], tilt=28 [10..45], pitch_x=3.1, pitch_y=5.2, scale=1 [0.5..4: illustration exaggeration])
+  pylon(height=34 [15..60], arm_w=7 [3..12], yaw=0)       and  wires(p0, p1, sag=...)
+  terrain(height_fn, x0, x1, y0, y1, cell=4)
+  target_flag(height=30, cloth=12, wave=0.18, yaw=0, split=None)   and  track(points, ground, width=5)    (a story scene's marker and road)
+  plinth(height=10 [2..40], width=24 [8..40], depth=16 [8..30], yaw=0)   (a stone step: a stair of them is the climb a story needs)
+Groups (what the ID layer paints): wind, solar, hydro (renewable: green in the final drawing) | pylon, terrain, water, spill, track (not green)."""
+import math
+from mesh import Mesh, box, frustum, loft, tube, rot_z, rot_y, rot_x, matmul, mulv, add3
+
+
+def wind_turbine(height=40.0, blade_len=22.0, rotor_deg=0.0, yaw=0.0, name="turbine", split=None, chord_k=1.35):
+    """split="hero": returns [body, blades] as two meshes with groups hero_body / hero_blade (so the drawing can colour the blades only)."""
+    H = height; m = Mesh(name, "wind"); L = blade_len; blades_m = Mesh(name + "_blades", "wind") if split else m
+    m.merge(frustum((0, 0, 0), 0.042 * H, 0.024 * H, H, n=10))
+    m.merge(box((0, 1.1, H + 0.2), (0.06 * H + 1.2, 0.17 * H + 1.8, 0.05 * H + 1.2)))
+    hub_y = -0.085 * H - 0.4
+    m.merge(frustum((0, 0, 0), 0.032 * H, 0.0, 0.07 * H, n=8, rot=matmul(rot_x(90), ((1, 0, 0), (0, 1, 0), (0, 0, 1)))), loc=(0, hub_y + 0.9, H + 0.3))
+    # blades: along +z, chord along x, thickness along y, twisted about their own axis, then spun about the rotor axis (y)
+    stations = [(0.00, 0.050, 0.080, 16), (0.12, 0.125, 0.060, 13), (0.35, 0.095, 0.040, 8), (0.65, 0.060, 0.026, 4), (1.00, 0.020, 0.012, 0)]
+    for k in range(3):
+        rings = []
+        for t, chord, thick, tw in stations:
+            c = chord * L * chord_k / 2; th = max(thick * L / 2, 0.18); a = math.radians(tw)
+            pts = []
+            for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                x, y = sx * c, sy * th
+                pts.append((x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a), 0.9 + t * L))
+            rings.append(pts)
+        b = loft(rings)
+        blades_m.merge(b, rot=rot_y(rotor_deg + 120 * k), loc=(0, hub_y, H + 0.3))
+    if split:
+        ob = Mesh(name + "_body", split + "_body"); ob.merge(m, rot=rot_z(yaw)); ol = Mesh(name + "_blades", split + "_blade"); ol.merge(blades_m, rot=rot_z(yaw)); return [ob, ol]
+    out = Mesh(name, "wind"); out.merge(m, rot=rot_z(yaw)); return [out]
+
+
+def _orient(m, faces_with_dir):
+    """Add faces to m, each flipped (if needed) so its normal points along its wanted direction."""
+    from mesh import face_normal
+    out = []
+    for f, want in faces_with_dir:
+        n = face_normal([m.v[i] for i in f])
+        out.append(f if sum(n[k] * want[k] for k in range(3)) >= 0 else tuple(reversed(f)))
+    m.f += out
+
+
+def arch_dam(cx, cy, base_z, height=26.0, width=60.0, base_t=9.0, crest_t=3.2, arc_deg=70.0, name="dam"):
+    """Arch dam convex towards +y (the reservoir). Returns [dam, spillway_flow]. (cx, cy) = crown point of the upstream face at the foot.
+    The arc's centre of curvature lies downstream (-y), so the upstream face has radius R and the downstream face R - thickness."""
+    a = math.radians(arc_deg / 2); R = (width / 2) / math.sin(a)
+    centre = (cx, cy - R)
+    levels, segs = 7, 14
+    P = lambda th, z, r: (centre[0] + r * math.sin(th), centre[1] + r * math.cos(th), z)
+    radial = lambda p: (p[0] - centre[0], p[1] - centre[1], 0.0)
+    d = Mesh(name, "hydro"); n = segs + 1
+    for k in range(levels):
+        u = k / (levels - 1); z = base_z + height * u; t = base_t + (crest_t - base_t) * u ** 0.8
+        d.v += [P(-a + 2 * a * j / segs, z, R) for j in range(n)] + [P(-a + 2 * a * j / segs, z, R - t) for j in range(n)]
+    ix = lambda k, side, j: k * 2 * n + side * n + j
+    fw = []
+    for k in range(levels - 1):
+        for j in range(segs):
+            q = (ix(k, 0, j), ix(k, 0, j + 1), ix(k + 1, 0, j + 1), ix(k + 1, 0, j)); fw.append((q, radial(d.v[q[0]])))
+            q = (ix(k, 1, j), ix(k, 1, j + 1), ix(k + 1, 1, j + 1), ix(k + 1, 1, j)); r = radial(d.v[q[0]]); fw.append((q, (-r[0], -r[1], 0.0)))
+    top = levels - 1
+    for j in range(segs): fw.append(((ix(top, 0, j), ix(top, 1, j), ix(top, 1, j + 1), ix(top, 0, j + 1)), (0, 0, 1)))
+    for sj, sgn in ((0, -1), (segs, 1)):
+        tang = (math.cos(sgn * a) * sgn, -math.sin(sgn * a) * sgn, 0.0)
+        for k in range(levels - 1): fw.append(((ix(k, 0, sj), ix(k, 1, sj), ix(k + 1, 1, sj), ix(k + 1, 0, sj)), (sgn, 0, 0)))
+    _orient(d, fw)
+    for j in range(1, segs, 2):   # spillway gate piers along the crest
+        th = -a + 2 * a * j / segs; pc = P(th, base_z + height + 0.8, R - crest_t * 0.5)
+        d.merge(box((0, 0, 0), (2.6, 1.3, 1.6), rot=rot_z(-math.degrees(th))), loc=pc)
+    # spillway flow: a ribbon down the middle of the downstream face, widening at the foot
+    sp = Mesh("spill", "spill"); z0, z1 = base_z + height * 0.93, base_z + 0.3
+    for i in range(9):
+        t = i / 8; z = z0 + (z1 - z0) * t
+        th = crest_t + (base_t - crest_t) * t ** 0.8; w = 2.4 + 5.0 * t ** 1.5; r = R - th - 0.3 - 4.0 * t ** 3
+        sp.v += [(centre[0] - w / 2, centre[1] + r, z), (centre[0] + w / 2, centre[1] + r, z)]
+    _orient(sp, [((i * 2, i * 2 + 1, i * 2 + 3, i * 2 + 2), (0, -1, 0.3)) for i in range(8)])
+    return [d, sp]
+
+
+def solar_array(rows=5, cols=12, tilt=28.0, pitch_x=3.1, pitch_y=5.2, scale=1.0, name="solar"):
+    """Rows of tilted panels on low posts; local origin = centre of the first row's start; rows run along +x, successive rows go +y."""
+    m = Mesh(name, "solar")
+    pw, pd, th = 2.5, 1.7, 0.09
+    for r in range(rows):
+        for c in range(cols):
+            x = (c - (cols - 1) / 2) * pitch_x; y = r * pitch_y
+            rot = rot_x(tilt)  # faces the viewer (-y), high edge at the back (+y)
+            m.merge(box((0, 0, 0), (pw, pd, th)), rot=rot, loc=(x, y, 0.9 + 0.5 * pd * math.sin(math.radians(tilt))))
+            m.merge(box((0, 0, 0), (0.12, 0.12, 0.9 + pd * math.sin(math.radians(tilt)))), loc=(x - pw * 0.28, y + 0.1, (0.9 + pd * math.sin(math.radians(tilt))) / 2))
+            m.merge(box((0, 0, 0), (0.12, 0.12, 0.9)), loc=(x + pw * 0.28, y - 0.4 * pd * math.cos(math.radians(tilt)), 0.45))
+    sh = Mesh(name + "_shadow", "shadow")
+    for r in range(rows):
+        y = r * pitch_y; x0 = -(cols - 1) / 2 * pitch_x - pw / 2; x1 = (cols - 1) / 2 * pitch_x + pw / 2
+        sh.add([(x0 + 1.0, y - 3.4, 0.4), (x1 + 1.0, y - 3.4, 0.4), (x1, y + 0.3, 0.4), (x0, y + 0.3, 0.4)], [(0, 1, 2, 3)], outward=False)
+        sh.f[-1] = (sh.f[-1][0], sh.f[-1][1], sh.f[-1][2], sh.f[-1][3])
+    m.v = [(x * scale, y * scale, z * scale) for x, y, z in m.v]
+    sh.v = [(x * scale, y * scale, z) for x, y, z in sh.v]
+    return [m, sh]
+
+
+def pylon(height=34.0, arm_w=7.0, yaw=0.0, name="pylon"):
+    """Lattice transmission tower: 4 tapering legs, X bracing in 5 bays, two cross-arms with insulator strings. Returns the tower and the wire anchor points."""
+    m = Mesh(name, "pylon"); H = height; w0, w1 = 0.11 * H, 0.03 * H
+    leg = lambda z, s: [(sx * (w0 + (w1 - w0) * z / H * 0.9) / 2 * s, sy * (w0 + (w1 - w0) * z / H * 0.9) / 2 * s, z) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    bays = 5
+    for b in range(bays + 1):
+        z = H * 0.82 * b / bays; r = leg(z, 1)
+        for i in range(4): m.merge(tube(r[i], r[(i + 1) % 4], 0.07 * 1.2))
+        if b < bays:
+            z2 = H * 0.82 * (b + 1) / bays; r2 = leg(z2, 1)
+            for i in range(4):
+                m.merge(tube(r[i], r2[i], 0.16)); m.merge(tube(r[i], r2[(i + 1) % 4], 0.07)); m.merge(tube(r[(i + 1) % 4], r2[i], 0.07))
+    top = leg(H * 0.82, 1); peak = (0, 0, H)
+    for p in top: m.merge(tube(p, peak, 0.12))
+    anchors = []
+    for az, aw in ((H * 0.60, arm_w), (H * 0.80, arm_w * 0.78)):
+        zc = az; m.merge(tube((-aw, 0, zc), (aw, 0, zc), 0.14)); m.merge(tube((-aw, 0, zc), (0, 0, zc + 3.2), 0.07)); m.merge(tube((aw, 0, zc), (0, 0, zc + 3.2), 0.07))
+        for sx in (-1, 1):
+            m.merge(tube((sx * aw, 0, zc), (sx * aw, 0, zc - 2.0), 0.16)); anchors.append((sx * aw, 0, zc - 2.0))
+    out = Mesh(name, "pylon"); out.merge(m, rot=rot_z(yaw)); return [out], [mulv(rot_z(yaw), a) for a in anchors]
+
+
+def wires(p0, p1, sag=2.5, r=0.16, segs=14, name="wire"):
+    m = Mesh(name, "pylon"); pts = []
+    for i in range(segs + 1):
+        t = i / segs; pts.append((p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, p0[2] + (p1[2] - p0[2]) * t - 4 * sag * t * (1 - t)))
+    for a, b in zip(pts, pts[1:]): m.merge(tube(a, b, r, 4))
+    return [m]
+
+
+def terrain(fn, x0, x1, y0, y1, cell=4.0, name="terrain"):
+    """Low-poly heightfield: a grid of triangles (diagonals alternate) over [x0,x1]x[y0,y1]; flat-shaded in the render."""
+    nx = int((x1 - x0) / cell); ny = int((y1 - y0) / cell)
+    V = [(x0 + i * cell, y0 + j * cell, fn(x0 + i * cell, y0 + j * cell)) for j in range(ny + 1) for i in range(nx + 1)]
+    F = []
+    ix = lambda i, j: j * (nx + 1) + i
+    for j in range(ny):
+        for i in range(nx):
+            a, b, c, d = ix(i, j), ix(i + 1, j), ix(i + 1, j + 1), ix(i, j + 1)
+            if (i + j) % 2: F += [(a, b, c), (a, c, d)]
+            else: F += [(a, b, d), (b, c, d)]
+    m = Mesh(name, "terrain"); m.add(V, F, outward=False); return [m]
+
+
+def reservoir(level, x0, x1, y0, y1, name="reservoir"):
+    m = Mesh(name, "water"); m.add([(x0, y0, level), (x1, y0, level), (x1, y1, level), (x0, y1, level)], [(0, 1, 2, 3)], outward=False); return [m]
+
+
+def _ring(rx, ry, z, n=20, p=2.0, cx=0.0, cy=0.0, tw=0.0):
+    """A superellipse section (|x/rx|^p + |y/ry|^p = 1) in the plane z, rotated by tw degrees about z; p=2 ellipse, larger = boxier."""
+    pts = []; a = math.radians(tw)
+    for j in range(n):
+        t = 2 * math.pi * j / n; c, s = math.cos(t), math.sin(t)
+        x = rx * math.copysign(abs(c) ** (2 / p), c); y = ry * math.copysign(abs(s) ** (2 / p), s)
+        pts.append((cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a), z))
+    return pts
+
+
+def hero_turbine(height=40.0, blade_len=26.0, rotor_deg=0.0, yaw=0.0, pitch=9.0, chord_k=2.3, name="hero"):
+    """Organic wind turbine for the cover drawing (smooth-shaded, subdivision-surface meshes): tower with flange rings, a door and a plinth;
+    nacelle shell with seam bands and vents; spinner (nose cone); three blades with airfoil sections, round roots and twist along the length.
+    Local frame as wind_turbine: origin at the tower foot, rotor axis along -y. Returns meshes with groups hero_body / hero_blade."""
+    H = height; r0, r1 = 0.052 * H, 0.030 * H
+    body = Mesh(name + "_tower", "hero_body"); body.smooth = True
+    zs = [0, 0.04 * H, 0.5 * H, H - 0.02 * H]
+    rings = [_ring(r0 * 1.0, r0 * 1.0, 0.0, 24), _ring(r0, r0, 0.8, 24)]
+    for k in range(1, 15):
+        t = k / 14; rr = r0 + (r1 - r0) * t; rings.append(_ring(rr, rr, 0.8 + (H - 0.8) * t, 24))
+    body.merge(loft(rings)); 
+    fit = Mesh(name + "_fittings", "hero_body")
+    for fz in (0.30 * H, 0.58 * H, 0.84 * H):   # flange rings
+        t = fz / H; rr = (r0 + (r1 - r0) * t) * 1.07; fit.merge(loft([_ring(rr, rr, fz - 0.28, 24), _ring(rr, rr, fz + 0.28, 24)]))
+    fit.merge(box((0, -(r0 - 0.05), 1.3 + 0.0), (1.5, 0.35, 2.4)))   # access door on the side facing the viewer
+    fit.merge(box((0, -(r0 - 0.02), 1.3), (1.1, 0.4, 2.0)))
+    fit.merge(frustum((0, 0, 0), r0 * 1.55, r0 * 1.25, 0.9, n=24))   # plinth
+    # nacelle shell: y runs front (-) to rear (+); superellipse sections, rounded at the rear
+    nac = Mesh(name + "_nacelle", "hero_body"); nac.smooth = True; nac.subsurf = 2
+    ny = [(-3.9, 1.55, 1.5), (-2.5, 1.95, 1.9), (0.0, 2.15, 2.05), (3.0, 2.1, 1.95), (5.4, 1.7, 1.55), (6.6, 0.9, 0.85)]
+    cz = H + 0.6
+    nac.merge(loft([[(px, yy, cz + py) for (px, py, _) in _ring(rx, rz, 0.0, 16, 2.6)] for (yy, rx, rz) in ny]))
+    # spinner (nose cone)
+    spin = Mesh(name + "_spinner", "hero_body"); spin.smooth = True; spin.subsurf = 2
+    sy = [(-3.8, 1.55), (-4.7, 1.62), (-6.0, 1.3), (-7.4, 0.62), (-8.3, 0.12)]
+    spin.merge(loft([[(px, yy, cz + py) for (px, py, _) in _ring(rr, rr, 0.0, 16)] for (yy, rr) in sy]))
+    for sy_ in (-3.6, 2.2):   # seam bands on the shell
+        fit.merge(loft([[(px, sy_ - 0.1, cz + py) for (px, py, _) in _ring(2.0 if sy_ > 0 else 1.7, 1.95 if sy_ > 0 else 1.65, 0.0, 16, 2.6)],
+                        [(px, sy_ + 0.1, cz + py) for (px, py, _) in _ring(2.0 if sy_ > 0 else 1.7, 1.95 if sy_ > 0 else 1.65, 0.0, 16, 2.6)]]))
+    for i in range(6):   # cooling vents on the top
+        fit.merge(box((-1.2 + i * 0.48, 3.4, cz + 2.0), (0.14, 1.6, 0.14)))
+    # blades
+    blade = Mesh(name + "_blades", "hero_blade"); blade.smooth = True; blade.subsurf = 2
+    L = blade_len; hub_y = -4.1
+    st = [(0.0, 0.62, 0.62, 0), (0.06, 0.78, 0.7, 6), (0.16, 1.55, 0.55, 14), (0.35, 1.28, 0.42, 9), (0.62, 0.92, 0.30, 4), (0.85, 0.62, 0.20, 1.5), (0.97, 0.36, 0.11, 0), (1.0, 0.16, 0.06, 0)]
+    for k in range(3):
+        rings = []
+        for t, c, th, tw in st:
+            n = 18; pts = []; c = c * (chord_k if t > 0.08 else 1.0); th = th * (1 + 0.6 * (chord_k - 1) if t > 0.08 else 1.0)
+            for j in range(n):
+                u = 2 * math.pi * j / n; cu, su = math.cos(u), math.sin(u)
+                x = (c / 2) * cu; y = (th / 2) * su * (1.0 + 0.22 * cu) + 0.07 * c * (1 - cu * cu) * (1 if t > 0.1 else 0)   # airfoil: thick near the leading edge, cambered
+                a = math.radians(tw + pitch * (1 - t) * 0.5)
+                pts.append((x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a), 1.0 + t * L))
+            rings.append(pts)
+        b = loft(rings); blade.merge(b, rot=rot_y(rotor_deg + 120 * k), loc=(0, hub_y, cz))
+    out = []
+    for m in (body, fit, nac, spin, blade):
+        o = Mesh(m.name, m.group); o.smooth, o.subsurf = m.smooth, m.subsurf; o.merge(m, rot=rot_z(yaw)); out.append(o)
+    return out
+
+
+def coal_plant(cx=0.0, cy=0.0, base_z=0.0, towers=2, chimney_h=70.0, yaw=0.0, scale=1.0, name="coal"):
+    """Old coal power station, drawn as light background lines: hyperboloid cooling towers, one tall chimney, boiler house, turbine hall, conveyor, small stacks.
+    Knobs: towers 2 [1..4], chimney_h 70 [40..110]. Everything is built around the plant's own origin, then yawed and moved to (cx, cy, base_z). Group coal."""
+    m = Mesh(name, "coal")
+    for i in range(towers):
+        x = -26 + i * 30; H = 44.0; rb = 12.0
+        rings = []
+        for k in range(13):
+            t = k / 12; z = H * t; r = rb * math.sqrt(1 + ((t - 0.72) / 0.62) ** 2) * 0.62 + 2.0
+            rings.append(_ring(r, r, z, 22))
+        m.merge(loft(rings), loc=(x, 0, 0))
+    m.merge(frustum((8, -2, 0), 3.4, 1.9, chimney_h, n=14))
+    m.merge(frustum((8, -2, chimney_h - 5), 2.5, 2.5, 1.0, n=14))   # the red-white bands of the real chimney show as rings
+    m.merge(box((24, 10, 15), (22, 18, 30)))
+    m.merge(box((24, -12, 8), (34, 14, 16)))
+    m.merge(box((38, 0, 5), (10, 36, 10)))
+    m.merge(tube((12, 4, 28), (-4, 26, 3), 0.7, 4))   # conveyor
+    for dx in (14, 20, 28): m.merge(frustum((dx, 12, 30), 1.0, 0.8, 9.0, n=8))
+    m.v = [(x * scale, y * scale, z * scale) for x, y, z in m.v]
+    out = Mesh(name, "coal"); out.merge(m, rot=rot_z(yaw), loc=(cx, cy, base_z)); return [out]
+
+
+def gas_pipe(x0, y0, x1, y1, ground, lift=2.6, r=1.3, supports=12.0, valves=(0.42,), name="gas"):
+    """Natural-gas pipeline section on low supports, with flange rings every ~14 m and gate valves (body, bonnet, stem, hand wheel).
+    ground(x, y) -> terrain height; the pipe keeps a straight line `lift` above the highest ground under it. valves = positions along the run (0..1). Group coal (drawn pale with the plant)."""
+    m = Mesh(name, "coal"); n = max(2, int(math.hypot(x1 - x0, y1 - y0) / supports))
+    zs = [ground(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(n + 1)]; zp = max(zs) + lift
+    pts = [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(n + 1)]
+    L = math.hypot(x1 - x0, y1 - y0); ux, uy = (x1 - x0) / L, (y1 - y0) / L
+    m.merge(tube((x0, y0, zp), (x1, y1, zp), r, 10))
+    for (x, y), z in zip(pts, zs):   # supports: two posts and a saddle
+        m.merge(box((x, y, (z + zp - r) / 2), (0.9, 0.9, zp - r - z)))
+        m.merge(box((x, y, zp - r - 0.2), (2.2, 2.2, 0.5)))
+    for k in range(1, int(L / 14)):   # flange rings
+        t = k * 14 / L; x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        m.merge(tube((x - ux * 0.35, y - uy * 0.35, zp), (x + ux * 0.35, y + uy * 0.35, zp), r * 1.55, 10))
+    for v in valves:
+        x, y = x0 + (x1 - x0) * v, y0 + (y1 - y0) * v
+        m.merge(box((x, y, zp), (3.4, 3.4, 3.4)))                        # valve body
+        m.merge(tube((x, y, zp + 1.5), (x, y, zp + 5.2), 0.45, 8))       # stem
+        m.merge(frustum((x, y, zp + 1.3), 1.5, 1.2, 0.9, n=10))          # bonnet
+        ring = [[(x + c * math.cos(a), y + c * math.sin(a), zp + 5.6 + h) for a in [2 * math.pi * j / 14 for j in range(14)]] for c, h in ((2.2, 0.0), (2.2, 0.35))]
+        m.merge(loft(ring))                                               # hand wheel
+        m.merge(tube((x - 2.2, y, zp + 5.8), (x + 2.2, y, zp + 5.8), 0.18, 4)); m.merge(tube((x, y - 2.2, zp + 5.8), (x, y + 2.2, zp + 5.8), 0.18, 4))
+    return [m]
+
+
+def gas_valve_hero(length=100.0, r=3.2, lift=4.0, valve_at=0.55, yaw=0.0, tilt=58.0, name="gasvalve"):
+    """Close-up hero for a gas story: a thick pipeline run with flange rings and one gate valve. Returns [pipe (group hero_body), valve (group hero_blade = the accent part)].
+    Local frame: the pipe runs along x from -length/2 to +length/2 at height `lift` above the ground point (origin)."""
+    pipe = Mesh(name + "_pipe", "hero_body"); pipe.smooth = True
+    ring = lambda x, rr, n=20: [(x, rr * math.cos(2 * math.pi * j / n), lift + rr * math.sin(2 * math.pi * j / n)) for j in range(n)]
+    pipe.merge(loft([ring(-length / 2 + i * length / 20, r) for i in range(21)]))
+    fit = Mesh(name + "_fit", "hero_body")
+    for k in range(1, 6):   # flange rings
+        x = -length / 2 + k * length / 6; fit.merge(loft([ring(x - 0.7, r * 1.35), ring(x + 0.7, r * 1.35)]))
+    for k in range(0, 6):   # saddles and posts
+        x = -length / 2 + (k + 0.5) * length / 6; fit.merge(box((x, 0, lift / 2 - r * 0.5), (2.4, 2.8 * r * 0.6, lift - r)))
+        fit.merge(box((x, 0, lift - r - 0.3), (3.0, 3.6, 0.7)))
+    pipe.merge(fit)
+    valve = Mesh(name + "_valve", "hero_blade"); valve.smooth = True; valve.subsurf = 1
+    vx = -length / 2 + valve_at * length; zc = lift
+    valve.merge(box((vx, 0, zc), (r * 2.4, r * 2.4, r * 2.4)))
+    valve.merge(frustum((vx, 0, zc + r * 1.1), r * 1.0, r * 0.75, r * 0.9, n=16))
+    valve.merge(tube((vx, 0, zc + r * 1.9), (vx, 0, zc + r * 4.6), r * 0.22, 10))
+    tl = math.radians(tilt); u = (1.0, 0.0, 0.0); vv = (0.0, math.cos(tl), math.sin(tl)); nn = (0.0, -math.sin(tl), math.cos(tl)); c0 = (vx, 0.0, zc + r * 4.8); R = r * 2.1
+    pt = lambda a, h, rad=R: tuple(c0[k] + rad * (math.cos(a) * u[k] + math.sin(a) * vv[k]) + h * nn[k] for k in range(3))
+    for j in range(24): valve.merge(tube(pt(2 * math.pi * j / 24, 0.0), pt(2 * math.pi * (j + 1) / 24, 0.0), r * 0.2, 6))   # hand-wheel rim (a ring, tilted towards the viewer, -y)
+    valve.merge(tube(pt(0, -r * 0.3, 0.0), pt(0, r * 0.3, 0.0), r * 0.42, 10))   # hub
+    for ang in (0, 60, 120): valve.merge(tube(pt(math.radians(ang), 0.0), pt(math.radians(ang + 180), 0.0), r * 0.14, 6))
+    valve.merge(tube((vx, 0, zc + r * 4.5), c0, r * 0.3, 8))
+    out = []
+    for m in (pipe, valve):
+        o = Mesh(m.name, m.group); o.smooth, o.subsurf = m.smooth, m.subsurf; o.merge(m, rot=rot_z(yaw)); out.append(o)
+    return out
+
+
+def target_flag(height=30.0, cloth=12.0, wave=0.18, yaw=0.0, split=None, name="flag"):
+    """A surveyor's target marker: a mast on a cairn of stones with a waving pennant at the top (the end of a path, the level a story
+    runs to). Local origin at the cairn's foot; the cloth flies towards +x. split="hero": [mast (hero_body), cloth (hero_blade = the
+    accent part)]; otherwise one mesh in group pylon (a background line drawing)."""
+    H = height; mast = Mesh(name + "_mast", "hero_body" if split else "pylon"); mast.smooth = bool(split)
+    r = max(0.012 * H, 0.22)
+    mast.merge(loft([_ring(r * 1.3, r * 1.3, 0.0, 12), _ring(r, r, H, 12)]))
+    mast.merge(frustum((0, 0, H), r * 2.0, 0.0, r * 3.0, n=12))                    # finial
+    for k, (dx, dy, s) in enumerate(((-1.4, 0.2, 1.6), (1.2, -0.4, 1.4), (0.1, 1.3, 1.5), (-0.6, -1.2, 1.2), (0.3, 0.0, 1.1))):   # cairn
+        z = 0.5 * s if k < 4 else 1.5 * s
+        mast.merge(box((dx * 0.06 * H / 1.6, dy * 0.06 * H / 1.6, z * 0.05 * H / 1.4), (0.07 * H * s / 1.4, 0.06 * H * s / 1.4, 0.05 * H * s / 1.4), rot=rot_z(25 * k)))
+    for z0 in (0.33 * H, 0.66 * H):                                               # guy rings
+        mast.merge(loft([_ring(r * 1.6, r * 1.6, z0 - 0.2, 12), _ring(r * 1.6, r * 1.6, z0 + 0.2, 12)]))
+    cl = Mesh(name + "_cloth", "hero_blade" if split else "pylon"); cl.smooth = bool(split); cl.subsurf = 1 if split else 0
+    top, drop, n = H - 0.04 * H, 0.55 * cloth, 10
+    rings = []
+    for i in range(n + 1):                                                          # a pennant: the drop narrows to a point, a travelling wave along x
+        t = i / n; x = r + t * cloth; d = drop * (1 - 0.85 * t); w = wave * cloth * math.sin(2.4 * math.pi * t) * t
+        zc = top - d / 2 - 0.08 * cloth * t
+        rings.append([(x, w - 0.06, zc + d / 2), (x, w + 0.06, zc + d / 2), (x, w + 0.06, zc - d / 2), (x, w - 0.06, zc - d / 2)])
+    cl.merge(loft(rings))
+    out = []
+    for m in (mast, cl):
+        o = Mesh(m.name, m.group); o.smooth, o.subsurf = m.smooth, m.subsurf; o.merge(m, rot=rot_z(yaw)); out.append(o)
+    return out if split else [Mesh(name, "pylon").merge(out[0]).merge(out[1])]
+
+
+def track(points, ground, width=5.0, step=3.0, name="track"):
+    """A dirt track on the ground through `points` [(x, y), ...]: a flat ribbon `width` wide, laid every `step` units on the terrain
+    (ground(x, y) -> height) so it follows the hills. Group track (a pale hatched band with its two edges inked)."""
+    pts = []
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / step))
+        pts += [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(n)]
+    pts.append(tuple(points[-1]))
+    m = Mesh(name, "track"); V, F = [], []
+    for i, (x, y) in enumerate(pts):
+        a, b = pts[max(i - 1, 0)], pts[min(i + 1, len(pts) - 1)]; dx, dy = b[0] - a[0], b[1] - a[1]; L = math.hypot(dx, dy) or 1
+        nx, ny = -dy / L * width / 2, dx / L * width / 2
+        for sx in (-1, 1):
+            px, py = x + sx * nx, y + sx * ny; V.append((px, py, ground(px, py) + 0.25))
+        if i: F.append((2 * i - 2, 2 * i, 2 * i + 1, 2 * i - 1))   # counter-clockwise from above: the face looks up
+    m.add(V, F, outward=False); return [m]
+
+
+def plinth(height=10.0, width=24.0, depth=16.0, yaw=0.0, name="plinth"):
+    """A stone step (a block with a slightly wider cap slab): a row of them, each taller, is a stair that the parts on top climb. Local
+    origin at the ground under its middle; it sinks 6 units into the ground so it never floats on a slope. Group track (a pale hatched
+    block with inked edges); the part standing on it is placed `height` higher (the scene's dz)."""
+    m = Mesh(name, "track"); sink = 6.0; cap = min(1.6, 0.25 * height + 0.4)
+    m.merge(box((0, 0, (height - cap - sink) / 2), (width, depth, height - cap + sink)))
+    m.merge(box((0, 0, height - cap / 2), (width + 1.6, depth + 1.6, cap)))
+    o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]
+
+
+# ---------------------------------------------------------------- topic units (the topic scenes of run_hero.py: one unit per member)
+# Each takes size (1.0 = about 26 scene units tall) and lit; a lit unit is group "lit" (painted in the accent), an unlit one group "thing"
+# (a pale body under its ink, like the background turbines). They sit on the ground at their local origin.
+
+def _grp(lit): return "lit" if lit else "thing"     # lit2 / thing2 ... : the further rows of a flat-painted crowd (figure_unit)
+
+
+def _ball(m, c, r, n=8, rings=4, flat=1.0):
+    """A low-poly ball of radius r about c (flat < 1 squashes it into a puff), merged into m."""
+    rs = []
+    for k in range(rings + 1):
+        a = math.pi * k / rings; rr = max(r * math.sin(a), r * 0.12); z = c[2] - r * flat * math.cos(a)
+        rs.append([(c[0] + rr * math.cos(2 * math.pi * i / n), c[1] + rr * math.sin(2 * math.pi * i / n), z) for i in range(n)])
+    m.merge(loft(rs))
+
+
+def turbine_unit(size=1.0, lit=False, name="unit"):
+    """A turbine (energy): tower and nacelle in the plain group, its three blades in the accent when lit."""
+    H = 30.0 * size; split = wind_turbine(height=H, blade_len=0.55 * H, rotor_deg=20.0, yaw=0.0, name=name, split="unit")
+    body, blades = split; body.group = "thing"; blades.group = _grp(lit); return [body, blades]
+
+
+def stack_unit(size=1.0, lit=False, name="stack"):
+    """A smokestack (emissions): a tall tapered chimney with a band; lit, it is painted in the accent and drifts a puff of smoke."""
+    H = 34.0 * size; m = Mesh(name, _grp(lit)); r = 0.075 * H
+    m.merge(frustum((0, 0, 0), r, 0.62 * r, H, n=10)); m.merge(frustum((0, 0, 0.84 * H), 0.7 * r, 0.7 * r, 0.06 * H, n=10))
+    m.merge(box((0, 0, 0.03 * H), (3.0 * r, 2.2 * r, 0.06 * H)))
+    out = [m]
+    if lit:
+        c = Mesh(name + "_puff", "thing")
+        for dx, dz, k in ((0.0, 0.10, 0.10), (0.13, 0.17, 0.12), (0.26, 0.23, 0.09)): _ball(c, (dx * H, 0, H + dz * H), k * H, flat=0.7)
+        out.append(c)
+    return out
+
+
+def _limb(m, pts, n=10):
+    """A tapered round limb: pts = [(x, z, rx, ry)] top to bottom, each a ring of that centre and half-widths (front view in x, z)."""
+    m.merge(loft([[(x + rx * math.cos(2 * math.pi * i / n), ry * math.sin(2 * math.pi * i / n), z) for i in range(n)] for x, z, rx, ry in pts]))
+
+
+def figure_unit(size=1.0, lit=False, name="figure", depth=0):
+    """A pictogram person in the Isotype / Gerd Arntz manner (people): a round head one seventh of the height, no neck, rounded shoulders,
+    a torso wider at the chest than at the waist and hips, each arm hanging from the shoulder curve with a clear gap to the torso, two
+    legs clearly apart; a front view whose silhouette is the picture (no face, no pose: lit and unlit differ in colour only). Every part
+    is round (10 sides) so that Blender's pen draws the outline and no crease inside it. `depth` 0..2 is the row the figure stands in:
+    its group is lit / thing, lit2 / thing2, lit3 / thing3, so the painting can lay the rows back to front."""
+    H = 28.0 * size; g = _grp(lit) + ("" if depth == 0 else str(depth + 1)); m = Mesh(name, g); d = 0.05 * H
+    _ball(m, (0, 0, 0.926 * H), 0.0715 * H, n=10, rings=4)
+    # torso: hips, waist, chest, then the shoulder line rolled over into a dome (the half-widths, bottom to top)
+    prof = ((0.44, 0.098), (0.52, 0.090), (0.62, 0.098), (0.72, 0.120), (0.78, 0.132), (0.82, 0.134), (0.85, 0.125), (0.868, 0.098), (0.878, 0.050))
+    m.merge(loft([[(hw * H * math.cos(2 * math.pi * i / 12), d * math.sin(2 * math.pi * i / 12), z * H) for i in range(12)] for z, hw in prof]))
+    for sx in (-1, 1):
+        # an arm: a rounded shoulder cap on the torso's curve, then a slightly tapered tube that swings clear of the body
+        _limb(m, [(sx * 0.140 * H, 0.866 * H, 0.014 * H, 0.012 * H), (sx * 0.152 * H, 0.852 * H, 0.030 * H, 0.028 * H), (sx * 0.163 * H, 0.822 * H, 0.036 * H, 0.032 * H), (sx * 0.176 * H, 0.74 * H, 0.032 * H, 0.030 * H),
+                  (sx * 0.186 * H, 0.60 * H, 0.028 * H, 0.027 * H), (sx * 0.190 * H, 0.48 * H, 0.025 * H, 0.025 * H), (sx * 0.190 * H, 0.456 * H, 0.014 * H, 0.014 * H)], n=8)
+        # a leg: from the hip, tapering to the ankle, a clear gap between the two
+        _limb(m, [(sx * 0.058 * H, 0.50 * H, 0.043 * H, 0.045 * H), (sx * 0.064 * H, 0.30 * H, 0.039 * H, 0.040 * H), (sx * 0.070 * H, 0.0, 0.035 * H, 0.037 * H)], n=8)
+    return [m]
+
+
+def solar_unit(size=1.0, lit=False, name="solar"):
+    """A solar array (energy): a framed photovoltaic panel on two legs, tilted back so that its face turns to the viewer and up, the face cut by
+    a grid (cell lines both ways: raised strips the pen draws); the panel is the lit part. About 1.05 S tall and 1.4 S wide (S = 24 scene units)."""
+    S = 24.0 * size; p = Mesh(name + "_panel", _grp(lit)); f = Mesh(name + "_post", "thing"); tilt = 36.0; W, L, T = 1.4 * S, 1.15 * S, 0.07 * S
+    zc = 0.46 * S + 0.5 * L * math.sin(math.radians(tilt)); R = rot_x(tilt)
+    p.merge(box((0, 0, zc), (W, L, T), rot=R))
+    for k in (-0.375, -0.125, 0.125, 0.375):       # cell columns
+        c = mulv(R, (k * W, 0, 0.5 * T + 0.02 * S)); p.merge(box((c[0], c[1], zc + c[2]), (0.045 * S, L * 0.96, 0.05 * S), rot=R))
+    for k in (-0.25, 0.25):                         # cell rows
+        c = mulv(R, (0, k * L, 0.5 * T + 0.02 * S)); p.merge(box((c[0], c[1], zc + c[2]), (W * 0.96, 0.05 * S, 0.05 * S), rot=R))
+    tn = math.tan(math.radians(tilt))
+    for sx in (-0.34, 0.34):
+        for y in (-0.2, 0.25): f.merge(tube((sx * W, y * S, 0), (sx * W, y * S, zc + y * S * tn - 0.03 * S), r=0.045 * S, n=6))
+    f.merge(box((0, 0.2 * S, 0.025 * S), (1.3 * S, 0.5 * S, 0.05 * S)))
+    return [p, f]
+
+
+def dam_unit(size=1.0, lit=False, name="dam"):
+    """An arch dam seen from downstream (energy, hydro), the wall of the hero dam (arch_dam) at the unit's scale: a curved concrete wall with
+    gate piers along its crest and a ribbon of spillway water down its face (the spill group: vertical hatching), the reservoir as a slab of
+    water standing against its upstream side a little under the crest and widening away from it (so that, seen from a raised camera, it lies
+    beyond the crest), and a pool at its foot. The wall is the lit part, the waters the water group. About 0.95 S tall and 1.5 S wide
+    (S = 24 scene units), the lake reaching 1.1 S back; centred on x = 0."""
+    S = 24.0 * size; wall, spill = arch_dam(0.0, 0.0, 0.0, height=0.95 * S, width=1.5 * S, base_t=0.30 * S, crest_t=0.10 * S, arc_deg=85.0, name=name + "_wall")
+    wall.group = _grp(lit); lake = Mesh(name + "_lake", "water")
+    lz = 0.88 * 0.95 * S; lake.add([(-0.70 * S, 0.12 * S, lz), (0.70 * S, 0.12 * S, lz), (0.85 * S, 1.15 * S, lz), (-0.85 * S, 1.15 * S, lz)], [(0, 1, 2, 3)], outward=False)
+    pool = Mesh(name + "_pool", "water"); pool.add([(-0.45 * S, -0.30 * S, 0.02 * S), (0.45 * S, -0.30 * S, 0.02 * S), (0.60 * S, -0.80 * S, 0.02 * S), (-0.60 * S, -0.80 * S, 0.02 * S)], [(0, 1, 2, 3)], outward=False)
+    return [wall, spill, lake, pool]
+
+
+def pylon_unit(size=1.0, lit=False, name="pylon"):
+    """A grid pylon (energy: the electricity grid and its price), the lit ones in the accent."""
+    H = 36.0 * size; ms, _ = pylon(height=H, arm_w=0.24 * H, yaw=0.0, name=name)
+    for m in ms: m.group = _grp(lit)
+    return ms
+
+
+def biomass_unit(size=1.0, lit=False, name="biomass"):
+    """A stack of cut logs seen end-on (energy, biomass and heating): round log ends, two across and three high with one nested on top, each
+    end cut by two growth rings (raised discs the pen draws as circles); the logs are the lit part. About 31 scene units tall and 16 wide at size 1 (r = 4 per log)."""
+    m = Mesh(name, _grp(lit)); r = 4.0 * size; ln = 1.5 * r; rows = ((-1, 1), (-1, 1), (-1, 1), (0,))
+    for k, row in enumerate(rows):
+        for sx in row:
+            z = r + 2 * r * k if k < 3 else r + 2 * r * 2 + 1.732 * r
+            m.merge(frustum((0, 0, 0), r, r, ln, n=12, rot=rot_x(90)), loc=(sx * r, 0.5 * ln, z))
+            for rr, out in ((0.62, 0.05), (0.26, 0.10)): m.merge(frustum((0, 0, 0), rr * r, rr * r, out * r, n=12, rot=rot_x(90)), loc=(sx * r, -0.5 * ln + 0.0, z))
+    return [m]
+
+
+def container_unit(size=1.0, lit=False, name="container", rows=1):
+    """A shipping container (trade), `rows` high (a stack): a ribbed box."""
+    S = 10.0 * size; m = Mesh(name, _grp(lit))
+    for r in range(max(1, rows)):
+        z = (0.45 + 0.9 * r) * S
+        m.merge(box((0, 0, z), (1.7 * S, 1.0 * S, 0.85 * S)))
+        for k in (-0.65, -0.2, 0.25, 0.7): m.merge(box((k * S, 0, z), (0.07 * S, 1.08 * S, 0.9 * S)))
+    return [m]
+
+
+def waypoint_unit(size=1.0, lit=False, name="waypoint"):
+    """A route post with an arrow head pointing along +x (migration)."""
+    H = 26.0 * size; m = Mesh(name, _grp(lit)); r = 0.05 * H
+    m.merge(frustum((0, 0, 0), 1.6 * r, r, 0.78 * H, n=6)); m.merge(box((0, 0, 0.03 * H), (0.34 * H, 0.26 * H, 0.06 * H)))
+    m.merge(frustum((0.0, 0, 0.84 * H), 0.2 * H, 0.0, 0.34 * H, n=6, rot=rot_y(90)), loc=(-0.12 * H, 0, 0))
+    m.merge(box((0.02 * H, 0, 0.84 * H), (0.3 * H, 0.07 * H, 0.07 * H)))
+    return [m]
+
+
+def ellipsis_mark(r=1.5, gap=3.2, z=10.0, name="omit"):
+    """The omission mark '...' (three round dots in a row, spaced gap * r apart, centre z high): the same pen as the pictures, for the place
+    where a ranking leaves members out. Not a unit: it carries no fact."""
+    m = Mesh(name, "thing")
+    for k in (-1, 0, 1): _ball(m, (k * gap * r, 0.0, z), r, n=10, rings=4)
+    return [m]
+
+
+def cairn_unit(size=1.0, lit=False, name="cairn"):
+    """A three-stone cairn (a neutral unit for a topic the registry has no scene for)."""
+    H = 26.0 * size; m = Mesh(name, _grp(lit))
+    for i, (w, h) in enumerate(((0.62, 0.34), (0.46, 0.30), (0.30, 0.26))):
+        z0 = sum(k for _, k in ((0.62, 0.34), (0.46, 0.30), (0.30, 0.26))[:i]) * H
+        m.merge(box((0, 0, z0 + h * H / 2), (w * H, w * H * 0.8, h * H), rot=rot_z(18 * i)))
+    return [m]
+
+
+def tree_unit(size=1.0, name="tree"):
+    """A small conifer (a ground filler of the emissions scenes)."""
+    H = 20.0 * size; m = Mesh(name, "thing")
+    m.merge(frustum((0, 0, 0), 0.05 * H, 0.04 * H, 0.3 * H, n=6)); m.merge(frustum((0, 0, 0.22 * H), 0.3 * H, 0.0, 0.8 * H, n=8)); return [m]
+
+
+def crane_unit(size=1.0, name="crane"):
+    """A quay gantry crane (a filler of the trade scenes): two legs, a beam and a boom."""
+    H = 34.0 * size; m = Mesh(name, "thing")
+    for sx in (-1, 1):
+        for sy in (-1, 1): m.merge(tube((sx * 0.3 * H, sy * 0.14 * H, 0), (sx * 0.28 * H, sy * 0.14 * H, 0.72 * H), r=0.015 * H))
+    m.merge(box((0, 0, 0.75 * H), (0.7 * H, 0.4 * H, 0.06 * H))); m.merge(box((0.7 * H, 0, 0.8 * H), (1.1 * H, 0.06 * H, 0.05 * H)))
+    return [m]
+
+
+def chevron_unit(size=1.0, yaw=0.0, name="chevron"):
+    """A flat route arrow (a chevron) lying on the ground, pointing along +x turned by yaw (migration)."""
+    L = 12.0 * size; m = Mesh(name, "track")
+    for s in (-1, 1): m.merge(box((-0.28 * L, s * 0.2 * L, 0.5), (0.8 * L, 0.18 * L, 1.0), rot=rot_z(-s * 35)))
+    o = Mesh(name, "track"); o.merge(m, rot=rot_z(yaw)); return [o]
+
+
+def fence_unit(length=60.0, yaw=0.0, name="fence"):
+    """A border fence along +x: posts and two rails (migration)."""
+    m = Mesh(name, "thing"); n = max(2, int(length / 7))
+    for i in range(n + 1): m.merge(box((i * length / n - length / 2, 0, 5), (1.2, 1.2, 10)))
+    for z in (4.0, 8.0): m.merge(box((0, 0, z), (length, 0.6, 0.7)))
+    o = Mesh(name, "thing"); o.merge(m, rot=rot_z(yaw)); return [o]

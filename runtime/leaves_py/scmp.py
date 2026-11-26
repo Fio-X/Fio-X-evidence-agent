@@ -435,7 +435,7 @@ h.style.height=H+'px';svg.setAttribute('height',H);svg.setAttribute('viewBox',`0
 def page(spec, wrap=False, out=None):
     spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}
     c = prod.Ctx(spec)
-    nums = "".join(f'<div class="bn"><div class="bv">{c.t(b["v"])}</div><div class="bl">{c.t(b["l"])}</div></div>' for b in spec.get("bignums", []))
+    nums = "".join(f'<div class="bn" data-hot><div class="bv">{c.t(b["v"])}</div><div class="bl">{c.t(b["l"])}</div></div>' for b in spec.get("bignums", []))
     sec = lambda m, W: (f'<div class="sh"><span class="no">{m["name"]}</span>{c.t(m["h"])}</div>' if m.get("h") else "") + prod.CHARTS[m["data"]["chart"]](c, {"events": spec.get("events"), **m["data"]}, W)
     top = f'<section class="tl">{sec(spec["top"], 1140)}</section>' if spec.get("top") else ""
     band = f'<section class="band">{sec(spec["band"], 1140)}</section>' if spec.get("band") else ""
@@ -455,7 +455,9 @@ def page_head(c, spec, nums="", box=None, wide=False):
     With no box the title keeps the ring's column ("solo"), or with `wide` (a page with nothing beside its header) the
     whole width ("wide"). A full-width bracket the title ends with (a worded title may end with one) never breaks inside:
     it wraps as one piece, and a line it starts loses the bracket's blank half (text-spacing-trim, CSS Text 4, which Chrome
-    applies only with a font that carries the halt feature: the page's Songti SC and PingFang SC do not)."""
+    applies only with a font that carries the halt feature: the page's Songti SC and PingFang SC do not). A title that wraps
+    never leaves one character alone on its last line (text-wrap: pretty, CSS Text 4: v5's and vc7's titles left the
+    measure word after their ratio there)."""
     box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""
     o, e = map(re.escape, word("paren", v="")); title = re.sub(f"{o}[^<>{o}{e}]*{e}$", r'<span class="nb">\g<0></span>', FX.placed(c.t(spec["title"])))
     return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " wide" if wide else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{title}</h1><p class="dek">{FX.placed(FX.worded(spec, c.F, "dek", spec["dek"]))}</p></div>'
@@ -514,7 +516,11 @@ def footer(spec):
     if FX.LEDGER is None:
         evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
         return f'<footer>{word("footer.source", v=prod.esc(source))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{note}</footer>'
-    src, refs = prod.esc(source), sorted(spec.get("refs") or [], key=len, reverse=True)
+    refs = spec.get("refs") or []
+    # a table id is a word: an empty one would match between any two separators and print empty marks, one with white space at
+    # its edge could never equal the mark's text, so the page check would refuse the page after the drawing
+    if not isinstance(refs, list) or not all(isinstance(r, str) and r and r == r.strip() for r in refs): raise FX.Refused(f"footer: spec.refs holds an id that is no table id: {refs!r}")
+    src, refs = prod.esc(source), sorted(refs, key=len, reverse=True)
     if refs: src = re.sub(r"(?<![\w.])(" + "|".join(map(re.escape, refs)) + r")(?![\w.])", r'<span data-ref="">\1</span>', src)
     if FX.digit(re.sub(r'<span data-ref="">[^<]*</span>', "", src)): raise FX.Refused("footer: the source holds a digit outside the table ids spec.refs names")
     if FX.digit(note): raise FX.Refused("footer: the note holds a digit")
@@ -526,10 +532,10 @@ def footer(spec):
 # The kicker takes the title's ink (over tokens.css's accent): a leaf page keeps its accent for the marks of its focus alone.
 CSS = """body{background:var(--bg)}
 .hh{display:grid;grid-template-columns:1fr 330px;gap:40px;max-width:none;align-items:end;margin-bottom:18px}.hh .kicker{color:var(--t-title)}
-.hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px;text-spacing-trim:trim-start}.hh h1 b.n{color:var(--accent)}.hh h1 .nb{white-space:nowrap}
+.hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px;text-spacing-trim:trim-start;text-wrap:pretty}.hh h1 b.n{color:var(--accent)}.hh h1 .nb{white-space:nowrap}
 .hh .dek{font:400 16px/27px var(--serif);color:var(--t-dek);max-width:720px;margin:0}
 .bns{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;border-left:1px solid var(--t-sec);padding-left:22px}
-.bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--accent)}
+.bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--t-title)}.bn[data-hot] .bv b.n{color:var(--accent)}
 .bl{font:400 12px/17px var(--sans);color:var(--t-sec)}.bl b.n{color:var(--t-sec);font-weight:400}.bns .bl span{color:var(--t-title)}
 .hh.lb{grid-template-columns:1fr auto}
 .hero{position:relative;width:1140px;margin:8px 0 30px}.hu{position:absolute;left:0;top:0;width:240px;z-index:2;font:400 12px/17px var(--sans);color:var(--t-sec);padding-bottom:10px}.hero .map{position:absolute;top:0}

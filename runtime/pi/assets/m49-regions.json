@@ -1,0 +1,2400 @@
+{
+ "schema_version": 1,
+ "note": "The UN Statistics Division's M49 standard (Standard country or area codes for statistical use) as data: each country or area with an ISO code and the M49 region (continent), sub-region and intermediate region the UN puts it in, plus the English and Chinese names of those groups as the UN prints them. Read by the knowledge group to group countries (for example the EU members by European sub-region, or World Bank economies by their continent's sub-region). Nothing here is hand-written: every row and name is read from the two CSVs named in source (kept outside the repository), which scripts/test_m49_regions.py checks by hash and row by row when they are given. The UN's grouping is kept as is (Cyprus is in Western Asia; Antarctica has no region). Ownership only; no cross-group call is allowed by this file.",
+ "source": {
+  "url": "https://unstats.un.org/unsd/methodology/m49/overview/",
+  "how": "The page has no CSV file to link to: its 'CSV' button (DataTables export) builds the file in the browser from the page's table. The stored copies are the files that button produced for the English table (semicolon-separated, with a byte-order mark) and the Chinese table (comma-separated, quoted), saved unchanged. A cross-check against the page's HTML fetched the same day matched every code and name.",
+  "fetched_at": "2026-11-23",
+  "document_sha256": "035a35af597250e35c0c32c1fe866a5b8c60c292f5dfcd463fe23b264b8491ee",
+  "file": "m49-overview-en.csv",
+  "zh_document_sha256": "da5edce5dee15447aacafe1b3a900e9d82e76e8786ba26a61c92e4ad4aeebd4d",
+  "zh_file": "m49-overview-zh.csv",
+  "licence_note": {
+   "quote": "The United Nations grants permission to Users to visit the Site and to download and copy the information, documents and materials (collectively, “Materials”) from the Site for the User’s personal, non-commercial use, without any right to resell or redistribute them or to compile or create derivative works therefrom, subject to the terms and conditions outlined below, and also subject to more specific restrictions that may apply to specific Material within this Site.",
+   "url": "https://www.un.org/en/about-us/terms-of-use",
+   "where": "Linked as 'Terms of Use' from the footer of the M49 overview page; the page itself states no other licence."
+  },
+  "stored_copy": "The two CSV files are kept outside the repository (the UN terms of use allow personal use without redistribution); only their names and sha256 are recorded here. The test checks this file against them when they are given (M49_SOURCE_DIR), and for self-consistency always."
+ },
+ "regions": {
+  "002": {
+   "level": "region",
+   "name_en": "Africa",
+   "name_zh": "非洲"
+  },
+  "005": {
+   "level": "intermediate",
+   "name_en": "South America",
+   "name_zh": "南美洲"
+  },
+  "009": {
+   "level": "region",
+   "name_en": "Oceania",
+   "name_zh": "大洋洲"
+  },
+  "011": {
+   "level": "intermediate",
+   "name_en": "Western Africa",
+   "name_zh": "西非"
+  },
+  "013": {
+   "level": "intermediate",
+   "name_en": "Central America",
+   "name_zh": "中美洲"
+  },
+  "014": {
+   "level": "intermediate",
+   "name_en": "Eastern Africa",
+   "name_zh": "东非"
+  },
+  "015": {
+   "level": "sub_region",
+   "name_en": "Northern Africa",
+   "name_zh": "北非"
+  },
+  "017": {
+   "level": "intermediate",
+   "name_en": "Middle Africa",
+   "name_zh": "中非"
+  },
+  "018": {
+   "level": "intermediate",
+   "name_en": "Southern Africa",
+   "name_zh": "南部非洲"
+  },
+  "019": {
+   "level": "region",
+   "name_en": "Americas",
+   "name_zh": "美洲"
+  },
+  "021": {
+   "level": "sub_region",
+   "name_en": "Northern America",
+   "name_zh": "北美"
+  },
+  "029": {
+   "level": "intermediate",
+   "name_en": "Caribbean",
+   "name_zh": "加勒比"
+  },
+  "030": {
+   "level": "sub_region",
+   "name_en": "Eastern Asia",
+   "name_zh": "东亚"
+  },
+  "034": {
+   "level": "sub_region",
+   "name_en": "Southern Asia",
+   "name_zh": "南亚"
+  },
+  "035": {
+   "level": "sub_region",
+   "name_en": "South-eastern Asia",
+   "name_zh": "东南亚"
+  },
+  "039": {
+   "level": "sub_region",
+   "name_en": "Southern Europe",
+   "name_zh": "南欧"
+  },
+  "053": {
+   "level": "sub_region",
+   "name_en": "Australia and New Zealand",
+   "name_zh": "澳大利亚和新西兰"
+  },
+  "054": {
+   "level": "sub_region",
+   "name_en": "Melanesia",
+   "name_zh": "美拉尼西亚"
+  },
+  "057": {
+   "level": "sub_region",
+   "name_en": "Micronesia",
+   "name_zh": "密克罗尼西亚"
+  },
+  "061": {
+   "level": "sub_region",
+   "name_en": "Polynesia",
+   "name_zh": "波利尼西亚"
+  },
+  "142": {
+   "level": "region",
+   "name_en": "Asia",
+   "name_zh": "亚洲"
+  },
+  "143": {
+   "level": "sub_region",
+   "name_en": "Central Asia",
+   "name_zh": "中亚"
+  },
+  "145": {
+   "level": "sub_region",
+   "name_en": "Western Asia",
+   "name_zh": "西亚"
+  },
+  "150": {
+   "level": "region",
+   "name_en": "Europe",
+   "name_zh": "欧洲"
+  },
+  "151": {
+   "level": "sub_region",
+   "name_en": "Eastern Europe",
+   "name_zh": "东欧"
+  },
+  "154": {
+   "level": "sub_region",
+   "name_en": "Northern Europe",
+   "name_zh": "北欧"
+  },
+  "155": {
+   "level": "sub_region",
+   "name_en": "Western Europe",
+   "name_zh": "西欧"
+  },
+  "202": {
+   "level": "sub_region",
+   "name_en": "Sub-Saharan Africa",
+   "name_zh": "撒哈拉以南非洲"
+  },
+  "419": {
+   "level": "sub_region",
+   "name_en": "Latin America and the Caribbean",
+   "name_zh": "拉丁美洲和加勒比"
+  }
+ },
+ "countries": [
+  {
+   "iso2": "AD",
+   "iso3": "AND",
+   "m49": "020",
+   "name_en": "Andorra",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "AE",
+   "iso3": "ARE",
+   "m49": "784",
+   "name_en": "United Arab Emirates",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "AF",
+   "iso3": "AFG",
+   "m49": "004",
+   "name_en": "Afghanistan",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "AG",
+   "iso3": "ATG",
+   "m49": "028",
+   "name_en": "Antigua and Barbuda",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "AI",
+   "iso3": "AIA",
+   "m49": "660",
+   "name_en": "Anguilla",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "AL",
+   "iso3": "ALB",
+   "m49": "008",
+   "name_en": "Albania",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "AM",
+   "iso3": "ARM",
+   "m49": "051",
+   "name_en": "Armenia",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "AO",
+   "iso3": "AGO",
+   "m49": "024",
+   "name_en": "Angola",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "AQ",
+   "iso3": "ATA",
+   "m49": "010",
+   "name_en": "Antarctica",
+   "region": null,
+   "sub_region": null,
+   "intermediate": null
+  },
+  {
+   "iso2": "AR",
+   "iso3": "ARG",
+   "m49": "032",
+   "name_en": "Argentina",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "AS",
+   "iso3": "ASM",
+   "m49": "016",
+   "name_en": "American Samoa",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "AT",
+   "iso3": "AUT",
+   "m49": "040",
+   "name_en": "Austria",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "AU",
+   "iso3": "AUS",
+   "m49": "036",
+   "name_en": "Australia",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "AW",
+   "iso3": "ABW",
+   "m49": "533",
+   "name_en": "Aruba",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "AX",
+   "iso3": "ALA",
+   "m49": "248",
+   "name_en": "Åland Islands",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "AZ",
+   "iso3": "AZE",
+   "m49": "031",
+   "name_en": "Azerbaijan",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "BA",
+   "iso3": "BIH",
+   "m49": "070",
+   "name_en": "Bosnia and Herzegovina",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "BB",
+   "iso3": "BRB",
+   "m49": "052",
+   "name_en": "Barbados",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "BD",
+   "iso3": "BGD",
+   "m49": "050",
+   "name_en": "Bangladesh",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "BE",
+   "iso3": "BEL",
+   "m49": "056",
+   "name_en": "Belgium",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "BF",
+   "iso3": "BFA",
+   "m49": "854",
+   "name_en": "Burkina Faso",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "BG",
+   "iso3": "BGR",
+   "m49": "100",
+   "name_en": "Bulgaria",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "BH",
+   "iso3": "BHR",
+   "m49": "048",
+   "name_en": "Bahrain",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "BI",
+   "iso3": "BDI",
+   "m49": "108",
+   "name_en": "Burundi",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "BJ",
+   "iso3": "BEN",
+   "m49": "204",
+   "name_en": "Benin",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "BL",
+   "iso3": "BLM",
+   "m49": "652",
+   "name_en": "Saint Barthélemy",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "BM",
+   "iso3": "BMU",
+   "m49": "060",
+   "name_en": "Bermuda",
+   "region": "019",
+   "sub_region": "021",
+   "intermediate": null
+  },
+  {
+   "iso2": "BN",
+   "iso3": "BRN",
+   "m49": "096",
+   "name_en": "Brunei Darussalam",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "BO",
+   "iso3": "BOL",
+   "m49": "068",
+   "name_en": "Bolivia (Plurinational State of)",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "BQ",
+   "iso3": "BES",
+   "m49": "535",
+   "name_en": "Bonaire, Sint Eustatius and Saba",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "BR",
+   "iso3": "BRA",
+   "m49": "076",
+   "name_en": "Brazil",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "BS",
+   "iso3": "BHS",
+   "m49": "044",
+   "name_en": "Bahamas",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "BT",
+   "iso3": "BTN",
+   "m49": "064",
+   "name_en": "Bhutan",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "BV",
+   "iso3": "BVT",
+   "m49": "074",
+   "name_en": "Bouvet Island",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "BW",
+   "iso3": "BWA",
+   "m49": "072",
+   "name_en": "Botswana",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "018"
+  },
+  {
+   "iso2": "BY",
+   "iso3": "BLR",
+   "m49": "112",
+   "name_en": "Belarus",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "BZ",
+   "iso3": "BLZ",
+   "m49": "084",
+   "name_en": "Belize",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "CA",
+   "iso3": "CAN",
+   "m49": "124",
+   "name_en": "Canada",
+   "region": "019",
+   "sub_region": "021",
+   "intermediate": null
+  },
+  {
+   "iso2": "CC",
+   "iso3": "CCK",
+   "m49": "166",
+   "name_en": "Cocos (Keeling) Islands",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "CD",
+   "iso3": "COD",
+   "m49": "180",
+   "name_en": "Democratic Republic of the Congo",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "CF",
+   "iso3": "CAF",
+   "m49": "140",
+   "name_en": "Central African Republic",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "CG",
+   "iso3": "COG",
+   "m49": "178",
+   "name_en": "Congo",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "CH",
+   "iso3": "CHE",
+   "m49": "756",
+   "name_en": "Switzerland",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "CI",
+   "iso3": "CIV",
+   "m49": "384",
+   "name_en": "Côte d’Ivoire",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "CK",
+   "iso3": "COK",
+   "m49": "184",
+   "name_en": "Cook Islands",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "CL",
+   "iso3": "CHL",
+   "m49": "152",
+   "name_en": "Chile",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "CM",
+   "iso3": "CMR",
+   "m49": "120",
+   "name_en": "Cameroon",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "CN",
+   "iso3": "CHN",
+   "m49": "156",
+   "name_en": "China",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "CO",
+   "iso3": "COL",
+   "m49": "170",
+   "name_en": "Colombia",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "CR",
+   "iso3": "CRI",
+   "m49": "188",
+   "name_en": "Costa Rica",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "CU",
+   "iso3": "CUB",
+   "m49": "192",
+   "name_en": "Cuba",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "CV",
+   "iso3": "CPV",
+   "m49": "132",
+   "name_en": "Cabo Verde",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "CW",
+   "iso3": "CUW",
+   "m49": "531",
+   "name_en": "Curaçao",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "CX",
+   "iso3": "CXR",
+   "m49": "162",
+   "name_en": "Christmas Island",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "CY",
+   "iso3": "CYP",
+   "m49": "196",
+   "name_en": "Cyprus",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "CZ",
+   "iso3": "CZE",
+   "m49": "203",
+   "name_en": "Czechia",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "DE",
+   "iso3": "DEU",
+   "m49": "276",
+   "name_en": "Germany",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "DJ",
+   "iso3": "DJI",
+   "m49": "262",
+   "name_en": "Djibouti",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "DK",
+   "iso3": "DNK",
+   "m49": "208",
+   "name_en": "Denmark",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "DM",
+   "iso3": "DMA",
+   "m49": "212",
+   "name_en": "Dominica",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "DO",
+   "iso3": "DOM",
+   "m49": "214",
+   "name_en": "Dominican Republic",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "DZ",
+   "iso3": "DZA",
+   "m49": "012",
+   "name_en": "Algeria",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "EC",
+   "iso3": "ECU",
+   "m49": "218",
+   "name_en": "Ecuador",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "EE",
+   "iso3": "EST",
+   "m49": "233",
+   "name_en": "Estonia",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "EG",
+   "iso3": "EGY",
+   "m49": "818",
+   "name_en": "Egypt",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "EH",
+   "iso3": "ESH",
+   "m49": "732",
+   "name_en": "Western Sahara",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "ER",
+   "iso3": "ERI",
+   "m49": "232",
+   "name_en": "Eritrea",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "ES",
+   "iso3": "ESP",
+   "m49": "724",
+   "name_en": "Spain",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "ET",
+   "iso3": "ETH",
+   "m49": "231",
+   "name_en": "Ethiopia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "FI",
+   "iso3": "FIN",
+   "m49": "246",
+   "name_en": "Finland",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "FJ",
+   "iso3": "FJI",
+   "m49": "242",
+   "name_en": "Fiji",
+   "region": "009",
+   "sub_region": "054",
+   "intermediate": null
+  },
+  {
+   "iso2": "FK",
+   "iso3": "FLK",
+   "m49": "238",
+   "name_en": "Falkland Islands (Malvinas)",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "FM",
+   "iso3": "FSM",
+   "m49": "583",
+   "name_en": "Micronesia (Federated States of)",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "FO",
+   "iso3": "FRO",
+   "m49": "234",
+   "name_en": "Faroe Islands",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "FR",
+   "iso3": "FRA",
+   "m49": "250",
+   "name_en": "France",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "GA",
+   "iso3": "GAB",
+   "m49": "266",
+   "name_en": "Gabon",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "GB",
+   "iso3": "GBR",
+   "m49": "826",
+   "name_en": "United Kingdom of Great Britain and Northern Ireland",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "GD",
+   "iso3": "GRD",
+   "m49": "308",
+   "name_en": "Grenada",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "GE",
+   "iso3": "GEO",
+   "m49": "268",
+   "name_en": "Georgia",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "GF",
+   "iso3": "GUF",
+   "m49": "254",
+   "name_en": "French Guiana",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "GG",
+   "iso3": "GGY",
+   "m49": "831",
+   "name_en": "Guernsey",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "GH",
+   "iso3": "GHA",
+   "m49": "288",
+   "name_en": "Ghana",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "GI",
+   "iso3": "GIB",
+   "m49": "292",
+   "name_en": "Gibraltar",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "GL",
+   "iso3": "GRL",
+   "m49": "304",
+   "name_en": "Greenland",
+   "region": "019",
+   "sub_region": "021",
+   "intermediate": null
+  },
+  {
+   "iso2": "GM",
+   "iso3": "GMB",
+   "m49": "270",
+   "name_en": "Gambia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "GN",
+   "iso3": "GIN",
+   "m49": "324",
+   "name_en": "Guinea",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "GP",
+   "iso3": "GLP",
+   "m49": "312",
+   "name_en": "Guadeloupe",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "GQ",
+   "iso3": "GNQ",
+   "m49": "226",
+   "name_en": "Equatorial Guinea",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "GR",
+   "iso3": "GRC",
+   "m49": "300",
+   "name_en": "Greece",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "GS",
+   "iso3": "SGS",
+   "m49": "239",
+   "name_en": "South Georgia and the South Sandwich Islands",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "GT",
+   "iso3": "GTM",
+   "m49": "320",
+   "name_en": "Guatemala",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "GU",
+   "iso3": "GUM",
+   "m49": "316",
+   "name_en": "Guam",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "GW",
+   "iso3": "GNB",
+   "m49": "624",
+   "name_en": "Guinea-Bissau",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "GY",
+   "iso3": "GUY",
+   "m49": "328",
+   "name_en": "Guyana",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "HK",
+   "iso3": "HKG",
+   "m49": "344",
+   "name_en": "China, Hong Kong Special Administrative Region",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "HM",
+   "iso3": "HMD",
+   "m49": "334",
+   "name_en": "Heard Island and McDonald Islands",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "HN",
+   "iso3": "HND",
+   "m49": "340",
+   "name_en": "Honduras",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "HR",
+   "iso3": "HRV",
+   "m49": "191",
+   "name_en": "Croatia",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "HT",
+   "iso3": "HTI",
+   "m49": "332",
+   "name_en": "Haiti",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "HU",
+   "iso3": "HUN",
+   "m49": "348",
+   "name_en": "Hungary",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "ID",
+   "iso3": "IDN",
+   "m49": "360",
+   "name_en": "Indonesia",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "IE",
+   "iso3": "IRL",
+   "m49": "372",
+   "name_en": "Ireland",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "IL",
+   "iso3": "ISR",
+   "m49": "376",
+   "name_en": "Israel",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "IM",
+   "iso3": "IMN",
+   "m49": "833",
+   "name_en": "Isle of Man",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "IN",
+   "iso3": "IND",
+   "m49": "356",
+   "name_en": "India",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "IO",
+   "iso3": "IOT",
+   "m49": "086",
+   "name_en": "British Indian Ocean Territory",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "IQ",
+   "iso3": "IRQ",
+   "m49": "368",
+   "name_en": "Iraq",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "IR",
+   "iso3": "IRN",
+   "m49": "364",
+   "name_en": "Iran (Islamic Republic of)",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "IS",
+   "iso3": "ISL",
+   "m49": "352",
+   "name_en": "Iceland",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "IT",
+   "iso3": "ITA",
+   "m49": "380",
+   "name_en": "Italy",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "JE",
+   "iso3": "JEY",
+   "m49": "832",
+   "name_en": "Jersey",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "JM",
+   "iso3": "JAM",
+   "m49": "388",
+   "name_en": "Jamaica",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "JO",
+   "iso3": "JOR",
+   "m49": "400",
+   "name_en": "Jordan",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "JP",
+   "iso3": "JPN",
+   "m49": "392",
+   "name_en": "Japan",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "KE",
+   "iso3": "KEN",
+   "m49": "404",
+   "name_en": "Kenya",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "KG",
+   "iso3": "KGZ",
+   "m49": "417",
+   "name_en": "Kyrgyzstan",
+   "region": "142",
+   "sub_region": "143",
+   "intermediate": null
+  },
+  {
+   "iso2": "KH",
+   "iso3": "KHM",
+   "m49": "116",
+   "name_en": "Cambodia",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "KI",
+   "iso3": "KIR",
+   "m49": "296",
+   "name_en": "Kiribati",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "KM",
+   "iso3": "COM",
+   "m49": "174",
+   "name_en": "Comoros",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "KN",
+   "iso3": "KNA",
+   "m49": "659",
+   "name_en": "Saint Kitts and Nevis",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "KP",
+   "iso3": "PRK",
+   "m49": "408",
+   "name_en": "Democratic People's Republic of Korea",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "KR",
+   "iso3": "KOR",
+   "m49": "410",
+   "name_en": "Republic of Korea",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "KW",
+   "iso3": "KWT",
+   "m49": "414",
+   "name_en": "Kuwait",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "KY",
+   "iso3": "CYM",
+   "m49": "136",
+   "name_en": "Cayman Islands",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "KZ",
+   "iso3": "KAZ",
+   "m49": "398",
+   "name_en": "Kazakhstan",
+   "region": "142",
+   "sub_region": "143",
+   "intermediate": null
+  },
+  {
+   "iso2": "LA",
+   "iso3": "LAO",
+   "m49": "418",
+   "name_en": "Lao People's Democratic Republic",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "LB",
+   "iso3": "LBN",
+   "m49": "422",
+   "name_en": "Lebanon",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "LC",
+   "iso3": "LCA",
+   "m49": "662",
+   "name_en": "Saint Lucia",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "LI",
+   "iso3": "LIE",
+   "m49": "438",
+   "name_en": "Liechtenstein",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "LK",
+   "iso3": "LKA",
+   "m49": "144",
+   "name_en": "Sri Lanka",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "LR",
+   "iso3": "LBR",
+   "m49": "430",
+   "name_en": "Liberia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "LS",
+   "iso3": "LSO",
+   "m49": "426",
+   "name_en": "Lesotho",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "018"
+  },
+  {
+   "iso2": "LT",
+   "iso3": "LTU",
+   "m49": "440",
+   "name_en": "Lithuania",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "LU",
+   "iso3": "LUX",
+   "m49": "442",
+   "name_en": "Luxembourg",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "LV",
+   "iso3": "LVA",
+   "m49": "428",
+   "name_en": "Latvia",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "LY",
+   "iso3": "LBY",
+   "m49": "434",
+   "name_en": "Libya",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "MA",
+   "iso3": "MAR",
+   "m49": "504",
+   "name_en": "Morocco",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "MC",
+   "iso3": "MCO",
+   "m49": "492",
+   "name_en": "Monaco",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "MD",
+   "iso3": "MDA",
+   "m49": "498",
+   "name_en": "Republic of Moldova",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "ME",
+   "iso3": "MNE",
+   "m49": "499",
+   "name_en": "Montenegro",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "MF",
+   "iso3": "MAF",
+   "m49": "663",
+   "name_en": "Saint Martin (French Part)",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "MG",
+   "iso3": "MDG",
+   "m49": "450",
+   "name_en": "Madagascar",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "MH",
+   "iso3": "MHL",
+   "m49": "584",
+   "name_en": "Marshall Islands",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "MK",
+   "iso3": "MKD",
+   "m49": "807",
+   "name_en": "North Macedonia",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "ML",
+   "iso3": "MLI",
+   "m49": "466",
+   "name_en": "Mali",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "MM",
+   "iso3": "MMR",
+   "m49": "104",
+   "name_en": "Myanmar",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "MN",
+   "iso3": "MNG",
+   "m49": "496",
+   "name_en": "Mongolia",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "MO",
+   "iso3": "MAC",
+   "m49": "446",
+   "name_en": "China, Macao Special Administrative Region",
+   "region": "142",
+   "sub_region": "030",
+   "intermediate": null
+  },
+  {
+   "iso2": "MP",
+   "iso3": "MNP",
+   "m49": "580",
+   "name_en": "Northern Mariana Islands",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "MQ",
+   "iso3": "MTQ",
+   "m49": "474",
+   "name_en": "Martinique",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "MR",
+   "iso3": "MRT",
+   "m49": "478",
+   "name_en": "Mauritania",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "MS",
+   "iso3": "MSR",
+   "m49": "500",
+   "name_en": "Montserrat",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "MT",
+   "iso3": "MLT",
+   "m49": "470",
+   "name_en": "Malta",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "MU",
+   "iso3": "MUS",
+   "m49": "480",
+   "name_en": "Mauritius",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "MV",
+   "iso3": "MDV",
+   "m49": "462",
+   "name_en": "Maldives",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "MW",
+   "iso3": "MWI",
+   "m49": "454",
+   "name_en": "Malawi",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "MX",
+   "iso3": "MEX",
+   "m49": "484",
+   "name_en": "Mexico",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "MY",
+   "iso3": "MYS",
+   "m49": "458",
+   "name_en": "Malaysia",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "MZ",
+   "iso3": "MOZ",
+   "m49": "508",
+   "name_en": "Mozambique",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "NA",
+   "iso3": "NAM",
+   "m49": "516",
+   "name_en": "Namibia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "018"
+  },
+  {
+   "iso2": "NC",
+   "iso3": "NCL",
+   "m49": "540",
+   "name_en": "New Caledonia",
+   "region": "009",
+   "sub_region": "054",
+   "intermediate": null
+  },
+  {
+   "iso2": "NE",
+   "iso3": "NER",
+   "m49": "562",
+   "name_en": "Niger",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "NF",
+   "iso3": "NFK",
+   "m49": "574",
+   "name_en": "Norfolk Island",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "NG",
+   "iso3": "NGA",
+   "m49": "566",
+   "name_en": "Nigeria",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "NI",
+   "iso3": "NIC",
+   "m49": "558",
+   "name_en": "Nicaragua",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "NL",
+   "iso3": "NLD",
+   "m49": "528",
+   "name_en": "Netherlands (Kingdom of the)",
+   "region": "150",
+   "sub_region": "155",
+   "intermediate": null
+  },
+  {
+   "iso2": "NO",
+   "iso3": "NOR",
+   "m49": "578",
+   "name_en": "Norway",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "NP",
+   "iso3": "NPL",
+   "m49": "524",
+   "name_en": "Nepal",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "NR",
+   "iso3": "NRU",
+   "m49": "520",
+   "name_en": "Naoero",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "NU",
+   "iso3": "NIU",
+   "m49": "570",
+   "name_en": "Niue",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "NZ",
+   "iso3": "NZL",
+   "m49": "554",
+   "name_en": "New Zealand",
+   "region": "009",
+   "sub_region": "053",
+   "intermediate": null
+  },
+  {
+   "iso2": "OM",
+   "iso3": "OMN",
+   "m49": "512",
+   "name_en": "Oman",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "PA",
+   "iso3": "PAN",
+   "m49": "591",
+   "name_en": "Panama",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "PE",
+   "iso3": "PER",
+   "m49": "604",
+   "name_en": "Peru",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "PF",
+   "iso3": "PYF",
+   "m49": "258",
+   "name_en": "French Polynesia",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "PG",
+   "iso3": "PNG",
+   "m49": "598",
+   "name_en": "Papua New Guinea",
+   "region": "009",
+   "sub_region": "054",
+   "intermediate": null
+  },
+  {
+   "iso2": "PH",
+   "iso3": "PHL",
+   "m49": "608",
+   "name_en": "Philippines",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "PK",
+   "iso3": "PAK",
+   "m49": "586",
+   "name_en": "Pakistan",
+   "region": "142",
+   "sub_region": "034",
+   "intermediate": null
+  },
+  {
+   "iso2": "PL",
+   "iso3": "POL",
+   "m49": "616",
+   "name_en": "Poland",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "PM",
+   "iso3": "SPM",
+   "m49": "666",
+   "name_en": "Saint Pierre and Miquelon",
+   "region": "019",
+   "sub_region": "021",
+   "intermediate": null
+  },
+  {
+   "iso2": "PN",
+   "iso3": "PCN",
+   "m49": "612",
+   "name_en": "Pitcairn",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "PR",
+   "iso3": "PRI",
+   "m49": "630",
+   "name_en": "Puerto Rico",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "PS",
+   "iso3": "PSE",
+   "m49": "275",
+   "name_en": "State of Palestine",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "PT",
+   "iso3": "PRT",
+   "m49": "620",
+   "name_en": "Portugal",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "PW",
+   "iso3": "PLW",
+   "m49": "585",
+   "name_en": "Palau",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "PY",
+   "iso3": "PRY",
+   "m49": "600",
+   "name_en": "Paraguay",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "QA",
+   "iso3": "QAT",
+   "m49": "634",
+   "name_en": "Qatar",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "RE",
+   "iso3": "REU",
+   "m49": "638",
+   "name_en": "Réunion",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "RO",
+   "iso3": "ROU",
+   "m49": "642",
+   "name_en": "Romania",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "RS",
+   "iso3": "SRB",
+   "m49": "688",
+   "name_en": "Serbia",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "RU",
+   "iso3": "RUS",
+   "m49": "643",
+   "name_en": "Russian Federation",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "RW",
+   "iso3": "RWA",
+   "m49": "646",
+   "name_en": "Rwanda",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "SA",
+   "iso3": "SAU",
+   "m49": "682",
+   "name_en": "Saudi Arabia",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "SB",
+   "iso3": "SLB",
+   "m49": "090",
+   "name_en": "Solomon Islands",
+   "region": "009",
+   "sub_region": "054",
+   "intermediate": null
+  },
+  {
+   "iso2": "SC",
+   "iso3": "SYC",
+   "m49": "690",
+   "name_en": "Seychelles",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "SD",
+   "iso3": "SDN",
+   "m49": "729",
+   "name_en": "Sudan",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "SE",
+   "iso3": "SWE",
+   "m49": "752",
+   "name_en": "Sweden",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "SG",
+   "iso3": "SGP",
+   "m49": "702",
+   "name_en": "Singapore",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "SH",
+   "iso3": "SHN",
+   "m49": "654",
+   "name_en": "Saint Helena",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "SI",
+   "iso3": "SVN",
+   "m49": "705",
+   "name_en": "Slovenia",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "SJ",
+   "iso3": "SJM",
+   "m49": "744",
+   "name_en": "Svalbard and Jan Mayen Islands",
+   "region": "150",
+   "sub_region": "154",
+   "intermediate": null
+  },
+  {
+   "iso2": "SK",
+   "iso3": "SVK",
+   "m49": "703",
+   "name_en": "Slovakia",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "SL",
+   "iso3": "SLE",
+   "m49": "694",
+   "name_en": "Sierra Leone",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "SM",
+   "iso3": "SMR",
+   "m49": "674",
+   "name_en": "San Marino",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "SN",
+   "iso3": "SEN",
+   "m49": "686",
+   "name_en": "Senegal",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "SO",
+   "iso3": "SOM",
+   "m49": "706",
+   "name_en": "Somalia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "SR",
+   "iso3": "SUR",
+   "m49": "740",
+   "name_en": "Suriname",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "SS",
+   "iso3": "SSD",
+   "m49": "728",
+   "name_en": "South Sudan",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "ST",
+   "iso3": "STP",
+   "m49": "678",
+   "name_en": "Sao Tome and Principe",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "SV",
+   "iso3": "SLV",
+   "m49": "222",
+   "name_en": "El Salvador",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "013"
+  },
+  {
+   "iso2": "SX",
+   "iso3": "SXM",
+   "m49": "534",
+   "name_en": "Sint Maarten (Dutch part)",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "SY",
+   "iso3": "SYR",
+   "m49": "760",
+   "name_en": "Syrian Arab Republic",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "SZ",
+   "iso3": "SWZ",
+   "m49": "748",
+   "name_en": "Eswatini",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "018"
+  },
+  {
+   "iso2": "TC",
+   "iso3": "TCA",
+   "m49": "796",
+   "name_en": "Turks and Caicos Islands",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "TD",
+   "iso3": "TCD",
+   "m49": "148",
+   "name_en": "Chad",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "017"
+  },
+  {
+   "iso2": "TF",
+   "iso3": "ATF",
+   "m49": "260",
+   "name_en": "French Southern Territories",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "TG",
+   "iso3": "TGO",
+   "m49": "768",
+   "name_en": "Togo",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "011"
+  },
+  {
+   "iso2": "TH",
+   "iso3": "THA",
+   "m49": "764",
+   "name_en": "Thailand",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "TJ",
+   "iso3": "TJK",
+   "m49": "762",
+   "name_en": "Tajikistan",
+   "region": "142",
+   "sub_region": "143",
+   "intermediate": null
+  },
+  {
+   "iso2": "TK",
+   "iso3": "TKL",
+   "m49": "772",
+   "name_en": "Tokelau",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "TL",
+   "iso3": "TLS",
+   "m49": "626",
+   "name_en": "Timor-Leste",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "TM",
+   "iso3": "TKM",
+   "m49": "795",
+   "name_en": "Turkmenistan",
+   "region": "142",
+   "sub_region": "143",
+   "intermediate": null
+  },
+  {
+   "iso2": "TN",
+   "iso3": "TUN",
+   "m49": "788",
+   "name_en": "Tunisia",
+   "region": "002",
+   "sub_region": "015",
+   "intermediate": null
+  },
+  {
+   "iso2": "TO",
+   "iso3": "TON",
+   "m49": "776",
+   "name_en": "Tonga",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "TR",
+   "iso3": "TUR",
+   "m49": "792",
+   "name_en": "Türkiye",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "TT",
+   "iso3": "TTO",
+   "m49": "780",
+   "name_en": "Trinidad and Tobago",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "TV",
+   "iso3": "TUV",
+   "m49": "798",
+   "name_en": "Tuvalu",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "TZ",
+   "iso3": "TZA",
+   "m49": "834",
+   "name_en": "United Republic of Tanzania",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "UA",
+   "iso3": "UKR",
+   "m49": "804",
+   "name_en": "Ukraine",
+   "region": "150",
+   "sub_region": "151",
+   "intermediate": null
+  },
+  {
+   "iso2": "UG",
+   "iso3": "UGA",
+   "m49": "800",
+   "name_en": "Uganda",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "UM",
+   "iso3": "UMI",
+   "m49": "581",
+   "name_en": "United States Minor Outlying Islands",
+   "region": "009",
+   "sub_region": "057",
+   "intermediate": null
+  },
+  {
+   "iso2": "US",
+   "iso3": "USA",
+   "m49": "840",
+   "name_en": "United States of America",
+   "region": "019",
+   "sub_region": "021",
+   "intermediate": null
+  },
+  {
+   "iso2": "UY",
+   "iso3": "URY",
+   "m49": "858",
+   "name_en": "Uruguay",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "UZ",
+   "iso3": "UZB",
+   "m49": "860",
+   "name_en": "Uzbekistan",
+   "region": "142",
+   "sub_region": "143",
+   "intermediate": null
+  },
+  {
+   "iso2": "VA",
+   "iso3": "VAT",
+   "m49": "336",
+   "name_en": "Holy See",
+   "region": "150",
+   "sub_region": "039",
+   "intermediate": null
+  },
+  {
+   "iso2": "VC",
+   "iso3": "VCT",
+   "m49": "670",
+   "name_en": "Saint Vincent and the Grenadines",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "VE",
+   "iso3": "VEN",
+   "m49": "862",
+   "name_en": "Venezuela (Bolivarian Republic of)",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "005"
+  },
+  {
+   "iso2": "VG",
+   "iso3": "VGB",
+   "m49": "092",
+   "name_en": "British Virgin Islands",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "VI",
+   "iso3": "VIR",
+   "m49": "850",
+   "name_en": "United States Virgin Islands",
+   "region": "019",
+   "sub_region": "419",
+   "intermediate": "029"
+  },
+  {
+   "iso2": "VN",
+   "iso3": "VNM",
+   "m49": "704",
+   "name_en": "Viet Nam",
+   "region": "142",
+   "sub_region": "035",
+   "intermediate": null
+  },
+  {
+   "iso2": "VU",
+   "iso3": "VUT",
+   "m49": "548",
+   "name_en": "Vanuatu",
+   "region": "009",
+   "sub_region": "054",
+   "intermediate": null
+  },
+  {
+   "iso2": "WF",
+   "iso3": "WLF",
+   "m49": "876",
+   "name_en": "Wallis and Futuna Islands",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "WS",
+   "iso3": "WSM",
+   "m49": "882",
+   "name_en": "Samoa",
+   "region": "009",
+   "sub_region": "061",
+   "intermediate": null
+  },
+  {
+   "iso2": "YE",
+   "iso3": "YEM",
+   "m49": "887",
+   "name_en": "Yemen",
+   "region": "142",
+   "sub_region": "145",
+   "intermediate": null
+  },
+  {
+   "iso2": "YT",
+   "iso3": "MYT",
+   "m49": "175",
+   "name_en": "Mayotte",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "ZA",
+   "iso3": "ZAF",
+   "m49": "710",
+   "name_en": "South Africa",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "018"
+  },
+  {
+   "iso2": "ZM",
+   "iso3": "ZMB",
+   "m49": "894",
+   "name_en": "Zambia",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  },
+  {
+   "iso2": "ZW",
+   "iso3": "ZWE",
+   "m49": "716",
+   "name_en": "Zimbabwe",
+   "region": "002",
+   "sub_region": "202",
+   "intermediate": "014"
+  }
+ ]
+}

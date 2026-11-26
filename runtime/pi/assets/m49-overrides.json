@@ -1,0 +1,12 @@
+{
+ "schema_version": 1,
+ "note": "Knowledge-group decisions over m49-regions.json, as data: a country or area that a page groups by M49 sub-region in another sub-region than the UN's, with the reason. An entry applies only when, among the places a page groups, the country would otherwise be the only one of its own M49 sub-region (when_alone): with others of that sub-region beside it the UN's grouping stands. A page that moves a country says so in its notes (the move is handed on with the groups: the country, the UN's sub-region and the one it was placed in). Read by next_knowledge.rs (M49Groups) only.",
+ "overrides": [
+  {
+   "iso3": "CYP",
+   "sub_region": "039",
+   "when_alone": true,
+   "reason": "Cyprus is an EU member state that M49 places in Western Asia; a page grouping EU members by European sub-region places it with Southern Europe and says so (decided 2026-11-23)."
+  }
+ ]
+}

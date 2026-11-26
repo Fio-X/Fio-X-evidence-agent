@@ -289,8 +289,10 @@ pub const HEADLINES: [(Finding, &str, &str); 8] = [
 ];
 
 /// A level headline when its times do not hold (the other is not above 0, 11-07: a page with a value below 0): the finding said
-/// without a ratio, as the rise's and the fall's are, unscoped then scoped.
-pub const LEVEL_PLAIN_HEADLINE: (&str, &str) = ("{name}最高", "{name}{set}居首");
+/// without a ratio, as the rise's and the fall's are, unscoped then scoped. Since 11-22 the unscoped one names the value
+/// too, in the first-n page's reviewed words: the name alone stated no number and no verb, the page-good item a headline
+/// is held to (11 of round 18's 25 pages below 4/4).
+pub const LEVEL_PLAIN_HEADLINE: (&str, &str) = ("{name}居首，为{value}", "{name}{set}居首");
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
 /// drafted from the first chart of one of these forms (next_page lead), so the page never describes a chart it does not draw;

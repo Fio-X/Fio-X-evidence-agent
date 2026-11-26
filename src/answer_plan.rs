@@ -242,6 +242,11 @@ const CHANGE_ZH: [&str; 16] = [
 ];
 const LOCATION_ZH: [&str; 3] = ["地图", "地理分布", "分布在哪"];
 const DISTRIBUTION_ZH: [&str; 2] = ["分布", "差异多大"];
+/// The second place at the top or at the bottom a question compares with (asks_second).
+const SECOND_HIGH_ZH: [&str; 5] = ["第二高", "第二多", "第二大", "第二快", "次高"];
+/// A second place named with no end: the end the question asks about (the bottom's when it asks for the lowest).
+const SECOND_ANY_ZH: [&str; 2] = ["第二名", "第二位"];
+const SECOND_LOW_ZH: [&str; 5] = ["倒数第二", "第二低", "第二少", "第二小", "次低"];
 const MAX_ZH: [&str; 10] = [
     "最高", "最多", "最大", "最快", "最长", "最贵", "最富", "领先", "居首", "第一",
 ];
@@ -271,41 +276,69 @@ fn plain(question: &str) -> String {
     q
 }
 
-/// The first count after 前 or 后 (前五, 前 3), as in a top or bottom n.
-fn count_after(q: &str, mark: char) -> Option<usize> {
-    let chars: Vec<char> = q.chars().collect();
+/// The count a question's characters spell from `at` on (3, the numeral twelve, the word for two): its digits or its Chinese numerals up to ninety-nine,
+/// with the number of characters it took; None when no count starts there.
+fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
     let digit = |c: char| {
         "零一二三四五六七八九"
             .find(c)
             .map(|i| i / 3)
             .or((c == '两').then_some(2))
     };
-    for (i, c) in chars.iter().enumerate() {
-        if *c != mark {
-            continue;
-        }
-        let rest: String = chars[i + 1..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c))
-            .collect();
-        if rest.is_empty() {
-            continue;
-        }
-        if let Ok(n) = rest.parse::<usize>() {
-            return Some(n);
-        }
-        let r: Vec<char> = rest.chars().collect();
-        let n = match r.as_slice() {
-            ['十'] => Some(10),
-            [a] => digit(*a),
-            ['十', b] => digit(*b).map(|b| 10 + b),
-            _ => None,
-        };
-        if n.is_some() {
-            return n;
-        }
+    let rest: String = chars
+        .get(at..)?
+        .iter()
+        .take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c))
+        .collect();
+    let len = rest.chars().count();
+    if len == 0 {
+        return None;
     }
-    None
+    if let Ok(n) = rest.parse::<usize>() {
+        return Some((n, len));
+    }
+    let r: Vec<char> = rest.chars().collect();
+    match r.as_slice() {
+        ['十'] => Some(10),
+        [a] => digit(*a),
+        ['十', b] => digit(*b).map(|b| 10 + b),
+        [a, '十'] => digit(*a).map(|a| a * 10),
+        [a, '十', b] => digit(*a).zip(digit(*b)).map(|(a, b)| a * 10 + b),
+        _ => None,
+    }
+    .map(|n| (n, len))
+}
+
+/// The first count after the Chinese word for "top" or "bottom" (top five, top 3), as in a top or bottom n.
+fn count_after(q: &str, mark: char) -> Option<usize> {
+    let chars: Vec<char> = q.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c == mark)
+        .find_map(|(i, _)| count_at(&chars, i + 1).map(|(n, _)| n))
+}
+
+/// The count right after a highest or lowest word, with a counter after it (the highest three, the lowest five, the slowest 3,
+/// each with its counter word): the first n at one end, and whether it is the low end. A count without a counter (the
+/// highest in 2023, the number followed by the word for year) is not one.
+fn count_after_extreme(q: &str) -> Option<(usize, bool)> {
+    let chars: Vec<char> = q.chars().collect();
+    let ends = MAX_ZH
+        .iter()
+        .map(|w| (w, false))
+        .chain(MIN_ZH.iter().map(|w| (w, true)));
+    ends.filter_map(|(w, low)| {
+        q.find(w)
+            .map(|b| (q[..b].chars().count() + w.chars().count(), low))
+    })
+    .find_map(|(at, low)| {
+        let at = at + usize::from(chars.get(at) == Some(&'的'));
+        let (n, len) = count_at(&chars, at)?;
+        "个名位国家"
+            .contains(*chars.get(at + len)?)
+            .then_some((n, low))
+    })
 }
 
 /// The relation a question asks, by its words, in a fixed order: a line or catching up first, then a flow, the parts of a
@@ -346,9 +379,55 @@ pub fn asks_lowest(question: &str) -> bool {
     )
 }
 
+/// The first n at one end a question asks for (the first three, the highest five, the last three from the bottom, the lowest five), by its words: the focus of its
+/// relation is Top(n) or Bottom(n), with whether it is the low end. Anything else (the highest one, both ends, a change): None.
+pub fn asks_top(question: &str) -> Option<(usize, bool)> {
+    match focus(question, relation(question), None) {
+        Focus::Top(n) => Some((n, false)),
+        Focus::Bottom(n) => Some((n, true)),
+        _ => None,
+    }
+}
+
+/// Whether the question asks how its places fell (how much did each fall, which fell the most, how much did it decrease): a change asked (its relation Change) with a
+/// falling word (DOWN_ZH) and no rising word (UP_ZH), by its words. A change page leads with the largest fall then, not with a
+/// rise that ties or outnumbers the falls (dev e11, rounds 17-19: "how much did each fall" over two rises and two falls led with a rise).
+pub fn asks_fall(question: &str) -> bool {
+    let q = plain(question);
+    relation(question) == Rel::Change && any(&q, &DOWN_ZH) && !any(&q, &UP_ZH)
+}
+
+/// Whether the question asks where one place stands in its ranking (what rank, ranks at, position): the focus of its relation is Position.
+pub fn asks_position(question: &str) -> bool {
+    matches!(
+        focus(question, relation(question), None),
+        Focus::Position(_)
+    )
+}
+
 /// Whether the question asks for the total of its places (合计, 总共: the relation Magnitude, its focus Total), by its words.
 pub fn asks_total(question: &str) -> bool {
     relation(question) == Rel::Magnitude
+}
+
+/// The second place a question compares its end with, by its words (SECOND_HIGH_ZH: the top's; SECOND_LOW_ZH: the
+/// bottom's; SECOND_ANY_ZH: the end the question asks about, the bottom's when it asks for the lowest, asks_lowest):
+/// Some(false) at the top, Some(true) at the bottom. None when it names no second place, or when it asks for
+/// the first n at one end (asks_top: that page draws only those n and says its end against its neighbour).
+pub fn asks_second(question: &str) -> Option<bool> {
+    if asks_top(question).is_some() {
+        return None;
+    }
+    let q = plain(question);
+    if any(&q, &SECOND_LOW_ZH) {
+        Some(true)
+    } else if any(&q, &SECOND_HIGH_ZH) {
+        Some(false)
+    } else if any(&q, &SECOND_ANY_ZH) {
+        Some(asks_lowest(question))
+    } else {
+        None
+    }
 }
 
 /// What the sentence asserts, by the question's words, within the relation `rel`; `first_place` is the first place word,
@@ -386,6 +465,12 @@ pub fn focus(question: &str, rel: Rel, first_place: Option<&str>) -> Focus {
                 count_after(&q, '后').filter(|_| q.contains("排名后") || q.contains("倒数"))
             {
                 Focus::Bottom(n)
+            } else if let Some((n, low)) = count_after_extreme(&q) {
+                if low {
+                    Focus::Bottom(n)
+                } else {
+                    Focus::Top(n)
+                }
             } else if max && min || q.contains("高低") && !max && !min {
                 Focus::MaxMin
             } else if min {
@@ -829,6 +914,46 @@ mod tests {
         }
     }
 
+    /// A question asks for the first n at one end by "the first n", "the last n from the bottom", or a highest or lowest word with a count and a counter
+    /// after it (sentences written for the test, in the bank's wordings): not for the highest or lowest one, both ends, a
+    /// year after the word, or a change.
+    #[test]
+    fn a_question_asks_for_the_first_n_at_one_end() {
+        for (q, want) in [
+            ("2024 年，经合组织国家里失业率最高的三个是谁？", (3, false)),
+            (
+                "二十国集团里，2023 年每百人移动电话签约数最高的五个是谁？",
+                (5, false),
+            ),
+            (
+                "东盟十国 2024 年的实际经济增长率，最慢的三个是谁？",
+                (3, true),
+            ),
+            (
+                "2023 年欧盟各国人均 GDP（按购买力标准）最低的五个是谁？",
+                (5, true),
+            ),
+            ("2024 年欧盟各国高等教育学历的比例，前五是谁？", (5, false)),
+            ("人均 GDP 排名倒数后五的国家是哪些？", (5, true)),
+            ("欧盟失业率最高的 12 个国家", (12, false)),
+            ("欧盟失业率最高的十二个国家", (12, false)),
+        ] {
+            assert_eq!(asks_top(q), Some(want), "{q}");
+        }
+        for q in [
+            "2024 年欧盟哪个国家的失业率最高？",
+            "欧盟各国失业率谁最高谁最低？",
+            "失业率最高的 2023 年是哪年？",
+            "2015 年到 2023 年，欧盟各国温室气体排放降幅最大的五个是谁？",
+            "东盟各国人均 GDP 排名",
+        ] {
+            assert_eq!(asks_top(q), None, "{q}");
+        }
+        assert!(asks_lowest(
+            "东盟十国 2024 年的实际经济增长率，最慢的三个是谁？"
+        ));
+    }
+
     /// A question asks for the total when its relation is Magnitude (合计, 总共; sentences written for the test): not when it
     /// asks a ranking, the lowest or a change.
     #[test]
@@ -845,6 +970,72 @@ mod tests {
             "2015 年到 2024 年哪国失业率降得最多？",
         ] {
             assert!(!asks_total(q), "{q}");
+        }
+    }
+
+    /// A question that asks where one place stands in its ranking (what rank it is) is read as such; the highest, a first n, a
+    /// change, a total, or a ranking with no place asked is not.
+    #[test]
+    fn a_question_asking_where_a_place_stands_is_read_from_its_words() {
+        for q in [
+            "2024 年人口最多的十个国家里，某国排第几？",
+            "欧盟各国失业率，某国排第几？",
+            "东盟各国人均 GDP，某国排在第几位？",
+        ] {
+            assert!(asks_position(q), "{q}");
+        }
+        for q in [
+            "2024 年人口最多的十个国家是哪些？",
+            "欧盟各国失业率谁最高？",
+            "东盟各国人均 GDP 最高的三个是谁？",
+            "2015 年到 2024 年哪国失业率降得最多？",
+            "东盟各国人口合计多少？",
+        ] {
+            assert!(!asks_position(q), "{q}");
+        }
+    }
+
+    /// A change asked with a falling word and no rising word asks how its places fell (dev e11 over rounds 17-19, n38, vc5);
+    /// a rise, both ways, a level, or a falling word inside a measure's name (precipitation, whose Chinese name holds the word for fall) is not.
+    #[test]
+    fn a_question_asking_how_places_fell_is_read_from_its_words() {
+        for q in [
+            "2010 年以来，中国、印度、印尼、泰国的 PM2.5 年均浓度各降了多少？",
+            "2000 年到 2023 年，撒哈拉以南非洲、南亚、中东和北非的总和生育率各降了多少？",
+            "2015 年到 2023 年，欧盟各国温室气体排放降幅最大的五个是谁？",
+            "2015 年到 2024 年哪国失业率降得最多？",
+        ] {
+            assert!(asks_fall(q), "{q}");
+        }
+        for q in [
+            "2010 年到 2020 年各国人口各增长了多少？",
+            "2010 年到 2024 年各国房价的涨跌",
+            "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？",
+            "欧盟各国失业率最新排名",
+            "2024 年欧盟各国年降水量最多的是哪国？",
+        ] {
+            assert!(!asks_fall(q), "{q}");
+        }
+    }
+
+    /// A question that compares its end with the second place (sentences written for the test): the top's or the bottom's,
+    /// and none for a question naming no second place or asking for the first n.
+    #[test]
+    fn a_question_names_the_second_place_it_compares_with() {
+        for (q, low) in [
+            ("2023 年东盟谁的出口额最高？比第二高的多多少？", false),
+            ("北欧五国里人均 GDP 第二名是谁，和第一差多少？", false),
+            ("欧盟哪国失业率最低？比倒数第二的低多少？", true),
+            ("2024 年欧盟哪国失业率最低？第二名是谁？", true),
+        ] {
+            assert_eq!(asks_second(q), Some(low), "{q}");
+        }
+        for q in [
+            "2024 年欧盟哪个国家的失业率最低？",
+            "七国集团研发投入最高的三个国家",
+            "海合会六国 GDP 合计是多少？",
+        ] {
+            assert_eq!(asks_second(q), None, "{q}");
         }
     }
 

@@ -163,9 +163,9 @@
      "name": "width",
      "default": 560,
      "min": 240,
-     "max": 720,
+     "max": 1140,
      "step": 10,
-     "what": "width of the big numbers' box beside the title"
+     "what": "width of the big numbers' box beside the title (a story page spans its page)"
     },
     {
      "name": "cols",
@@ -174,6 +174,14 @@
      "max": 3,
      "step": 1,
      "what": "cells in a row"
+    },
+    {
+     "name": "accent_n",
+     "default": 1,
+     "min": 0,
+     "max": 3,
+     "step": 1,
+     "what": "how many of the numbers, from the first, are in the accent; the others are in ink (one focal point)"
     }
    ],
    "eats": [
@@ -455,6 +463,72 @@
    ],
    "eats": []
   },
+  "change_dots": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 22,
+     "min": 18,
+     "max": 48,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 4.5,
+     "min": 3,
+     "max": 8,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "line_w",
+     "default": 3,
+     "min": 1.5,
+     "max": 6,
+     "step": 0.5,
+     "what": "connector width px"
+    },
+    {
+     "name": "sort",
+     "default": "change",
+     "options": [
+      "change",
+      "given"
+     ],
+     "what": "row order: the change from the start to the end, largest rise first, or as given"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "cities": {
    "reserve": false,
    "knobs": [
@@ -509,6 +583,121 @@
      ],
      "what": "color"
     }
+   ]
+  },
+  "dot_strip": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 40,
+     "min": 24,
+     "max": 80,
+     "step": 1,
+     "what": "distance between the two period rows, or two group rows, in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 4.5,
+     "min": 2.5,
+     "max": 7,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "periods",
+     "default": 1,
+     "min": 1,
+     "max": 2,
+     "step": 1,
+     "what": "period rows drawn: 1 the later period only, 2 the earlier period as a second row above it"
+    },
+    {
+     "name": "ghost_period",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "with two period rows: on draws the earlier dots hollow, each joined to its later dot by a thin line; off draws them grey with no join"
+    },
+    {
+     "name": "refs",
+     "default": "all",
+     "options": [
+      "all",
+      "target",
+      "mean",
+      "none"
+     ],
+     "what": "the reference marks drawn: every one the data gives, the target only, the members' average only, or none"
+    },
+    {
+     "name": "lead_set",
+     "default": "both",
+     "options": [
+      "top",
+      "bottom",
+      "both",
+      "given"
+     ],
+     "what": "the dots named on leaders: the k highest, the k lowest, both, or the data's lead list"
+    },
+    {
+     "name": "lead_k",
+     "default": 3,
+     "min": 1,
+     "max": 6,
+     "step": 1,
+     "what": "k of lead_set top, bottom and both"
+    },
+    {
+     "name": "leader_side",
+     "default": "auto",
+     "options": [
+      "auto",
+      "left",
+      "right",
+      "alternate"
+     ],
+     "what": "the side of its leader a label stands on: auto left on the axis's upper half and right on its lower half, or always left, always right, or turn about"
+    },
+    {
+     "name": "levels",
+     "default": 4,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "label tiers tried on each side of the strip before refusing"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
    ]
   },
   "dumbbell": {
@@ -607,6 +796,82 @@
      "what": "arrow color"
     }
    ]
+  },
+  "event_chain": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "panel_title_size",
+     "default": 14,
+     "min": 11,
+     "max": 18,
+     "step": 0.5,
+     "what": "a panel's name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 110,
+     "min": 60,
+     "max": 240,
+     "step": 5,
+     "what": "a panel's plot height in px"
+    },
+    {
+     "name": "gap",
+     "default": 44,
+     "min": 28,
+     "max": 96,
+     "step": 2,
+     "what": "space between two panels in px (the band's)"
+    },
+    {
+     "name": "min_panel",
+     "default": 150,
+     "min": 110,
+     "max": 300,
+     "step": 10,
+     "what": "the narrowest panel drawn; a narrower board refuses"
+    },
+    {
+     "name": "line_w",
+     "default": 2.5,
+     "min": 1.5,
+     "max": 4,
+     "step": 0.5,
+     "what": "a line panel's line width in px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the panel drawn in the accent; none = the first panel"
+    }
+   ],
+   "eats": []
   },
   "events": {
    "reserve": false,
@@ -737,6 +1002,153 @@
      "step": 2,
      "what": "estimated callout height (used to pick the gap)"
     }
+   ]
+  },
+  "gap_axis": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "big_size",
+     "default": 22,
+     "min": 14,
+     "max": 32,
+     "step": 1,
+     "what": "size px of the now and target values"
+    },
+    {
+     "name": "dot_r",
+     "default": 5,
+     "min": 3,
+     "max": 8,
+     "step": 0.5,
+     "what": "a mark's dot radius px (now and target are drawn larger)"
+    },
+    {
+     "name": "band_h",
+     "default": 14,
+     "min": 8,
+     "max": 24,
+     "step": 1,
+     "what": "height px of the band and of the gap box on the axis"
+    },
+    {
+     "name": "levels",
+     "default": 3,
+     "min": 1,
+     "max": 5,
+     "step": 1,
+     "what": "label rows tried on each side of the axis before refusing"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
+  "glyph_row": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 360,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "shape",
+     "default": "circle",
+     "options": [
+      "circle",
+      "semicircle"
+     ],
+     "what": "the glyph: a circle, or a half disc standing on the base line"
+    },
+    {
+     "name": "max_d",
+     "default": 110,
+     "min": 40,
+     "max": 220,
+     "step": 2,
+     "what": "diameter px of the largest glyph (the largest value, or the reference when it is larger)"
+    },
+    {
+     "name": "accent_one",
+     "default": "",
+     "codes": true,
+     "what": "the one glyph in the accent: empty = the data's accent; max, min, none, or an item's code"
+    },
+    {
+     "name": "value_inside",
+     "default": "auto",
+     "options": [
+      "auto",
+      "inside",
+      "below"
+     ],
+     "what": "where a value prints: inside when it fits else below, always inside (refuses), always below"
+    },
+    {
+     "name": "gap",
+     "default": 16,
+     "min": 6,
+     "max": 48,
+     "step": 1,
+     "what": "space px between two glyphs' slots"
+    },
+    {
+     "name": "sort",
+     "default": "given",
+     "options": [
+      "given",
+      "value"
+     ],
+     "what": "item order: as given, or by value with the largest first"
+    }
+   ],
+   "eats": [
+    "one_unit"
    ]
   },
   "illus": {
@@ -1054,6 +1466,71 @@
     "one_unit"
    ]
   },
+  "member_map": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "margin",
+     "default": 150,
+     "min": 100,
+     "max": 260,
+     "step": 10,
+     "what": "width of each call-out column in px"
+    },
+    {
+     "name": "simplify",
+     "default": 2,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "keep every n-th point of a coastline"
+    },
+    {
+     "name": "line_h",
+     "default": 40,
+     "min": 30,
+     "max": 70,
+     "step": 2,
+     "what": "distance between two call-outs in px"
+    },
+    {
+     "name": "max_h",
+     "default": 0.6,
+     "min": 0.3,
+     "max": 1.0,
+     "step": 0.05,
+     "what": "the map's tallest height as a share of the picture's width"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "minimaps": {
    "reserve": false,
    "knobs": []
@@ -1136,6 +1613,76 @@
    "knobs": [],
    "eats": [
     "hub_origin",
+    "one_unit"
+   ]
+  },
+  "pair_bars": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 13,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "head_size",
+     "default": 15,
+     "min": 12,
+     "max": 20,
+     "step": 0.5,
+     "what": "the two places' names size px"
+    },
+    {
+     "name": "width",
+     "default": 880,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 56,
+     "min": 32,
+     "max": 80,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "bar_h",
+     "default": 24,
+     "min": 16,
+     "max": 36,
+     "step": 1,
+     "what": "a track's height in px"
+    },
+    {
+     "name": "gap",
+     "default": 40,
+     "min": 16,
+     "max": 80,
+     "step": 2,
+     "what": "space between the two columns in px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the row whose ratio is bold; none = no row"
+    }
+   ],
+   "eats": [
     "one_unit"
    ]
   },
@@ -1230,6 +1777,71 @@
     "one_place"
    ]
   },
+  "rank_slope": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 20,
+     "min": 16,
+     "max": 40,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 3,
+     "min": 2,
+     "max": 6,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "line_w",
+     "default": 1.2,
+     "min": 0.8,
+     "max": 3,
+     "step": 0.1,
+     "what": "a plain line's width in px"
+    },
+    {
+     "name": "mark_w",
+     "default": 2.6,
+     "min": 1.5,
+     "max": 5,
+     "step": 0.1,
+     "what": "an accent line's width in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "rankbar": {
    "reserve": false,
    "knobs": [
@@ -1264,6 +1876,22 @@
      "max": 40,
      "step": 1,
      "what": "rows kept (0 = all); the rest merge into the last other row (needs other_row)"
+    },
+    {
+     "name": "fold_over",
+     "default": 20,
+     "min": 0,
+     "max": 80,
+     "step": 1,
+     "what": "a rank of more rows than this folds when the spec gives omit words (0 = never)"
+    },
+    {
+     "name": "fold_to",
+     "default": 16,
+     "min": 8,
+     "max": 40,
+     "step": 1,
+     "what": "rows a folded rank keeps: the highest ones, the highlighted row and the lowest 5"
     },
     {
      "name": "sort",
@@ -1380,6 +2008,60 @@
    "eats": [
     "monthly_companion"
    ]
+  },
+  "risk_notes": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 14,
+     "min": 11,
+     "max": 18,
+     "step": 0.5,
+     "what": "item size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 18,
+     "min": 13,
+     "max": 26,
+     "step": 1,
+     "what": "title size px"
+    },
+    {
+     "name": "width",
+     "default": 640,
+     "min": 360,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "item_lines",
+     "default": 3,
+     "min": 1,
+     "max": 5,
+     "step": 1,
+     "what": "lines an item may take; more refuses"
+    },
+    {
+     "name": "item_gap",
+     "default": 8,
+     "min": 2,
+     "max": 20,
+     "step": 1,
+     "what": "space between two items in px"
+    },
+    {
+     "name": "bullet",
+     "default": 2.5,
+     "min": 1.5,
+     "max": 4,
+     "step": 0.5,
+     "what": "a bullet's radius in px"
+    }
+   ],
+   "eats": []
   },
   "route_names": {
    "reserve": false,
@@ -1656,6 +2338,97 @@
    "reserve": false,
    "knobs": []
   },
+  "small_multiples": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "cols",
+     "default": 0,
+     "min": 0,
+     "max": 6,
+     "step": 1,
+     "what": "cells in a row; 0 = the count 3 to 6 that leaves the fewest empty places in the last row (4 on a tie)"
+    },
+    {
+     "name": "plot_h",
+     "default": 64,
+     "min": 40,
+     "max": 160,
+     "step": 4,
+     "what": "a cell's plot height in px"
+    },
+    {
+     "name": "max_cells",
+     "default": 12,
+     "min": 6,
+     "max": 12,
+     "step": 1,
+     "what": "cells drawn, the first of the order"
+    },
+    {
+     "name": "sort",
+     "default": "value",
+     "options": [
+      "value",
+      "change",
+      "given"
+     ],
+     "what": "cell order: the last value high to low, the change over the span, or as given"
+    },
+    {
+     "name": "line_w",
+     "default": 1.8,
+     "min": 1,
+     "max": 3.5,
+     "step": 0.1,
+     "what": "a cell's line width in px"
+    },
+    {
+     "name": "gap",
+     "default": 22,
+     "min": 10,
+     "max": 48,
+     "step": 2,
+     "what": "space between two cells in px"
+    },
+    {
+     "name": "min_cell",
+     "default": 150,
+     "min": 110,
+     "max": 300,
+     "step": 10,
+     "what": "the narrowest cell drawn; a narrower board refuses"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "stack_area": {
    "reserve": false,
    "knobs": []
@@ -1793,6 +2566,78 @@
    "reserve": false,
    "knobs": []
   },
+  "story_layout": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "layout",
+     "default": "side",
+     "options": [
+      "side",
+      "stack"
+     ],
+     "what": "titled sections: words beside the picture, or over it"
+    },
+    {
+     "name": "text_share",
+     "default": 0.34,
+     "min": 0.25,
+     "max": 0.5,
+     "step": 0.01,
+     "what": "share of the page's width the words' column takes beside a picture"
+    },
+    {
+     "name": "gutter",
+     "default": 36,
+     "min": 16,
+     "max": 64,
+     "step": 2,
+     "what": "space between the words and the picture, or between two paired pictures, in px"
+    },
+    {
+     "name": "pair",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "two narrow pictures in a row"
+    },
+    {
+     "name": "notes",
+     "default": 2,
+     "min": 0,
+     "max": 3,
+     "step": 1,
+     "what": "short notes beside a chart's words: a bold number and what it is, a leader towards the picture"
+    },
+    {
+     "name": "note_size",
+     "default": 14,
+     "min": 12,
+     "max": 16,
+     "step": 2,
+     "what": "a note's words in px (its number 2 px larger)"
+    },
+    {
+     "name": "lead",
+     "default": 28,
+     "min": 12,
+     "max": 80,
+     "step": 4,
+     "what": "a note's leader towards the picture, in px"
+    },
+    {
+     "name": "legend",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "the 'how to read this page' block under the thesis"
+    }
+   ]
+  },
   "strip": {
    "reserve": false,
    "knobs": [
@@ -1825,13 +2670,324 @@
     "monthly_companion"
    ]
   },
+  "target_path": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 320,
+     "min": 160,
+     "max": 600,
+     "step": 10,
+     "what": "plot height in px"
+    },
+    {
+     "name": "end_size",
+     "default": 14,
+     "min": 11,
+     "max": 20,
+     "step": 0.5,
+     "what": "size px of the first and last value of the past line"
+    },
+    {
+     "name": "line_w",
+     "default": 3,
+     "min": 1.5,
+     "max": 5,
+     "step": 0.5,
+     "what": "the past line's width in px"
+    },
+    {
+     "name": "run_w",
+     "default": 1.6,
+     "min": 0.8,
+     "max": 3,
+     "step": 0.1,
+     "what": "a pace's dashed line width in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "text": {
    "reserve": false,
    "knobs": []
   },
+  "thesis_claims": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 15,
+     "min": 11,
+     "max": 20,
+     "step": 0.5,
+     "what": "lead and body size px (11 is the page floor)"
+    },
+    {
+     "name": "answer_size",
+     "default": 24,
+     "min": 16,
+     "max": 36,
+     "step": 1,
+     "what": "the answer's size px"
+    },
+    {
+     "name": "num_size",
+     "default": 30,
+     "min": 18,
+     "max": 48,
+     "step": 1,
+     "what": "a claim's number size px"
+    },
+    {
+     "name": "section_size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "the section pointer's size px"
+    },
+    {
+     "name": "width",
+     "default": 760,
+     "min": 400,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "answer_lines",
+     "default": 2,
+     "min": 1,
+     "max": 3,
+     "step": 1,
+     "what": "lines the answer may take; more refuses"
+    },
+    {
+     "name": "head_lines",
+     "default": 1,
+     "min": 1,
+     "max": 2,
+     "step": 1,
+     "what": "lines a lead may take; more refuses"
+    },
+    {
+     "name": "body_lines",
+     "default": 3,
+     "min": 1,
+     "max": 5,
+     "step": 1,
+     "what": "lines a body may take; more refuses"
+    },
+    {
+     "name": "pad",
+     "default": 14,
+     "min": 6,
+     "max": 28,
+     "step": 1,
+     "what": "space above and below a claim's texts, inside its block, in px"
+    },
+    {
+     "name": "accent_n",
+     "default": 1,
+     "min": 0,
+     "max": 4,
+     "step": 1,
+     "what": "how many claims, from the first, have their number in the accent; the others are in ink (one focal point)"
+    }
+   ],
+   "eats": []
+  },
+  "tile_map": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 300,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "gap",
+     "default": 3,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "space between two tiles in px"
+    },
+    {
+     "name": "tile_h",
+     "default": 44,
+     "min": 36,
+     "max": 80,
+     "step": 2,
+     "what": "a tile's height in px"
+    },
+    {
+     "name": "max_w",
+     "default": 84,
+     "min": 60,
+     "max": 200,
+     "step": 2,
+     "what": "the widest a tile is drawn in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "timeline": {
    "reserve": false,
    "knobs": []
+  },
+  "unit_grid": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "count_size",
+     "default": 24,
+     "min": 16,
+     "max": 40,
+     "step": 1,
+     "what": "the count's size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 300,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "cols",
+     "default": 9,
+     "min": 3,
+     "max": 30,
+     "step": 1,
+     "what": "glyphs in a row"
+    },
+    {
+     "name": "glyph",
+     "default": "cell",
+     "options": [
+      "cell",
+      "turbine"
+     ],
+     "what": "a member's glyph: a rounded square, or a small turbine, a tower and three blades (flag mode only)"
+    },
+    {
+     "name": "sort",
+     "default": "given",
+     "options": [
+      "given",
+      "value",
+      "flag_first"
+     ],
+     "what": "glyph order: as given, by value highest first, or the lit ones first (then by value)"
+    },
+    {
+     "name": "accent_when",
+     "default": "flag",
+     "options": [
+      "flag",
+      "none"
+     ],
+     "what": "the lit glyphs in the accent, or in ink (no accent in the picture)"
+    },
+    {
+     "name": "cell",
+     "default": 40,
+     "min": 16,
+     "max": 80,
+     "step": 2,
+     "what": "a glyph's size in px"
+    },
+    {
+     "name": "gap",
+     "default": 16,
+     "min": 2,
+     "max": 48,
+     "step": 1,
+     "what": "space between two glyphs in px"
+    },
+    {
+     "name": "show_names",
+     "default": "auto",
+     "options": [
+      "auto",
+      "all",
+      "lit"
+     ],
+     "what": "names under every glyph when they all fit (auto; all refuses when not), or only under the lit ones"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
   },
   "waffle": {
    "reserve": false,
@@ -1960,6 +3116,64 @@
     "one_unit",
     "composition_groups"
    ]
+  },
+  "winners_losers": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 13,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name and column title size px"
+    },
+    {
+     "name": "value_size",
+     "default": 18,
+     "min": 12,
+     "max": 26,
+     "step": 1,
+     "what": "before and after value size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "gutter",
+     "default": 48,
+     "min": 24,
+     "max": 96,
+     "step": 4,
+     "what": "space between the two columns in px"
+    },
+    {
+     "name": "accent",
+     "default": "up",
+     "options": [
+      "up",
+      "down",
+      "none"
+     ],
+     "what": "the column whose rule and after-values take the accent"
+    }
+   ],
+   "eats": [
+    "one_unit"
+   ]
   }
  },
  "groups": {
@@ -2011,7 +3225,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "change": [
    "bignums",
@@ -2028,7 +3257,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "flow": [
    "bignums",
@@ -2045,7 +3289,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "composition": [
    "bignums",
@@ -2062,7 +3321,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "ranked_bars": [
    "bignums",
@@ -2079,7 +3353,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "change_bars": [
    "bignums",
@@ -2096,7 +3385,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "block_ranks": [
    "bignums",
@@ -2113,7 +3417,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "composition_steps": [
    "bignums",
@@ -2130,7 +3449,22 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
   ],
   "one_line": [
    "bignums",
@@ -2147,7 +3481,41 @@
    "dumbbell",
    "waterfall",
    "waffle",
-   "stacked_area"
+   "stacked_area",
+   "gap_axis",
+   "winners_losers",
+   "event_chain",
+   "target_path",
+   "pair_bars",
+   "thesis_claims",
+   "risk_notes",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip"
+  ],
+  "page_story": [
+   "thesis_claims",
+   "gap_axis",
+   "event_chain",
+   "target_path",
+   "winners_losers",
+   "pair_bars",
+   "rankbar",
+   "small_multiples",
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
+   "unit_grid",
+   "glyph_row",
+   "dot_strip",
+   "risk_notes",
+   "bignums"
   ],
   "scmp": [
    "map",
@@ -2271,6 +3639,52 @@
    ]
   },
   {
+   "name": "page_story",
+   "layers": [
+    "bignums",
+    "thesis_claims",
+    "gap_axis",
+    "event_chain",
+    "target_path",
+    "winners_losers",
+    "pair_bars",
+    "rankbar",
+    "small_multiples",
+    "member_map",
+    "change_dots",
+    "rank_slope",
+    "tile_map",
+    "unit_grid",
+    "glyph_row",
+    "dot_strip",
+    "risk_notes"
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "two_ends",
+    "has_target"
+   ],
+   "without": {
+    "condition": "has_target",
+    "members": 8,
+    "findings": 3,
+    "relations": [
+     "Ranking"
+    ],
+    "why": "with no target: three findings of different kinds make an arc, eight members at least say who lags; a table step that kept a ranking (who lags, how far apart) holds the same years, so the arcs read it too"
+   },
+   "charts": [],
+   "picks": [],
+   "exposes": [],
+   "strip": true,
+   "opening": true,
+   "relation": "Change"
+  },
+  {
    "name": "one_line",
    "layers": [
     "line"
@@ -2300,8 +3714,6 @@
   {
    "name": "change",
    "layers": [
-    "bubbles",
-    "bubble_key",
     "bars",
     "leader_notes"
    ],
@@ -2328,12 +3740,7 @@
    "main": "bars",
    "relation": "Change",
    "external": [
-    "bubbles",
     "bars",
-    "leader_notes"
-   ],
-   "points": [
-    "bubbles",
     "leader_notes"
    ],
    "short_notes": [
@@ -2399,9 +3806,6 @@
    "relation": "Ranking",
    "external": [
     "bars",
-    "leader_notes"
-   ],
-   "points": [
     "leader_notes"
    ],
    "short_notes": [

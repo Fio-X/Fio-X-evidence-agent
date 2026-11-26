@@ -1,0 +1,82 @@
+{
+ "schema_version": 1,
+ "note": "The legal targets of the knowledge group, as data: each a number a binding EU act sets for the Union as a whole, with the Eurostat slice that measures it and the source it was read from. A page may print a target only as the registry gives it: the program checks, from the stored excerpt of the act (target-sources/), that the quoted sentence is in the excerpt, that the value phrase is in the sentence, that the number and the year in the sentence are the entry's, and that at_least/at_most match the words before the number; an entry that fails stops the registry. document_sha256 is the hash of the full act as fetched (the full file is not kept in the repository); excerpt_sha256 is the hash of the stored excerpt and is checked. slices: the tables whose rows a target is read against (dims = the table's dimensions fixed to the measure, geo and time excluded). value is the number as the act prints it, decimal point instead of the act's decimal comma. Read by next_targets.rs only. publisher_zh, source_zh, source_ref: the target's source as a page footer prints it (publisher_zh + space + source_zh, the line next_targets gives as source_line). source_zh is the word for the act and then source_ref, the act and clause numbers; source_ref is the only place a digit stands, and it ends the line, so the leaf footer marks it as one reference (a spec table id) and the page check takes it like a table id. New Chinese wording: owner review before it is printed.",
+ "targets": [
+  {
+   "id": "eu-renewables-2030",
+   "title": "EU share of renewable energy in gross final energy consumption, 2030",
+   "slices": [
+    {
+     "dataset": "nrg_ind_ren",
+     "dims": {
+      "freq": "A",
+      "nrg_bal": "REN",
+      "unit": "PC"
+     }
+    },
+    {
+     "dataset": "sdg_07_40",
+     "dims": {
+      "freq": "A",
+      "nrg_bal": "REN",
+      "unit": "PC"
+     }
+    }
+   ],
+   "geo": "EU27_2020",
+   "year": 2030,
+   "value": "42.5",
+   "unit": "PC",
+   "unit_label": "% of gross final energy consumption",
+   "publisher_zh": "欧盟",
+   "source_zh": "指令 (EU) 2018/2001 第 3 条第 1 款（经指令 (EU) 2023/2413 修订）",
+   "source_ref": "(EU) 2018/2001 第 3 条第 1 款（经指令 (EU) 2023/2413 修订）",
+   "type": "at_least",
+   "source": {
+    "act": "Directive (EU) 2023/2413 amending Directive (EU) 2018/2001",
+    "clause": "Article 1(2)(a): Article 3(1) of Directive (EU) 2018/2001 replaced",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32023L2413",
+    "fetched_at": "2026-11-22 18:45 CST",
+    "document_sha256": "96facbddb5b8c2b5ece70bb21b639758cb63dbc4e22c686803944b2412c7129c",
+    "excerpt": "32023L2413.txt",
+    "excerpt_sha256": "283a6b138af752c8fec88fd1b58febdc29ecd4428e530f5f6d244a9bd37a1f35",
+    "quote": "Member States shall collectively ensure that the share of energy from renewable sources in the Union’s gross final consumption of energy in 2030 is at least 42,5 %.",
+    "value_phrase": "at least 42,5 %"
+   }
+  },
+  {
+   "id": "eu-final-energy-2030",
+   "title": "EU final energy consumption, 2030 (Energy Efficiency Directive definition)",
+   "slices": [
+    {
+     "dataset": "nrg_ind_eff",
+     "dims": {
+      "freq": "A",
+      "nrg_bal": "FEC_EED",
+      "unit": "MTOE"
+     }
+    }
+   ],
+   "geo": "EU27_2020",
+   "year": 2030,
+   "value": "763",
+   "unit": "MTOE",
+   "unit_label": "million tonnes of oil equivalent",
+   "publisher_zh": "欧盟",
+   "source_zh": "指令 (EU) 2023/1791 第 4 条第 1 款",
+   "source_ref": "(EU) 2023/1791 第 4 条第 1 款",
+   "type": "at_most",
+   "source": {
+    "act": "Directive (EU) 2023/1791 (Energy Efficiency Directive, recast)",
+    "clause": "Article 4(1), first subparagraph",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32023L1791",
+    "fetched_at": "2026-11-22 22:49 CST",
+    "document_sha256": "bbb156c2923f32c129993d5a28cd00be46538c0f24e41c3d7e04174b1600d034",
+    "excerpt": "32023L1791.txt",
+    "excerpt_sha256": "f8e23913799f8725f8ee24778e58f9d6d7621275c81ee84ab7e8a6386f24bb66",
+    "quote": "Member States shall collectively ensure a reduction of energy consumption of at least 11,7 % in 2030 compared to the projections of the 2020 EU Reference Scenario so that the Union’s final energy consumption amounts to no more than 763 Mtoe.",
+    "value_phrase": "no more than 763 Mtoe"
+   }
+  }
+ ]
+}

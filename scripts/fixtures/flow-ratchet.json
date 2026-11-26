@@ -1,5 +1,5 @@
 {
-  "measured_at": "29e66772d8288c6ad19ef78c7b18662e35d1a214",
+  "measured_at": "ff8ec2ad2348996c7c5f5512b4cb0dfe487c5937",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -12,7 +12,7 @@
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 418
+      "kinds": 429
     }
   },
   "scanned": {
@@ -32,6 +32,7 @@
     "callouts": "knobs.json nodes",
     "change": "knobs.json groups",
     "changebars": "P0a word list",
+    "changedots": "knobs.json nodes",
     "charts": "knobs.json groups",
     "choropleth": "src/next_run.rs templates",
     "cities": "knobs.json nodes",
@@ -41,14 +42,18 @@
     "compositionsteps": "knobs.json groups",
     "distribution": "shape_registry.rs Relation",
     "dotgrid": "P0a word list",
+    "dotstrip": "knobs.json nodes",
     "dumbbell": "src/next_run.rs templates",
     "edge": "knobs.json nodes",
+    "eventchain": "knobs.json nodes",
     "events": "knobs.json nodes",
     "flow": "knobs.json groups",
     "flowlines": "runtime/nodes run.mjs NODES",
     "flowmap": "knobs.json nodes",
     "flows": "knobs.json nodes",
     "frame": "knobs.json nodes",
+    "gapaxis": "knobs.json nodes",
+    "glyphrow": "knobs.json nodes",
     "header": "next_render.rs NodeInfo",
     "heatmap": "shape_registry.rs template",
     "hero": "next_render.rs NodeInfo",
@@ -62,35 +67,47 @@
     "legend": "knobs.json nodes",
     "line": "src/next_run.rs templates",
     "map": "knobs.json nodes",
+    "membermap": "knobs.json nodes",
     "minimaps": "knobs.json nodes",
     "names": "knobs.json nodes",
     "notes": "knobs.json nodes",
     "oneline": "knobs.json groups",
+    "pagestory": "knobs.json groups",
+    "pairbars": "knobs.json nodes",
     "profile": "knobs.json nodes",
     "prose": "next_render.rs NodeInfo",
     "rankbar": "knobs.json nodes",
     "rankedbars": "knobs.json groups",
     "ranking": "shape_registry.rs Relation",
     "ranklines": "knobs.json nodes",
+    "rankslope": "knobs.json nodes",
     "ring": "knobs.json nodes",
+    "risknotes": "knobs.json nodes",
     "routenames": "knobs.json nodes",
     "routes": "knobs.json nodes",
     "sankey": "knobs.json nodes",
     "scmp": "knobs.json groups",
     "sectionhead": "knobs.json nodes",
     "slope": "knobs.json nodes",
+    "smallmultiples": "knobs.json nodes",
     "stackarea": "knobs.json nodes",
     "stacked100": "knobs.json nodes",
     "stackedarea": "knobs.json nodes",
     "stackedbar100": "src/next_run.rs templates",
     "step": "knobs.json nodes",
+    "storylayout": "knobs.json nodes",
     "strip": "knobs.json nodes",
+    "targetpath": "knobs.json nodes",
     "text": "knobs.json nodes",
+    "thesisclaims": "knobs.json nodes",
+    "tilemap": "knobs.json nodes",
     "timeline": "knobs.json nodes",
     "treemap": "P0a word list",
+    "unitgrid": "knobs.json nodes",
     "valuelabels": "next_render.rs NodeInfo",
     "waffle": "knobs.json nodes",
-    "waterfall": "knobs.json nodes"
+    "waterfall": "knobs.json nodes",
+    "winnerslosers": "knobs.json nodes"
   },
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {
@@ -108,7 +125,7 @@
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 246
+      "kinds": 257
     },
     "runtime/pi/tool_chain.mjs": {
       "kinds": 1

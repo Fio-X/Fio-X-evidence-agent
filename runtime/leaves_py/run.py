@@ -42,12 +42,28 @@ import rankbar
 import sankey
 import scmp
 import stacked100
+import story
 import line as line_leaf  # main() reads stdin into `line`
 import rank_lines
 import dumbbell
 import waterfall
 import waffle
 import stacked_area
+import gap_axis
+import winners_losers
+import event_chain
+import target_path
+import pair_bars
+import thesis_claims
+import risk_notes
+import small_multiples
+import member_map
+import change_dots
+import rank_slope
+import tile_map
+import unit_grid
+import glyph_row
+import dot_strip
 import section_head
 import wbkit
 from words import word
@@ -92,14 +108,17 @@ FOUND = {}
 CLAIM_WORDS = None
 
 
-def leaf_frame(Frame, f, key, fixed=None, by_hero=None):
+OVER = {}  # {layer: the words a story leaf drew over its picture}, read by story.story_page
+
+
+def leaf_frame(Frame, f, key, fixed=None, by_hero=None, by_page=None):
     """A chart leaf's own Frame over the hero's leaves.<key> (refusing a hero that names none), with the hero's style
     (`fixed` over it, then `by_hero`'s), and the series values read from the request's tables (wbkit.read_values)."""
     d = (f.h.get("leaves") or {}).get(key)
     if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
     wbkit.read_values()
     st = dict(f.h.get("style", {}))
-    for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
+    for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items(), *(by_page(f) if by_page else {}).items()]: st[node] = {**st.get(node, {}), **kv}
     return Frame({"data": d, "style": st})
 
 
@@ -114,7 +133,7 @@ def leaf_records(fr, key):
                      r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
 
 
-def leaf(Frame, cl, key, fixed=None, by_hero=None):
+def leaf(Frame, cl, key, fixed=None, by_hero=None, by_page=None, overlay=False):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
     with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets; then `by_hero`'s, the knobs
     the program reads off the hero itself, as the page's focus), and the series values read from the request's tables
@@ -122,7 +141,11 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None):
     not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED, even when that is all it
     was given (the layer is drawn empty, and the page still goes out with every dropped item in its ledger)."""
     def draw(f, occ):
-        fr = leaf_frame(Frame, f, key, fixed, by_hero); out = cl(fr, occ)
+        fr = leaf_frame(Frame, f, key, fixed, by_hero, by_page)
+        if overlay: wbkit.OVERLAY = []   # a story page's leaf: its words with no ledger entry go over the picture as html (wbkit.OVERLAY)
+        try: out = cl(fr, occ)
+        finally:
+            if overlay: OVER[key], wbkit.OVERLAY = wbkit.OVERLAY, None
         leaf_records(fr, key)
         return out
     return draw, None
@@ -169,6 +192,11 @@ def bubble_key(f, occ):
 # at their own year, so the column recipe has none): px, about two note lines; the notes may stand anywhere in the bars'
 # picture off every name, bar and value (column.cl_bars_placed claims them), the band keeps room for the longest bar's.
 NOTE_BAND = 56
+# The room over the bars the same page gives its notes (the rows frame's y0, node-bindings.json bars_rows.above): px, one note
+# line at the largest note_size (22: its box 4 to 30 px, 1 px off the first bar's). Each row walls the picture off from its name to
+# its value, so the first bar's end is reached only past the second's value: when the two bars all but tie (11-22: 78.02 and 77.85
+# of ten, 24.33 and 24.24 of three), its value runs to the right edge as well and the first bar's note found no free place.
+NOTE_HEAD = 24
 
 
 def bar_notes(f, occ):
@@ -200,25 +228,74 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    dumbbell=leaf(dumbbell.Frame, dumbbell.cl_dumbbell, "dumbbell"),
                    waterfall=leaf(waterfall.Frame, waterfall.cl_waterfall, "waterfall"),
                    waffle=leaf(waffle.Frame, waffle.cl_waffle, "waffle"),
-                   stacked_area=leaf(stacked_area.Frame, stacked_area.cl_stacked_area, "stacked_area"))
+                   stacked_area=leaf(stacked_area.Frame, stacked_area.cl_stacked_area, "stacked_area"),
+                   gap_axis=leaf(gap_axis.Frame, gap_axis.cl_gap_axis, "gap_axis"),
+                   winners_losers=leaf(winners_losers.Frame, winners_losers.cl_winners_losers, "winners_losers"),
+                   event_chain=leaf(event_chain.Frame, event_chain.cl_event_chain, "event_chain"),
+                   target_path=leaf(target_path.Frame, target_path.cl_target_path, "target_path"),
+                   pair_bars=leaf(pair_bars.Frame, pair_bars.cl_pair_bars, "pair_bars"),
+                   thesis_claims=leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims"),
+                   risk_notes=leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes"),
+                   small_multiples=leaf(small_multiples.Frame, small_multiples.cl_small_multiples, "small_multiples"),
+                   member_map=leaf(member_map.Frame, member_map.cl_member_map, "member_map"),
+                   change_dots=leaf(change_dots.Frame, change_dots.cl_change_dots, "change_dots"),
+                   rank_slope=leaf(rank_slope.Frame, rank_slope.cl_rank_slope, "rank_slope"),
+                   tile_map=leaf(tile_map.Frame, tile_map.cl_tile_map, "tile_map"),
+                   unit_grid=leaf(unit_grid.Frame, unit_grid.cl_unit_grid, "unit_grid"),
+                   glyph_row=leaf(glyph_row.Frame, glyph_row.cl_glyph_row, "glyph_row"),
+                   dot_strip=leaf(dot_strip.Frame, dot_strip.cl_dot_strip, "dot_strip"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
             + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG
             + dumbbell.DUMBBELL_SVG + waterfall.WATERFALL_SVG + waffle.WAFFLE_SVG
-            + stacked_area.STACKED_AREA_SVG)
+            + stacked_area.STACKED_AREA_SVG
+            + gap_axis.GAP_AXIS_SVG
+            + winners_losers.WINNERS_LOSERS_SVG
+            + event_chain.EVENT_CHAIN_SVG
+            + target_path.TARGET_PATH_SVG
+            + pair_bars.PAIR_BARS_SVG
+            + thesis_claims.THESIS_CLAIMS_SVG
+            + risk_notes.RISK_NOTES_SVG
+            + small_multiples.SMALL_MULTIPLES_SVG
+            + member_map.MEMBER_MAP_SVG
+            + change_dots.CHANGE_DOTS_SVG
+            + rank_slope.RANK_SLOPE_SVG
+            + tile_map.TILE_MAP_SVG
+            + unit_grid.UNIT_GRID_SVG
+            + glyph_row.GLYPH_ROW_SVG
+            + dot_strip.DOT_STRIP_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
 # The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
 # slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
-STRIP_SLOT = ("column", "change", "ranked_bars", "change_bars")
+STRIP_SLOT = ("column", "change", "ranked_bars", "change_bars", "page_story")
+OPENING_SLOT = ("page_story",)  # the pages that place an opening picture over their header (illus_hero; story.py)
 # The main layer of each page recipe the column frame draws, the picture the page is built around (column_page; knobs.py
 # copies it into the recipe as `main`): the bars, or a chart leaf of LEAF_LAYERS in their place, across the page.
 MAIN = dict(column="bars", change="bars", flow="sankey", composition_steps="waterfall", composition="stacked100", one_line="line", ranked_bars="bars", change_bars="bars", block_ranks="rank_lines")
 # The recipes a column page draws: column, change (its bars the places' change between two years, bars.measure), and flow
 # (a sankey across the page, its main).
 COLUMN_KINDS = tuple(MAIN)
+# The leaves a story page's sections draw (story.STORY_LAYERS), as (Frame, layer function) pairs; rankbar apart (it also reads the hero).
+STORY_SRC = dict(thesis_claims=(thesis_claims.Frame, thesis_claims.cl_thesis_claims), risk_notes=(risk_notes.Frame, risk_notes.cl_risk_notes),
+                 gap_axis=(gap_axis.Frame, gap_axis.cl_gap_axis), event_chain=(event_chain.Frame, event_chain.cl_event_chain),
+                 target_path=(target_path.Frame, target_path.cl_target_path), winners_losers=(winners_losers.Frame, winners_losers.cl_winners_losers),
+                 pair_bars=(pair_bars.Frame, pair_bars.cl_pair_bars), small_multiples=(small_multiples.Frame, small_multiples.cl_small_multiples),
+                 member_map=(member_map.Frame, member_map.cl_member_map), change_dots=(change_dots.Frame, change_dots.cl_change_dots),
+                 rank_slope=(rank_slope.Frame, rank_slope.cl_rank_slope), tile_map=(tile_map.Frame, tile_map.cl_tile_map),
+                 unit_grid=(unit_grid.Frame, unit_grid.cl_unit_grid),
+                 glyph_row=(glyph_row.Frame, glyph_row.cl_glyph_row),
+                 dot_strip=(dot_strip.Frame, dot_strip.cl_dot_strip))
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
-             scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
+             scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG),
+             # a story page: its sections' leaves (story.py), each a layer of the recipe
+             page_story=({**{n: LEAF_LAYERS[n] for n in story.SVG_LAYERS}, "bignums": (story.cl_bignums, None),
+                          # every leaf over the page's own settings: story.FIXED (the type scale, the text blocks' width) and, for a titled section,
+                          # the picture width its place on the page gives (story.width_of)
+                          **{n: leaf(*STORY_SRC[n], n, fixed=story.FIXED, by_page=story.width_of, overlay=True) for n in STORY_SRC},
+                          # the rank bar draws the row its data names in the accent (story.rank_style)
+                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", fixed=story.FIXED, by_hero=story.rank_style, by_page=story.width_of, overlay=True)},
+                         list(story.SVG_LAYERS)))
 
 
 def bubbles_frame(f):
@@ -236,7 +313,7 @@ def bubbles_placed(f, occ, g):
 
 # The layers a leaf draws from the geometry the core placed and checked (knobs.placed[layer], src/next_tree.rs node_draw),
 # by layer: the ones a page recipe may bind external. The bars draw level or change bars by the panel's measure.
-PLACED_LAYERS = dict(bars=lambda f, occ, g: column.cl_change_bars_placed(f, g) if f.change else column.cl_bars_placed(f, occ, g),
+PLACED_LAYERS = dict(bars=lambda f, occ, g: column.cl_change_bars_placed(f, occ, g) if f.change else column.cl_bars_placed(f, occ, g),
                      bubbles=bubbles_placed)
 # What a layer drawn from placed geometry reads of its own input (P4a-2): run before refusing a missing geometry, so a
 # layer whose input is off refuses in its own words, as before it was external. The bars read the panel's (ColumnFrame).
@@ -291,6 +368,8 @@ class Panel:
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
+        if p.node == "page_story":
+            p.f = story.Frame(c, spec); return
         if p.node in COLUMN_KINDS:
             p.f = column.ColumnFrame(c, h, map_view(h), MAIN[p.node])
             if MAIN[p.node] != "bars":
@@ -298,7 +377,8 @@ class Panel:
                 p.f.sized(*main_size(p.f, MAIN[p.node]))
             # the room under the map the bubbles' key may stand in (bubbles.key_room); the map's svg grows into it only when the key does
             if p.f.mv: p.f.H = max(p.f.H, p.f.mv.H + bubbles.key_room(p.f))
-            elif MAIN[p.node] == "bars" and "leader_notes" in (h.get("leaves") or {}): p.f.bh += NOTE_BAND; p.f.H = max(p.f.H, p.f.bh)
+            elif MAIN[p.node] == "bars" and "leader_notes" in (h.get("leaves") or {}):
+                p.f.top += NOTE_HEAD; p.f.bh += NOTE_HEAD + NOTE_BAND; p.f.H = max(p.f.H, p.f.bh)  # the core lays the rows from top + y0
             return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":
@@ -404,11 +484,12 @@ def drawn(svg):
 NOT_LEAF = ("top", "band", "strip", "row", "bignums")
 
 
-def page(panel, got, sizes=None):
+def page(panel, got, sizes=None, left_out=None, drawn_as=None):
     """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
     page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
     if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
+    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW, OVER, left_out or {}, drawn_as or {})
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     # the events layer only for a page with sourced events (a ring of a table's months alone has none to hang)
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin) and (n != "events" or spec.get("events"))]
@@ -630,6 +711,22 @@ def hooked(hero, c, spec, hooks=HOOKS):
     return hero
 
 
+def story_size(panel, layers):
+    """A story page's panel is the page itself: each section's leaf drawn once to measure it (as a column page's main leaf is, main_size),
+    the page laid out (story.layout: every section's box on the page), and the panel told as wide as the page and as high as the layout.
+    A leaf that refuses is left to refuse on its own layer line, and no layout is made."""
+    story.PAGE_LAYOUT = None
+    spec = panel.f.spec; drew, html_h = {}, {}
+    for _, _, layer, *_ in story.sections(spec):
+        try: out = layers[layer][0](panel.f, prod.Occ())
+        except FX.Refused: DROPPED.clear(); return {"w": panel.f.W, "h": story.SECTION_MAX_H}
+        DROPPED.clear()
+        if layer in story.HTML_BLOCKS: html_h[layer] = story.bignums_height(out)
+        else: drew[layer] = DREW[layer]
+    story.PAGE_LAYOUT = story.layout(spec, panel.c, drew, html_h)
+    return {"w": panel.f.W, "h": story.PAGE_LAYOUT["H"]}
+
+
 def main():
     panel, off, node = None, None, None
     for line in sys.stdin:
@@ -650,13 +747,18 @@ def main():
             except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
             except Exception as e: off = FX.Refused(f"the panel failed: {type(e).__name__} {e}")  # said, not a child that exits
         name = req.get("layer")
-        if req.get("phase") == "size": out = {"refused": [f"size: {off}"]} if off else {"w": panel.f.W, "h": panel.f.H}
+        if req.get("phase") == "size":
+            if off: out = {"refused": [f"size: {off}"]}
+            elif node == "page_story":
+                try: out = story_size(panel, layers)
+                except FX.Refused as e: out = {"refused": [f"size: {e}"]}
+            else: out = {"w": panel.f.W, "h": panel.f.H}
         elif req.get("phase") == "page":
             global CLAIM_WORDS
             CLAIM_WORDS = req.get("claim_words")
             if off: out = {"refused": [f"page: {off}"]}
             else:
-                try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {})
+                try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {}, req.get("left_out") or {}, req.get("drawn_as") or {})
                 except FX.Refused as e: out = {"refused": [f"page: {e}"]}
         elif name not in layers: out = {"error": f"no {node} layer {name}"}
         elif off: out = {"refused": [f"{name}: {off}"]}
@@ -673,8 +775,17 @@ def main():
                 out = {"svg" if name in svgs else "html": s}
                 if DROPPED: out["dropped"] = list(DROPPED)
                 out.update(SCALE)
+                ph = None
+                if name in svgs and node == "page_story" and story.PAGE_LAYOUT:  # the layer's svg stands where its picture is on the page: the layout's translate
+                    sec = {l: i for i, _, l, *_ in story.sections(panel.f.spec)}.get(name)
+                    if sec is not None:
+                        b = story.PAGE_LAYOUT["boxes"][sec]; ph = (round(b["x"] + b["fx"], 1), round(b["y"] + b["fy"], 1))
+                        out["svg"] = s = f'<g transform="translate({ph[0]},{ph[1]})">{s}</g>'
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
+                    # a story leaf's words with no ledger entry, drawn over the picture as html: told to layer 1 in the texts' own terms
+                    # (the picture's pixels, the baseline), so it checks them for overlap and out-of-panel as it does the texts
+                    if name in OVER: out["words"] = [dict(text=w["text"], x=w["x"] + (ph or (0, 0))[0], y=w["y"] + (ph or (0, 0))[1], size=w["size"], anchor=w["anchor"], baseline="", rot=0.0) for w in OVER[name]]
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}

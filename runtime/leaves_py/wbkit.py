@@ -239,8 +239,16 @@ def lay(sg, size, max_w):
     return lines
 
 
+# A story page's leaves draw their words that carry no ledger entry (no number, no name: a heading, a unit, a caption) as html over the
+# picture, not as <text>: the first layer takes a text of an svg only with a src. While such a leaf draws, OVERLAY is a list and `words`
+# puts each such line in it ({x, y (the baseline), size, fill, anchor, weight, italic, serif, text}); the story page places them over the
+# picture (story.overlay). Their boxes are checked in B as ever. None: every text is a <text> of the svg.
+OVERLAY = None
+
+
 def words(B, v, what, x, y, size, fill, anchor="start", weight=400, serif=False, italic=False, max_w=None, line_h=None, max_lines=1):
-    """The words as one <text>. Returns (svg, box of the first line, line count); every line's box is checked in B; over max_lines refuses."""
+    """The words as one <text>. Returns (svg, box of the first line, line count); every line's box is checked in B; over max_lines refuses.
+    Words with no ledger entry in them go to OVERLAY instead when it is a list (the svg returned is then empty)."""
     sg = segs(v, what)
     lines = lay(sg, size, max_w if max_w else 10 ** 6)
     if len(lines) > max_lines: raise Refused(f"{what} takes {len(lines)} lines at this size, {max_lines} allowed")
@@ -251,9 +259,13 @@ def words(B, v, what, x, y, size, fill, anchor="start", weight=400, serif=False,
         b = (x0, y + i * lh - size * 0.8, x0 + w, y + i * lh + size * 0.25)
         B.add(b[0], b[1], b[2], b[3], what + (f" line {i + 1}" if i else ""))
         first = first or b
+        if OVERLAY is not None and not any(s for _, s in sg):
+            OVERLAY.append(dict(x=x, y=y + i * lh, size=size, fill=fill, anchor=anchor, weight=weight, italic=italic, serif=serif, text="".join(t for t, _ in ln).rstrip()))
+            continue
         body.append(f'<tspan x="{x:.1f}" y="{y + i * lh:.1f}">' + "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in ln) + "</tspan>")
     st = ' font-style="italic"' if italic else ""
     ff = f' font-family="{SERIF}"' if serif else ""
+    if not body: return "", first, len(lines)
     return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" text-anchor="{anchor}" fill="{fill}" font-weight="{weight}"{st}{ff}>{"".join(body)}</text>', first, len(lines))
 
 
@@ -386,6 +398,40 @@ def check_codes(node, v, known):
     bad = [c for c in v.split(",") if c and c not in known]
     if bad: raise Refused(f"{node}: names {bad}, codes the request does not hold")
     return {c for c in v.split(",") if c}
+
+
+def accent_only(node, d, marked):
+    """The codes of `marked` (the members a leaf marks: its accent rows, lead dots or lit glyphs) drawn in the accent colour: all of
+    them, or, when the data gives "accent_only" (a story page: the members its section's headline names, story.accent_only), those
+    of them it lists. The others keep their place, labels and order, in the leaf's look for a mark that is not the accent."""
+    only = d.get("accent_only")
+    if only is None: return set(marked)
+    if not isinstance(only, list) or not all(isinstance(c, str) for c in only): raise Refused(f"{node}: accent_only is a list of codes")
+    return set(marked) & set(only)
+
+
+# The map leaves' (member_map, tile_map) steps on a story page, where a section's red is the members its headline names: five
+# steps of one grey (the ink mixed into the light ground), so a value's step is read by its darkness and only the named members
+# stand out, filled in the accent (accent_only). The lightest step stays darker than the land of no member (--empty). From
+# GREY_LIGHT_INK on, a text on a step is white. Without accent_only (no story page) a map keeps the accent's own five steps.
+GREY_RAMP = [f"color-mix(in srgb, var(--t-title) {p}%, #eeeeec)" for p in (16, 30, 44, 58, 72)]
+GREY_LIGHT_INK = 3
+
+
+def map_fills(node, d, codes, accent_ramp):
+    """(the five step fills, the codes filled in the accent over their step) of a map leaf: the accent's ramp and none apart, or,
+    when the data gives accent_only (story.accent_only), GREY_RAMP and the codes of `codes` it lists (accent_only)."""
+    if d.get("accent_only") is None: return accent_ramp, set()
+    return GREY_RAMP, accent_only(node, d, codes)
+
+
+def map_named_key(B, x, y, size, hot):
+    """The map legend's second line on a story page: an accent swatch and the words saying it marks the members the section's
+    headline names (words map.legend.named); nothing when no member is in the accent. Returns (svg, right edge)."""
+    if not hot: return "", x
+    sw = f'<rect x="{x:.1f}" y="{y - size * 0.8:.1f}" width="{size}" height="{size}" fill="var(--accent)" data-part="legend named"/>'
+    t, box, _ = words(B, [{"word": "map.legend.named"}], "map legend", x + size + 6, y, size, "var(--t-sec)")
+    return sw + t, (box[2] if box else x + size)
 
 
 # The time axis of the line leaves (line.py, stacked_area.py): periods, the query form of a series, labels spread.

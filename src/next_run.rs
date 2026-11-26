@@ -20,7 +20,7 @@ use serde_json::{json, Map, Value};
 use crate::agent_loop::ToolRunner;
 use crate::next_flow::{
     record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared, Recorder, Stop,
-    Verdict, VISION_QUESTIONS,
+    TextAsk, Verdict, VISION_QUESTIONS,
 };
 use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_leaf::Recipe;
@@ -1190,6 +1190,15 @@ struct Shape {
     /// A page over a many-block page's blocks (blocks): each table, the main first, with its place dimension and its year
     /// ({table, by, year}), as one_freq, one_place and last_year read it alone.
     blocks: Vec<Value>,
+    /// The target a story page runs against (has_target): the targets table, its place and its year.
+    target: Option<(String, String, String)>,
+    /// The condition the recipe went without (knobs.json recipes[].without, shape_for): the tables did not meet it and the
+    /// shape stood on the recipe's other conditions and its minimums.
+    passed_over: Option<String>,
+    /// With a condition passed over, the whole a page runs against: of the main's place codes that are no country, the
+    /// aggregate whose member list (the knowledge group's) holds every country the main holds, the fewest members when
+    /// several do; none when the data holds none (a World Bank table of countries).
+    whole: Option<String>,
 }
 
 /// What composition_groups reads: the grouped dimension, its total code and the groups' input codes (next_params::group_inputs).
@@ -1221,6 +1230,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("monthly_companion", monthly_companion),
     ("last_year", last_year),
     ("two_ends", two_ends),
+    (HAS_TARGET, has_target),
     ("official_flow", official_flow),
     (COMPOSITION, composition_groups),
     ("one_whole", one_whole),
@@ -1320,6 +1330,47 @@ fn shape_of(
     Ok(shape)
 }
 
+/// The tables' shape by a recipe (shape_of over its eats). A recipe that may go without one of its conditions (knobs.json
+/// recipes[].without) passes that condition over when the tables do not meet it: the shape stands on its other conditions,
+/// over `members` countries of the main at least (its findings minimum is read at the fill, recipe_request, once the findings
+/// child has scored them); the countries and the whole (Shape::whole) are the places the page names. Err is shape_of's, with
+/// the count the minimum missed.
+fn shape_for(
+    recipe: &Recipe,
+    tables: &[(&str, &[Value])],
+    catalogue: &dyn Catalogue,
+) -> Result<Shape, String> {
+    let (why, w) = match (shape_of(&recipe.eats, tables, catalogue), &recipe.without) {
+        (Err(why), Some(w)) => (why, w),
+        (all, _) => return all,
+    };
+    let rest: Vec<String> = recipe
+        .eats
+        .iter()
+        .filter(|e| **e != w.condition)
+        .cloned()
+        .collect();
+    let mut s = shape_of(&rest, tables, catalogue)?;
+    if s.countries.len() < w.members {
+        return Err(format!(
+            "{why}; without {} the main holds {} countries, fewer than {}",
+            w.condition,
+            s.countries.len(),
+            w.members
+        ));
+    }
+    let held = s.dims.get(&s.place).cloned().unwrap_or_default();
+    s.whole = smallest_whole(&held, &s.countries, &s.countries, catalogue);
+    if s.hub.is_empty() && s.members.is_empty() {
+        s.members = held
+            .into_iter()
+            .filter(|c| s.whole.as_ref() == Some(c) || s.countries.contains(c))
+            .collect();
+    }
+    s.passed_over = Some(w.condition.clone());
+    Ok(s)
+}
+
 fn is_year(t: &str) -> bool {
     t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit())
 }
@@ -1330,6 +1381,27 @@ fn one_code(dims: &BTreeMap<String, BTreeSet<String>>, d: &str) -> Option<String
         Some(c) if c.len() == 1 => Some(c[0].clone()),
         _ => None,
     }
+}
+
+/// The refusal of a page that sums over its unit (a total of its parts or origins, each printed as a share of it) when the
+/// unit is a level the unit table marks not additive: its additive column says no and its rule is an amount in a unit of
+/// measure (amount, amount_own_currency, per_capita), such as a chain-linked level or a per-head amount, whose sum across
+/// rows means nothing (owner decision 11-25: a chain-linked level is read but is not the sum of its parts). It names what
+/// a page over that unit may do instead, with an example. None when the unit adds up, when it is not additive but no such
+/// level (a rate, percentage, index, density or the like reads as before), or when the table has no row for it (a unit
+/// with no row is refused by its fill, by name).
+fn unit_sum_refused(unit: &str) -> Option<String> {
+    let level = matches!(
+        next_pack::unit_rule(unit),
+        Some("amount" | "amount_own_currency" | "per_capita")
+    );
+    (level && next_pack::unit_table_additive(unit) == Some(false)).then(|| {
+        format!(
+            "unit {unit} does not add up (unit-short-zh additive no), so no sum or share of a sum is taken over it; \
+             a page over {unit} may take the last value, a difference, a ratio or a rank \
+             (e.g. the highest place's last value minus the lowest's)"
+        )
+    })
 }
 
 /// Every period of the main is a year.
@@ -1426,6 +1498,10 @@ fn hub_origin(
         .iter()
         .find(|(h, ..)| *h == hub)
         .ok_or_else(|| format!("no hub row for {hub}"))?;
+    // a hub page totals its origins and prints each as a share of that total: refused over a unit that does not add up
+    if let Some(why) = one_code(&s.dims, "unit").and_then(|u| unit_sum_refused(&u)) {
+        return Err(why);
+    }
     let codes: Vec<String> = s.dims[&origin].iter().cloned().collect();
     s.outside = catalogue
         .countries(&codes)?
@@ -1658,14 +1734,26 @@ fn row_value(r: &Value) -> Option<f64> {
 /// holds. 100 would take the period the most countries hold (a tie to the later), which may be an old one.
 const LATEST_PERIOD_PCT: usize = 80;
 
-/// The last year any of the place's countries has a value at. On a half-yearly or monthly main (one_freq) the latest period
-/// at which at least LATEST_PERIOD_PCT percent as many of them have a value as at the period the most have one at:
-/// countries report a month or a half year at different times, and the latest period alone may hold a few of them. Each
-/// later period passed over is kept with the countries the page's period holds and it misses (Shape::passed), for the run's
-/// record; a missing value is never filled in.
+/// How many of the best year's countries, in percent, a later year of an annual main must hold a value for to be the page's
+/// year (last_year): a latest year that only a few of them have reported yet (dev g10, rounds 17-18: the G7's research
+/// spending at 2024 held Canada alone, a one-bar page that answered for none of the others) gives way to the latest year
+/// at least half as many hold. Lower than LATEST_PERIOD_PCT: a year that most report keeps the page at it, as before.
+const LATEST_YEAR_PCT: usize = 50;
+
+/// The latest year at which at least LATEST_YEAR_PCT percent as many of the place's countries have a value as at the year
+/// the most have one at (an annual main; the year any of them has one at, when it holds that many). On a half-yearly or
+/// monthly main (one_freq) the latest period at which at least LATEST_PERIOD_PCT percent as many of them have a value as at
+/// the period the most have one at: countries report a month or a half year at different times, and the latest period
+/// alone may hold a few of them. Each later year or period passed over is kept with the countries the page's holds and it
+/// misses (Shape::passed), for the run's record; a missing value is never filled in.
 fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
     let rows = tables[0].1;
-    if matches!(s.freq.as_str(), "S" | "M") {
+    let pct = if matches!(s.freq.as_str(), "S" | "M") {
+        LATEST_PERIOD_PCT
+    } else {
+        LATEST_YEAR_PCT
+    };
+    {
         let mut held: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
         for r in rows.iter().filter(|r| row_value(r).is_some()) {
             if let (Some(t), Some(c)) = (
@@ -1685,7 +1773,7 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
         let (period, at) = held
             .iter()
             .rev()
-            .find(|(_, there)| there.len() * 100 >= best * LATEST_PERIOD_PCT)
+            .find(|(_, there)| there.len() * 100 >= best * pct)
             .expect("the best period holds its own count");
         s.passed = held
             .range::<str, _>((
@@ -1695,20 +1783,7 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
             .map(|(t, there)| (t.to_string(), at.difference(there).cloned().collect()))
             .collect();
         s.year = period.to_string();
-        return Ok(());
     }
-    let year = rows
-        .iter()
-        .filter(|r| {
-            r["dims"][&s.place]
-                .as_str()
-                .is_some_and(|c| s.countries.iter().any(|k| k == c))
-                && row_value(r).is_some()
-        })
-        .filter_map(|r| r["time"].as_str())
-        .max()
-        .ok_or_else(|| format!("main {} has no country value", s.main))?;
-    s.year = year.to_string();
     Ok(())
 }
 
@@ -1757,6 +1832,78 @@ fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
         )
     })?;
     (s.t0, s.later) = (t0, later);
+    Ok(())
+}
+
+/// A target row for the main (has_target, owner 11-22: a page's story runs against the target the law sets): a table
+/// whose rows the knowledge group gave from its targets registry (src `target:<id>`, its `main` naming the main table),
+/// at a place the main holds and a year after the page's last; the latest such year wins. Err when none is handed in.
+fn has_target(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
+    let last: i32 = s
+        .year
+        .parse()
+        .map_err(|_| format!("main {} has no last year before its target", s.main))?;
+    let places: BTreeSet<&str> = s
+        .countries
+        .iter()
+        .map(String::as_str)
+        .chain((!s.hub.is_empty()).then_some(s.hub.as_str()))
+        .chain(
+            s.dims
+                .get(&s.place)
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        )
+        .collect();
+    let mut best: Option<(String, String, String)> = None;
+    for (id, rows) in &tables[1..] {
+        for r in rows.iter().filter(|r| {
+            r["src"].as_str().is_some_and(|s| s.starts_with("target:"))
+                && r["main"].as_str() == Some(s.main.as_str())
+        }) {
+            let (Some(t), Some(geo)) = (r["time"].as_str(), r["dims"][&s.place].as_str()) else {
+                continue;
+            };
+            if !is_year(t) || t.parse::<i32>().is_ok_and(|y| y <= last) || !places.contains(geo) {
+                continue;
+            }
+            // the target is set on a slice of the main (review 11-22: the share of renewables overall, not in transport): the
+            // main must hold each of the slice's dimensions at that one code alone, or it measures something else
+            let on_slice = r["slice"].as_object().is_some_and(|slice| {
+                slice.iter().all(|(d, c)| {
+                    s.dims.get(d).is_some_and(|held| {
+                        held.len() == 1 && c.as_str().is_some_and(|c| held.contains(c))
+                    })
+                })
+            });
+            if !on_slice {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(_, _, b)| t > b.as_str()) {
+                best = Some((id.to_string(), geo.to_string(), t.to_string()));
+            }
+        }
+    }
+    let best = best.ok_or_else(|| {
+        format!(
+            "main {} has no target row after {last} at a place it holds",
+            s.main
+        )
+    })?;
+    // the places a story page names, each by its reviewed name (fill_of names shape.members): the main's places that are
+    // countries, and the target's place, the whole; a hub's members stay the hub's
+    if s.hub.is_empty() && s.members.is_empty() {
+        s.members = s
+            .dims
+            .get(&s.place)
+            .into_iter()
+            .flatten()
+            .filter(|c| **c == best.1 || s.countries.contains(c))
+            .cloned()
+            .collect();
+    }
+    s.target = Some(best);
     Ok(())
 }
 
@@ -1868,6 +2015,11 @@ fn composition_groups(
         }
     }
     let comp = found.ok_or_else(|| format!("main {} asks no grouped total alone", s.main))?;
+    // the parts are summed and each drawn as a share of their sum: refused over a unit that does not add up (one_unit has
+    // read the unit before this condition in every recipe that names it)
+    if let Some(why) = unit_sum_refused(&s.unit) {
+        return Err(why);
+    }
     let place = "geo";
     let (_, inputs) = tables[1..]
         .iter()
@@ -2106,6 +2258,45 @@ fn ring_picks(
         t1: t1.to_string(),
         top,
     })
+}
+
+/// The one ranked place among the countries the knowledge group reads in the question (Place::Country, an iso2 code),
+/// compared by code, never by a name two name tables or a word like "developing countries" (which in Chinese holds China's name) may spell alike: a Eurostat table's code is
+/// the iso code turned into Eurostat's where they differ (next_params::ESTAT_ISO: GR is EL), a World Bank table's the code
+/// its place list gives that iso2. None when none of them or more than one is a place the page ranks.
+fn place_asked_about(
+    places: &[crate::l5geo::Place],
+    ranked: &[String],
+    table: Option<&crate::l5geo::TableMeta>,
+) -> Option<String> {
+    let mut hit: Vec<&String> = Vec::new();
+    for place in places {
+        let crate::l5geo::Place::Country(iso) = place else {
+            continue;
+        };
+        let estat = next_params::ESTAT_ISO
+            .iter()
+            .find(|(_, i)| *i == iso.as_str())
+            .map_or(iso.as_str(), |(e, _)| *e);
+        let worldbank = table.filter(|t| t.worldbank).into_iter().flat_map(|t| {
+            t.places
+                .iter()
+                .filter(|(i, _)| i == iso)
+                .map(|(_, code)| code.as_str())
+        });
+        let code = std::iter::once(estat)
+            .chain(worldbank)
+            .find_map(|c| ranked.iter().find(|r| r.as_str() == c));
+        if let Some(c) = code {
+            if !hit.contains(&c) {
+                hit.push(c);
+            }
+        }
+    }
+    match hit.as_slice() {
+        [one] => Some((*one).clone()),
+        _ => None,
+    }
 }
 
 /// What the program picks for a page over its shape and the picked claims (PICK_RULES, in the recipe's order); a field no
@@ -2475,7 +2666,7 @@ fn page_input(
     let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
             "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "rule": next_pack::unit_rule(&shape.unit), "countries": shape.countries},
-        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
+        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1, "cut": false},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "line": next_pack::unit_line_form(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
             "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
@@ -2530,6 +2721,76 @@ fn page_input(
             "target_parts": codes(next_params::flow_parts(id, target))});
     }
     p
+}
+
+/// The page input's external coordinates, each from the main's own table and basis and each present only when its rows are
+/// there, so a declared fact reads it like any row (never cross-table, nothing estimated): `shape.whole`, the aggregate the
+/// page's scope is (scope_of: a place code that is no country whose members hold every ranked place) when the main holds a
+/// value of it at the page's year and, on a page with two ends, at its earlier end; `shape.prev`, the year before an annual
+/// page's year when every ranked place has a value there; `shape.target`, the target the knowledge group registers for the
+/// main (`targets`, its rows), chosen by has_target's own rule (a held place, after the page's year, on the main's slice),
+/// with its one row appended to the input's rows. An absent coordinate is no key at all.
+fn external_coords(
+    p: &mut Value,
+    shape: &Shape,
+    picks: &Picks,
+    (main, targets): (&[Value], &[Value]),
+    catalogue: &dyn Catalogue,
+) {
+    let held = |code: &str, t: &str| {
+        main.iter()
+            .any(|r| r["time"] == t && r["dims"][&shape.place] == code && row_value(r).is_some())
+    };
+    let ends = [shape.year.as_str(), shape.t0.as_str()];
+    if let Some(whole) = scope_of(shape, picks, catalogue)
+        .filter(|w| ends.iter().all(|t| t.is_empty() || held(w, t)))
+    {
+        p["shape"]["whole"] = json!(whole);
+    }
+    if let Some(prev) = shape
+        .year
+        .parse::<i32>()
+        .ok()
+        .filter(|_| is_year(&shape.year))
+        .map(|y| (y - 1).to_string())
+        .filter(|t| !picks.ranked.is_empty() && picks.ranked.iter().all(|c| held(c, t)))
+    {
+        p["shape"]["prev"] = json!(prev);
+    }
+    // has_target's rule over the main and the registry's rows by their table, on a shape of the page's own places and year
+    let mut by: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for r in targets {
+        by.entry(r["table"].as_str().unwrap_or_default().to_string())
+            .or_default()
+            .push(r.clone());
+    }
+    let mut tables: Vec<(&str, &[Value])> = vec![(shape.main.as_str(), main)];
+    tables.extend(by.iter().map(|(id, rows)| (id.as_str(), &rows[..])));
+    let mut s = Shape {
+        main: shape.main.clone(),
+        dims: shape.dims.clone(),
+        place: shape.place.clone(),
+        countries: shape.countries.clone(),
+        hub: shape.hub.clone(),
+        year: shape.year.clone(),
+        ..Shape::default()
+    };
+    let Some((table, place, time)) = has_target(&mut s, &tables, catalogue).ok().and(s.target)
+    else {
+        return;
+    };
+    let rows: Vec<&Value> = by[&table]
+        .iter()
+        .filter(|r| r["time"] == time.as_str() && r["dims"][&shape.place] == place.as_str())
+        .collect();
+    // a flow page's shape.target is its target dimension (page_input): it keeps that, and no target row
+    if p["shape"].get("target").is_some() {
+        return;
+    }
+    if let ([row], Some(all)) = (rows.as_slice(), p["rows"].as_array_mut()) {
+        all.push((*row).clone());
+        p["shape"]["target"] = json!({"table": table, "time": time, "place": place});
+    }
 }
 
 /// The recipe's external layers laid out over the finished fill (its words in): the visual group's NodeDraw writes the page
@@ -2784,8 +3045,12 @@ fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)>
 /// name passed every check).
 fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
     let spec = &mut fill["knobs"]["spec"];
-    spec["title"] = json!(title);
-    spec["dek"] = json!(dek);
+    // a story page (its spec lists sections, story_page) keeps the headline and dek its lead finding wrote: the page's title
+    // is that conclusion, not the text step's draft
+    if !spec["sections"].is_array() {
+        spec["title"] = json!(title);
+        spec["dek"] = json!(dek);
+    }
     spec["kicker"] = json!(kicker);
 }
 
@@ -2901,8 +3166,10 @@ fn measures_a_change(table: &Prepared, catalogue: &dyn Catalogue) -> bool {
 }
 
 /// The number of distinct places a page's fill draws: the codes of the place dimensions (next_flow::place_dims) across the
-/// rows its layers print a value of (`drawn`, each a row of `rows` by its src), as the core counts them on the page tree
-/// (next_tree places_drawn). None when no drawn row holds a place.
+/// rows its layers print a value of (`drawn`, each a row of `rows` by its src), and the places a layer draws its items for
+/// (next_tree::FILL_DRAWS_ITEMS_FOR: a change page's bars draw each place's change and print no row of their own,
+/// 11-22), each a place code of a row of `rows`; as the core counts them on the page tree (next_tree places_drawn). None
+/// when no place is drawn.
 fn places_drawn(fill: &Value) -> Option<usize> {
     let srcs: BTreeSet<&str> = fill["drawn"]
         .as_array()?
@@ -2910,12 +3177,27 @@ fn places_drawn(fill: &Value) -> Option<usize> {
         .filter_map(|d| d["src"].as_str())
         .collect();
     let dims = crate::next_flow::place_dims();
-    let codes: BTreeSet<&str> = fill["rows"]
-        .as_array()?
+    let rows = fill["rows"].as_array()?;
+    let places = |r: &'_ Value| -> Vec<String> {
+        dims.iter()
+            .filter_map(|d| r["dims"][d.as_str()].as_str().map(str::to_string))
+            .collect()
+    };
+    let mut codes: BTreeSet<String> = rows
         .iter()
         .filter(|r| r["src"].as_str().is_some_and(|s| srcs.contains(s)))
-        .flat_map(|r| dims.iter().filter_map(|d| r["dims"][d.as_str()].as_str()))
+        .flat_map(places)
         .collect();
+    let of_rows: BTreeSet<String> = rows.iter().flat_map(places).collect();
+    codes.extend(
+        fill.pointer(crate::next_tree::FILL_DRAWS_ITEMS_FOR)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str())
+            .filter(|c| of_rows.contains(*c))
+            .map(str::to_string),
+    );
     (!codes.is_empty()).then_some(codes.len())
 }
 
@@ -2945,8 +3227,9 @@ const POINTS: (&str, &str) = ("pp", " 个百分点");
 
 /// A recipe whose layers stand on map points (its `points`) eats only places the map point table holds: Err "not this shape"
 /// when a ranked place has none (an aggregate the question names beside countries, the EU), so the next recipe is tried
-/// (the bars alone); any other refusal of the points (a table not the pinned one, a group call that failed) stops the page
-/// as it did at the fill. A recipe with no layer on the map eats any place.
+/// (no recipe has such a layer since 11-22: the column and change notes stand at the bars); any other refusal of the
+/// points (a table not the pinned one, a group call that failed) stops the page as it did at the fill. A recipe with no
+/// layer on the map eats any place.
 fn on_the_map(
     recipe: &Recipe,
     ranked: &[String],
@@ -3066,6 +3349,10 @@ fn fill_of(
             if let (true, Some(p)) = (recipe.points.contains(layer), page_in.as_mut()) {
                 let points = map_points(&filling, &mut out).map_err(no)?;
                 p["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
+            }
+            // a layer that prints short notes (knobs.py SHORT_NOTES), on or off a map, is declared over two run facts
+            let notes = recipe.short_notes.iter().any(|(l, _)| l == layer);
+            if let (true, Some(p)) = (notes, page_in.as_mut()) {
                 // the ranked places' reviewed names, as the leaf is handed them below (leaf_labels): a run fact a layer's
                 // conditions may measure (a note's width), which the core rechecks against the tree's name rows
                 p["names"] = json!(leaf_labels(&[], &picks.ranked, catalogue).map_err(no)?);
@@ -3081,7 +3368,18 @@ fn fill_of(
     // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
     // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
     let scope = scope_of(shape, picks, catalogue);
-    let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
+    // the whole and the target's place the page input holds (external_coords), which a note may name, are named alike
+    let coords = page_in.iter().flat_map(|p| {
+        [&p["shape"]["whole"], &p["shape"]["target"]["place"]]
+            .map(|c| c.as_str().map(str::to_string))
+    });
+    let named: Vec<String> = shape
+        .members
+        .iter()
+        .cloned()
+        .chain(scope.clone())
+        .chain(coords.flatten())
+        .collect();
     let mut labels = leaf_labels(&out.rows, &named, catalogue)?;
     // the names a node gave for codes that are no place (a flow's fuels and sectors), by the knowledge group's name table
     for (code, zh) in &out.labels {
@@ -3245,8 +3543,9 @@ fn fill_of(
             .collect();
         let from = shape.years.first().cloned().unwrap_or_default();
         fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "fetched_from": from, "later": later});
-    } else if matches!(shape.freq.as_str(), "S" | "M") {
-        // a half-yearly or monthly page's one period (last_year), and each later period passed over with the countries it misses
+    } else if matches!(shape.freq.as_str(), "S" | "M") || !shape.passed.is_empty() {
+        // a half-yearly or monthly page's one period (last_year), or an annual page's year when a later one held too few of its
+        // countries, and each later period passed over with the countries it misses
         let later: Vec<Value> = shape
             .passed
             .iter()
@@ -3270,16 +3569,28 @@ fn scope_of(shape: &Shape, picks: &Picks, catalogue: &dyn Catalogue) -> Option<S
     if picks.ranked.is_empty() {
         return None;
     }
-    shape
-        .dims
-        .get(&shape.place)?
-        .iter()
-        .filter(|c| !shape.countries.contains(c))
+    smallest_whole(
+        shape.dims.get(&shape.place)?,
+        &shape.countries,
+        &picks.ranked,
+        catalogue,
+    )
+}
+
+/// The one rule that picks a page's whole (the short notes' scope and the story page's whole alike): among the main's places
+/// that are no country of the page, the one with the fewest members whose members hold every place in `need` (the ranked places
+/// for the notes, the page's countries for the story page). None when no place does.
+fn smallest_whole(
+    held: &BTreeSet<String>,
+    countries: &[String],
+    need: &[String],
+    catalogue: &dyn Catalogue,
+) -> Option<String> {
+    held.iter()
+        .filter(|c| !countries.contains(c))
         .filter_map(|c| {
             let members = catalogue.members(c).ok()?;
-            picks
-                .ranked
-                .iter()
+            need.iter()
                 .all(|r| members.contains(r))
                 .then(|| (members.len(), c.clone()))
         })
@@ -3370,16 +3681,65 @@ fn recipe_request(
             .map_err(shape_err)?,
         false => Vec::new(),
     };
+    // a recipe that runs against a target (has_target): the knowledge group's target rows for the main, by their table, after
+    // every other table, read like any table's rows
+    let target_rows: BTreeMap<String, Vec<Value>> =
+        match recipe.eats.iter().any(|e| e == HAS_TARGET) {
+            true => catalogue
+                .targets(&main.id)
+                .into_iter()
+                .fold(BTreeMap::new(), |mut by, r| {
+                    by.entry(r["table"].as_str().unwrap_or_default().to_string())
+                        .or_insert_with(Vec::new)
+                        .push(r);
+                    by
+                }),
+            false => BTreeMap::new(),
+        };
     let shape_over = |main_rows: &[Value]| {
         let mut tables: Vec<(&str, &[Value])> = vec![(main.id.as_str(), main_rows)];
         tables.extend(companion.map(|(id, _)| (id.as_str(), &comp_rows[..])));
         tables.extend(block_rows.iter().map(|(id, rows)| (*id, &rows[..])));
-        shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)
+        tables.extend(
+            target_rows
+                .iter()
+                .map(|(id, rows)| (id.as_str(), &rows[..])),
+        );
+        let shape = shape_for(recipe, &tables, catalogue).map_err(shape_err)?;
+        // a relation the recipe takes only without its condition (knobs.json recipes[].without.relations): with the condition met
+        // the recipe answers its own relation alone. Only such a relation is refused here: a relation no recipe answers is
+        // tried as kept none (leaf_request), and a recipe's own relation is its own
+        let only_without = |kept: &String| {
+            recipe
+                .without
+                .as_ref()
+                .is_some_and(|w| w.relations.contains(kept))
+        };
+        match (main.relation.map(|r| format!("{r:?}")), &recipe.relation) {
+            (Some(kept), Some(answers))
+                if &kept != answers && only_without(&kept) && shape.passed_over.is_none() =>
+            {
+                Err(shape_err(format!(
+                    "not this relation: the table step kept {kept}, the recipe answers {answers} when it runs to its {}",
+                    recipe.without.as_ref().map_or("condition", |w| w.condition.as_str())
+                )))
+            }
+            _ => Ok(shape),
+        }
     };
     let mut shape = shape_over(&main_rows)?;
     // a group the question names counts its members of one year: the rows of a place that is neither one of them nor named
     // in the question are left out, each kept with why in the page's basis and in an event
     let mut basis = basis_of(&shape, &main_rows, catalogue, question);
+    // a recipe that went without its condition (knobs.json recipes[].without) does not take a group page whose basis must be
+    // said (the member year, the count of the places drawn, the members with no data on the unit line): that page has no such
+    // count of its own and would stop at the fill with no other recipe tried, so the request goes on to the ordinary page
+    if shape.passed_over.is_some() && basis.as_ref().is_some_and(|b| b.line.is_some()) {
+        return Err(shape_err(format!(
+            "not this shape: without {} the page has no count of its own to say the basis of the group the question names",
+            recipe.without.as_ref().map_or("its condition", |w| w.condition.as_str())
+        )));
+    }
     if let Some(first) = basis.take_if(|b| !b.dropped.is_empty()) {
         let why = left_out(&first);
         main_rows.retain(|r| {
@@ -3409,6 +3769,20 @@ fn recipe_request(
     {
         picks.focus = code.to_string();
     }
+    // a question that asks where one place stands (the knowledge group's reading of its words) and names one place the page
+    // ranks: that place is the page's focus, so its finding says the place it holds (the Position case, a number from the
+    // ledger) and its page marks it; a leader as the focus gives the level finding as before
+    if picks.focus.is_empty()
+        && focus.is_none()
+        && recipe.picks.iter().any(|r| r == "ranked")
+        && catalogue.asks_position(question)
+    {
+        if let Some(code) =
+            place_asked_about(places, &picks.ranked, catalogue.table(&main.id).as_ref())
+        {
+            picks.focus = code;
+        }
+    }
     on_the_map(recipe, &picks.ranked, catalogue)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let set = narrow_set(run_dir, main).map_err(|why| ("fill", why))?;
@@ -3417,6 +3791,15 @@ fn recipe_request(
     // a narrowed main's set (its record's scope words and members) goes in as given, for the finding's words
     let mut page_in = (!recipe.external.is_empty())
         .then(|| page_input(recipe, &shape, &picks, (&main_rows, &comp_rows)));
+    // the whole, the year before and the registered target, each from the main's table when its rows hold it (the target
+    // rows read for has_target when the recipe read them, else the knowledge group's for the main)
+    if let Some(p) = page_in.as_mut() {
+        let targets: Vec<Value> = match target_rows.is_empty() {
+            true => catalogue.targets(&main.id),
+            false => target_rows.values().flatten().cloned().collect(),
+        };
+        external_coords(p, &shape, &picks, (&main_rows, &targets), catalogue);
+    }
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
@@ -3424,6 +3807,14 @@ fn recipe_request(
     // (requires $picks.asked_low), so the title starts from the place the question asks about
     if let Some(p) = page_in.as_mut().filter(|_| catalogue.asks_lowest(question)) {
         p["picks"]["asked_low"] = json!(true);
+    }
+    // a question that asks how its places fell (the knowledge group's reading of its words), on a change page: a run fact a
+    // finding's case reads (requires $picks.asked_fall), so the title starts from the largest fall when one is drawn
+    if let Some(p) = page_in
+        .as_mut()
+        .filter(|_| recipe.picks.iter().any(|r| r == "changed") && catalogue.asks_fall(question))
+    {
+        p["picks"]["asked_fall"] = json!(true);
     }
     // a question that asks for the total of its places, over a unit that adds up (the unit table's additive column) on a page
     // the program did not narrow: a run fact a finding's case reads (requires $picks.asked_total), so the title says the
@@ -3434,6 +3825,85 @@ fn recipe_request(
             && next_pack::unit_table_additive(&shape.unit) == Some(true)
     }) {
         p["picks"]["asked_total"] = json!(true);
+    }
+    // a question that compares its end with the second place (the knowledge group's reading of its words), on a ranking
+    // page the program did not narrow (a narrowed page's finding says its end against the second already): a run fact a
+    // finding's case reads (requires $picks.asked_second at the top, $picks.asked_second_low at the bottom), so the dek
+    // says the gap to that second place, not to the other end
+    if let Some(p) = page_in
+        .as_mut()
+        .filter(|_| !scoped && recipe.picks.iter().any(|r| r == "ranked"))
+    {
+        match catalogue.asks_second(question) {
+            Some(false) => p["picks"]["asked_second"] = json!(true),
+            Some(true) => p["picks"]["asked_second_low"] = json!(true),
+            None => {}
+        }
+    }
+    // a question that asks for the first n at one end (the knowledge group's reading of its words: the highest three, the last five from the bottom), on
+    // a ranking page the program did not narrow over no country the question names on its own, n at least 2 and below the
+    // places ranked, the n-th apart from the next: the page draws only those n (the core's top_n over the whole ranking,
+    // picks.asked_first_n or asked_last_n for a finding's case), a group's line says the places drawn, and the members left
+    // out go to the whole-page check (basis.cut), which verifies each has a value no better than any drawn
+    let mut cut: Option<(Vec<String>, bool)> = None;
+    let ranks = recipe.picks.iter().any(|r| r == "ranked");
+    let named = places
+        .iter()
+        .any(|p| matches!(p, crate::l5geo::Place::Country(_)));
+    let line_holds = basis
+        .as_ref()
+        .map_or(!named, |b| b.line_drawn.is_some() && b.named.is_empty());
+    let asked = (!scoped && ranks && line_holds)
+        .then(|| catalogue.asks_top(question))
+        .flatten()
+        .filter(|(n, _)| (2..picks.ranked.len()).contains(n));
+    if let (Some(p), Some((n, low))) = (page_in.as_mut(), asked) {
+        let len = picks.ranked.len();
+        let values: BTreeMap<String, f64> = values_at(&shape, &main_rows, &shape.year)
+            .map_err(shape_err)?
+            .into_iter()
+            .map(|(v, c)| (c, v))
+            .collect();
+        let value = |i: usize| values.get(&picks.ranked[i]).copied();
+        let (edge, next) = if low {
+            (len - n, len - n - 1)
+        } else {
+            (n - 1, n)
+        };
+        if value(edge) != value(next) {
+            let kept: Vec<String> = if low {
+                picks.ranked[len - n..].to_vec()
+            } else {
+                picks.ranked[..n].to_vec()
+            };
+            let left: Vec<String> = picks
+                .ranked
+                .iter()
+                .filter(|c| !kept.contains(c))
+                .cloned()
+                .collect();
+            let rules: Vec<&str> = recipe
+                .picks
+                .iter()
+                .flat_map(|r| match r.as_str() {
+                    "ranked" if low => vec!["ranked_all", "ranked_bottom"],
+                    "ranked" => vec!["ranked_all", "ranked_top"],
+                    other => vec![other],
+                })
+                .collect();
+            picks.ranked = kept;
+            picks.marks.retain(|m| picks.ranked.contains(m));
+            p["picks"]["rules"] = json!(rules);
+            p["picks"]["ranked"] = json!(picks.ranked);
+            p["picks"]["marks"] = json!(picks.marks);
+            p["picks"][if low { "asked_last_n" } else { "asked_first_n" }] = json!(n);
+            // the notes then say the drawn set as a narrowed page's do (the highest of those picked): its ends are no longer the ranking's
+            p["picks"]["cut"] = json!(true);
+            if let Some(b) = basis.as_mut() {
+                b.line = b.line_drawn.clone();
+            }
+            cut = Some((left, low));
+        }
     }
     // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
     // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
@@ -3525,6 +3995,9 @@ fn recipe_request(
         // members without data: the full file may hold them, so the page stops rather than say so (review 11-08)
         members_beside_set(scoped, &b.missing).map_err(|why| ("fill", why))?;
         said_basis(&mut fill, &shape, b, catalogue).map_err(|why| ("fill", why))?;
+        if let Some((codes, low)) = &cut {
+            fill["knobs"]["spec"]["basis"]["cut"] = json!({"codes": codes, "low": low});
+        }
     }
     // each country the question names on its own: printed from its rows, or named on the unit line as having no data
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
@@ -3551,7 +4024,11 @@ fn recipe_request(
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
-    if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
+    if recipe
+        .layers
+        .iter()
+        .any(|l| l == "map" || l == "bubbles" || l == "member_map")
+    {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue
@@ -3608,11 +4085,377 @@ fn recipe_request(
             .unwrap_or_default();
         lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
     }
+    // a story page (one that runs against a target, or that went without it: shape_for) runs against a whole, the target's
+    // place or the data's aggregate (none in a table of countries alone)
+    let story = shape.target.is_some() || shape.passed_over.as_deref() == Some(HAS_TARGET);
+    let whole = match &shape.target {
+        Some((_, place, _)) => Some(place.clone()),
+        None => shape.whole.clone().filter(|_| story),
+    };
+    // a story page with a whole reads the main's event chain (chain_input), each link it reads named in the footer after the
+    // main's, as a block's table is
+    let chain = match &whole {
+        Some(whole) => chain_input(run_dir, catalogue, &main.chain, &shape.place, whole),
+        None => ChainIn::default(),
+    };
+    for id in &chain.tables {
+        let meta = catalogue
+            .table(id)
+            .ok_or_else(|| ("fill", format!("the catalogue lists no {id}")))?;
+        let title = catalogue
+            .table_zh(&meta.id)
+            .map_err(|why| ("fill", why))?
+            .unwrap_or_default();
+        lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
+    }
+    // a page that runs against a target names the law it is set in, last (the knowledge group's source line, which ends with
+    // the clause): the clause is the target table's id, so the footer marks it as a ref and takes its digits, no other
+    // a page whose input carries the registered target as an external coordinate (external_coords) names the law the same way:
+    // its notes may print the target's value and year, so the footer must say where they come from
+    let coord_target = match (&shape.target, page_in.as_ref()) {
+        (None, Some(p)) => p["shape"]
+            .get("target")
+            .map(|t| (t["table"].as_str(), t["place"].as_str(), t["time"].as_str()))
+            .and_then(|(t, pl, y)| Some((t?.to_string(), pl?.to_string(), y?.to_string()))),
+        _ => None,
+    };
+    if let Some((table, place, year)) = shape.target.as_ref().or(coord_target.as_ref()) {
+        let found = |r: &&Value| {
+            r["time"].as_str() == Some(year) && r["dims"][&shape.place].as_str() == Some(place)
+        };
+        let row = match (&shape.target, &page_in) {
+            (None, Some(p)) => p["rows"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|r| r["table"].as_str() == Some(table))
+                .find(found),
+            _ => target_rows.get(table).into_iter().flatten().find(found),
+        };
+        let (Some(line), Some(clause)) = (
+            row.and_then(|r| r["source_line"].as_str()),
+            row.and_then(|r| r["source_ref"].as_str()),
+        ) else {
+            return Err((
+                "fill",
+                format!(
+                    "the target row of {table} at {place} {year} names no source line and clause"
+                ),
+            ));
+        };
+        lines.push(line.to_string());
+        fill["knobs"]["spec"]["tables"][table.as_str()] = json!({"id": clause});
+    }
     fill["knobs"]["spec"]["source"] = match lines.len() {
         1 => json!(lines[0]),
         _ => json!(lines),
     };
+    if story {
+        // with no target the page is the recipe's only by its minimums: what keeps it from standing goes on to the next recipe
+        let stage = match shape.target {
+            Some(_) => "fill",
+            None => "shape",
+        };
+        let mut input = story_input(
+            &shape,
+            shape.target.as_ref(),
+            whole.as_deref(),
+            (&main_rows, &target_rows),
+            &title,
+        )
+        .map_err(|why| (stage, why))?;
+        with_chain(&mut input, chain);
+        unit_name_entry(&mut input, &mut fill["knobs"], &shape.unit)?;
+        // a point inside each member's country (the knowledge group's iso3, the visual group's pinned label points), for the
+        // findings' map angle; a member with no point leaves the map out, never a point guessed
+        let members: Vec<String> = input["main"]["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.as_str().map(str::to_string))
+            .collect();
+        if let Ok(points) = catalogue.place_points(&members) {
+            input["points"] = json!(points);
+        }
+        // the members by M49 sub-region (the knowledge group's, with its overrides named), for the findings' named groups
+        if let Ok(groups) = catalogue.place_groups(&members) {
+            input["groups"] = groups;
+        }
+        // a recipe that went without a condition takes the page only over its findings minimum (knobs.json
+        // recipes[].without): the findings child scores the candidates now, as the findings step will (story_findings)
+        if let (Some(passed), Some(w)) = (&shape.passed_over, &recipe.without) {
+            let found = story_candidates(calls, run_dir, &input).map_err(|why| (stage, why))?;
+            findings_minimum(passed, w, &found).map_err(shape_err)?;
+        }
+        fill[STORY_IN] = input;
+    }
     Ok(fill)
+}
+
+/// A recipe's findings minimum when it went without `passed` (knobs.json recipes[].without): Err "not this shape" when the
+/// findings child's candidates (`found`) are fewer.
+fn findings_minimum(
+    passed: &str,
+    w: &crate::next_leaf::Without,
+    found: &Value,
+) -> Result<(), String> {
+    let n = found["candidates"].as_array().map_or(0, Vec::len);
+    match n < w.findings {
+        true => Err(format!(
+            "not this shape: without {passed} the findings child finds {n} findings, fewer than {}",
+            w.findings
+        )),
+        false => Ok(()),
+    }
+}
+
+/// The findings child's candidates for a story input (findings.py, mode candidates), through the visual group.
+fn story_candidates(
+    calls: &std::sync::Mutex<Vec<Value>>,
+    run_dir: &Path,
+    input: &Value,
+) -> Result<Value, String> {
+    use crate::next_visual::{Reply, Request};
+    let mut asked = input.clone();
+    asked["mode"] = json!("candidates");
+    let runtime = run_dir.join("runtime");
+    match crate::next_flow::visual_call(
+        calls,
+        "story",
+        Request::Story {
+            request: &asked,
+            runtime: &runtime,
+        },
+    ) {
+        Ok(Reply::Story(reply)) => Ok(reply),
+        Ok(_) => unreachable!("the visual group answered story with another reply"),
+        Err(why) => Err(format!("story findings: {why}")),
+    }
+}
+
+/// What a story page's findings read of the main's event chain (chain_input): the chain tables (findings.py's chain), their
+/// rows, their formats (chain_fmts) and the tables read, in the chain's order.
+#[derive(Default)]
+struct ChainIn {
+    items: Vec<Value>,
+    rows: Vec<Value>,
+    fmts: Map<String, Value>,
+    tables: Vec<String>,
+}
+
+/// The event chain of a story page (the findings child's chain, findings.py): each kept link (Prepared::chain) whose rows
+/// at the whole's place and the link's filter are one value a year, as a chain table with that filter (the whole's place
+/// added), its reviewed measure name, its unit's short form and its kind; its rows there join the page's, and it takes three
+/// formats (its unit's suffix at 0, 1 and 2 decimals, `<table>_d0|d1|d2`). A link whose file cannot be read, whose unit has
+/// no short form, or whose rows there are not one a year (a half-year price, two fuels) is left out, never guessed; the
+/// findings child drops the chain itself when fewer than two tables stand.
+fn chain_input(
+    run_dir: &Path,
+    catalogue: &dyn Catalogue,
+    chain: &[crate::next_flow::ChainFetched],
+    place_dim: &str,
+    whole: &str,
+) -> ChainIn {
+    let mut out = ChainIn::default();
+    for c in chain {
+        if let Ok(rows) = fetched_rows(run_dir, catalogue, &c.link.id, &c.file) {
+            chain_add(&mut out, &c.link, rows, place_dim, whole);
+        }
+    }
+    out
+}
+
+/// A story input (story_input) with the page's chain (chain_input): the chain tables, their formats (in chain_fmts for the
+/// findings child and among the formats the fill takes, story_page) and their rows after the page's. Unchanged when no link
+/// stood.
+fn with_chain(input: &mut Value, chain: ChainIn) {
+    if chain.items.is_empty() {
+        return;
+    }
+    input["chain"] = json!(chain.items);
+    if let Some(defs) = input["fmt_defs"].as_object_mut() {
+        defs.extend(chain.fmts.clone());
+    }
+    input["chain_fmts"] = Value::Object(chain.fmts);
+    if let Some(rows) = input["rows"].as_array_mut() {
+        rows.extend(chain.rows);
+    }
+}
+
+/// One link into a story page's chain (chain_input) from its fetched rows; left out as chain_input says.
+fn chain_add(
+    out: &mut ChainIn,
+    link: &crate::next_knowledge::ChainCompanion,
+    rows: Vec<Value>,
+    place_dim: &str,
+    whole: &str,
+) {
+    {
+        let Some(short) = next_pack::unit_short(&link.unit) else {
+            return;
+        };
+        let mut filter: Map<String, Value> = link
+            .filter
+            .iter()
+            .map(|(d, v)| (d.clone(), json!(v)))
+            .collect();
+        filter.insert(place_dim.to_string(), json!(whole));
+        let held: Vec<Value> = rows
+            .into_iter()
+            .filter(|r| filter.iter().all(|(d, v)| r["dims"][d.as_str()] == *v))
+            .collect();
+        let years: Vec<&str> = held.iter().filter_map(|r| r["time"].as_str()).collect();
+        let yearly = years
+            .iter()
+            .all(|t| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()));
+        let once = years.iter().collect::<BTreeSet<_>>().len() == years.len();
+        if held.is_empty() || !yearly || !once {
+            return;
+        }
+        let end = next_pack::unit_number_suffix(&link.unit)
+            .map(suffix)
+            .unwrap_or_default();
+        for dec in 0..3 {
+            out.fmts.insert(
+                format!("{}_d{dec}", link.id),
+                json!({"scale": 1, "dec": dec, "suffix": end}),
+            );
+        }
+        out.items.push(json!({"table": link.id, "filter": filter,
+            "words": {"measure": link.measure_zh, "unit": short}, "kind": link.kind}));
+        out.rows.extend(held);
+        out.tables.push(link.id.clone());
+    }
+}
+
+/// The key of a fill's story input (story_input), which the findings step (story_findings) reads and takes out.
+const STORY_IN: &str = "story_in";
+
+/// The shape condition of a page that runs against a target (knobs.json recipes[].eats).
+const HAS_TARGET: &str = "has_target";
+
+/// How many findings the model is shown at most: every one the findings child gives (its TOP_K, one per angle). The
+/// child's score does not read the question, so a cut by score alone can hide the finding the question asks for (st1, 11-23:
+/// the whole's path to its target ranked sixth of seven under a four-finding cut); the model reads the question and picks.
+/// It still picks only two to four (the thesis block lists that many, thesis_claims.py): STORY_TOLD.
+const STORY_SHOWN: usize = 8;
+
+/// How many findings a story tells at most (the thesis block's two to four, thesis_claims.py). The claims step lets the model
+/// list up to CLAIMS_MAX, first the one that answers the question; the story keeps its first STORY_TOLD, in its order.
+const STORY_TOLD: usize = 4;
+
+/// What the findings child reads for a story page: the main table, its place dimension, the whole (the target's place when
+/// the page runs against a target, has_target; else `whole`, shape_for's, or none) and the other places that are countries
+/// as its members, the dimensions held at one code, the target row when there is one (its table, its own dimensions and
+/// year: with none, the findings that need it do not stand), the rows (the main's and the target's), the formats its facts print in (the
+/// unit's, at the decimals the main's values hold; a year; a ratio at one decimal), the measure's reviewed name and the
+/// unit's short form. No number here prints: the child's facts are computed by layer 1, over these rows and formats, which
+/// the fill takes from here, never from the child (story_page).
+fn story_input(
+    shape: &Shape,
+    target: Option<&(String, String, String)>,
+    whole: Option<&str>,
+    (main_rows, targets): (&[Value], &BTreeMap<String, Vec<Value>>),
+    measure: &str,
+) -> Result<Value, String> {
+    // the whole: the target's place, else the one the caller gives (shape_for's), else none
+    let place: &str = match target {
+        Some((_, place, _)) => place.as_str(),
+        None => whole.unwrap_or_default(),
+    };
+    let target = match target {
+        Some((table, place, year)) => {
+            let rows = targets
+                .get(table)
+                .into_iter()
+                .flatten()
+                .filter(|r| {
+                    r["time"].as_str() == Some(year)
+                        && r["dims"][&shape.place].as_str() == Some(place)
+                })
+                .collect::<Vec<_>>();
+            let [row] = rows.as_slice() else {
+                return Err(format!(
+                    "story: {} target rows of {table} at {place} {year}, not one",
+                    rows.len()
+                ));
+            };
+            Some((table, year, *row))
+        }
+        None => None,
+    };
+    let fixed: Map<String, Value> = shape
+        .dims
+        .iter()
+        .filter(|(d, codes)| **d != shape.place && codes.len() == 1)
+        .filter_map(|(d, codes)| Some((d.clone(), json!(codes.iter().next()?))))
+        .collect();
+    let members: Vec<String> = shape
+        .dims
+        .get(&shape.place)
+        .into_iter()
+        .flatten()
+        .filter(|c| *c != place && shape.countries.contains(c))
+        .cloned()
+        .collect();
+    let short = next_pack::unit_short(&shape.unit)
+        .ok_or_else(|| format!("story: unit {} has no short form", shape.unit))?;
+    // the decimals the main's values hold, at most one (two when every value is under 10): a story's numbers are read, not
+    // looked up (the sample page prints a share at one place)
+    let values: Vec<&str> = main_rows
+        .iter()
+        .filter_map(|r| r["value"].as_str())
+        .collect();
+    let small = values
+        .iter()
+        .all(|v| v.parse::<f64>().is_ok_and(|x| x.abs() < 10.0));
+    let dec = values
+        .iter()
+        .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
+        .max()
+        .unwrap_or(0)
+        .min(if small { 2 } else { 1 });
+    let value = shape.unit.to_lowercase();
+    let unit_suffix = next_pack::unit_number_suffix(&shape.unit)
+        .map(suffix)
+        .unwrap_or_default();
+    // a difference or a pace of a percent is in percentage points (POINTS), of any other unit in the unit itself
+    let change_suffix = match unit_suffix.as_str() {
+        "%" => POINTS.1.to_string(),
+        _ => unit_suffix.clone(),
+    };
+    let scale = shape.scale.unwrap_or(1.0);
+    let fmt_defs = json!({
+        value.clone(): {"scale": scale, "dec": dec, "suffix": unit_suffix},
+        "story_delta": {"scale": scale, "dec": dec, "suffix": change_suffix},
+        "story_year": {"scale": 1, "dec": 0, "suffix": ""},
+        "story_times": {"scale": 1, "dec": 1, "suffix": ""},
+    });
+    let rows: Vec<Value> = main_rows
+        .iter()
+        .cloned()
+        .chain(target.map(|(_, _, row)| row.clone()))
+        .collect();
+    let mut input = json!({
+        "main": {"table": shape.main, "by": shape.place, "whole": place, "members": members, "filter": fixed},
+        "rows": rows,
+        "fmts": {"value": value, "delta": "story_delta", "year": "story_year", "times": "story_times"},
+        "fmt_defs": fmt_defs,
+        "words": {"measure": measure, "unit": short},
+    });
+    match target {
+        Some((table, year, row)) => {
+            input["target"] = json!({"table": table, "filter": row["dims"], "time": year})
+        }
+        // no target: the findings that need one (need, path) do not stand; no whole: the main names none
+        None if place.is_empty() => {
+            if let Some(m) = input["main"].as_object_mut() {
+                m.remove("whole");
+            }
+        }
+        None => {}
+    }
+    Ok(input)
 }
 
 /// The countries the question names on their own (the knowledge group's places, countries only), each as the page's rows
@@ -4247,7 +5090,56 @@ fn leaf_page(
     else {
         unreachable!("the visual group answered leaf_fill with another reply")
     };
-    let (strip, strip_ask) = page_strip(calls, picked, &page.refs, page.w, &runtime);
+    // a page with an opening slot asks for its opening picture (IllusHero); when it cannot be made here the visual group
+    // answers with the strip instead, owed as page_strip's; a refusal or a failed call owes the strip and gives none, so the
+    // page check strip_placed fails it, its event saying why. The picture follows the page's story: the lead finding's angle
+    // (the first titled section's id, which the findings child names) picks its scene
+    let lead_section = fill["knobs"]["spec"]["sections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|s| s.get("title").is_some());
+    let lead = lead_section.and_then(|s| s["id"].as_str());
+    // the lead finding's own rows (the findings child's `picture.subject`, read from the same rows its leaf draws): with them the
+    // picture is composed from the finding, not from the table's tags alone
+    let subject = lead_section.and_then(|s| s["picture"].get("subject"));
+    let (strip, hero, strip_ask) = match picked.opening {
+        true => match crate::next_flow::visual_call(
+            calls,
+            "illus_hero",
+            Request::IllusHero {
+                tables: &page.refs,
+                lead,
+                subject,
+                width: page.w,
+                runtime: &runtime,
+            },
+        ) {
+            Ok(Reply::Opening { drawn, instead, .. }) => {
+                let given = instead.is_some();
+                let ask = StripAsk {
+                    slot: true,
+                    asked: given,
+                    given,
+                };
+                (instead, drawn, ask)
+            }
+            Ok(_) => unreachable!("the visual group answered illus_hero with another reply"),
+            Err(_) => (
+                None,
+                None,
+                StripAsk {
+                    slot: true,
+                    asked: true,
+                    given: false,
+                },
+            ),
+        },
+        false => {
+            let (strip, ask) = page_strip(calls, picked, &page.refs, page.w, &runtime);
+            (strip, None, ask)
+        }
+    };
     let leaf = LeafPage {
         draw: &page.draw,
         bake: &page.bake,
@@ -4259,6 +5151,7 @@ fn leaf_page(
         refs: &page.refs,
         facts: (&page.spec, &page.rows, &page.facts),
         strip: strip.as_ref(),
+        hero: hero.as_ref(),
     };
     // a later block's page is published beside the first under its own folder (next_gate::block_dir)
     let dir = crate::next_gate::block_dir(recipe, block);
@@ -4616,6 +5509,274 @@ fn recipes_tried(
     })
 }
 
+/// The event of a story page's findings step: the candidates the findings child gave (id, angle, layer, score and why) and
+/// the ones it left out with why, the ids the page tells in order, and whether the model picked them or the program took
+/// every one (fewer than CLAIMS_MIN stood).
+pub const STORY_FINDINGS_EVENT: &str = "next_story_findings";
+
+/// A refusal the search step held for a target year (scope_refused's target_year, owner 11-22 23:59) settled at the page
+/// step: Ok when nothing is held or the picked fill runs against that very year's target (its findings input names it);
+/// any other fill, or none, stops with the held refusal's own words. A refusal held for no year is the search step's.
+fn held_settled(
+    held: Option<&crate::l5geo::ScopeRefusal>,
+    fill: Option<&Value>,
+) -> Result<(), Stop> {
+    let Some((r, year)) = held.and_then(|r| r.target_year.map(|y| (r, y.to_string()))) else {
+        return Ok(());
+    };
+    match fill.and_then(|f| f[STORY_IN]["target"]["time"].as_str()) == Some(year.as_str()) {
+        true => Ok(()),
+        false => Err(crate::next_flow::scope_stop(r)),
+    }
+}
+
+/// The findings step of a page that runs against a target (owner 11-22 19:0x, the sample's story put into the program): the
+/// visual group's findings child scores the findings the page's rows hold; the model picks, the one that answers the
+/// question first, CLAIMS_MIN or more of the best STORY_SHOWN by number only (fewer standing, the program takes every one);
+/// the child composes the picks into the page's facts, sections and each section's leaf data, which go into the fill beside
+/// its own (a fact or format of the same key declared another way stops the page). Every number is a fact layer 1 computes
+/// again from the rows; the child's own values only rank the findings. Err stops the page at the fill.
+async fn story_findings(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    fill: &mut Value,
+    calls: &std::sync::Mutex<Vec<Value>>,
+    cancel: &AtomicBool,
+) -> Result<(), Stop> {
+    use crate::next_visual::{Reply, Request};
+    let Some(input) = fill.as_object_mut().and_then(|f| f.remove(STORY_IN)) else {
+        return Ok(());
+    };
+    let runtime = recorder.run_dir().join("runtime");
+    let child = |request: &Value| -> Result<Value, Stop> {
+        match crate::next_flow::visual_call(
+            calls,
+            "story",
+            Request::Story {
+                request,
+                runtime: &runtime,
+            },
+        ) {
+            Ok(Reply::Story(reply)) => Ok(reply),
+            Ok(_) => unreachable!("the visual group answered story with another reply"),
+            Err(why) => Err(stop("fill", format!("story findings: {why}"))),
+        }
+    };
+    // the question goes with the rows: a finding whose question words (the child's word table) it holds is scored first
+    let mut asked = input.clone();
+    asked["mode"] = json!("candidates");
+    asked["question"] = json!(question);
+    let found = child(&asked)?;
+    let candidates: Vec<&Value> = found["candidates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(STORY_SHOWN)
+        .collect();
+    let ids: Vec<String> = candidates
+        .iter()
+        .filter_map(|c| c["id"].as_str().map(str::to_string))
+        .collect();
+    if ids.len() < 2 || ids.len() != candidates.len() {
+        recorder.program_event(
+            STORY_FINDINGS_EVENT,
+            json!({"found": found, "picks": [], "by": "none"}),
+        )?;
+        return Err(stop(
+            "fill",
+            format!(
+                "story findings: {} finding(s) stand; a story tells two at least",
+                ids.len()
+            ),
+        ));
+    }
+    let (picks, by): (Vec<String>, &str) = if ids.len() < crate::next_flow::CLAIMS_MIN {
+        (ids.clone(), "program")
+    } else {
+        let mut lines = vec![
+            format!("Question: {question}"),
+            "Findings the page's rows hold, worked out and scored by the program, best first:"
+                .to_string(),
+        ];
+        for (i, c) in candidates.iter().enumerate() {
+            lines.push(format!(
+                "{}. {}",
+                i + 1,
+                c["summary"].as_str().unwrap_or_default()
+            ));
+        }
+        lines.push(format!(
+            "Pick the findings the page should tell, the one that answers the question first: pick must list {} to {} different finding numbers.",
+            crate::next_flow::CLAIMS_MIN,
+            ids.len().min(crate::next_flow::CLAIMS_MAX)
+        ));
+        let ask = Ask::Claims {
+            groups: vec![ids.len()],
+            relations: 1,
+        };
+        let picked = match recorder
+            .ask_step(model, &ask, &lines.join("\n"), cancel)
+            .await?
+        {
+            (_, Choice::Claims { picks, .. }) => picks,
+            (_, other) => unreachable!("the findings step was answered with {other:?}"),
+        };
+        (
+            picked
+                .iter()
+                .take(STORY_TOLD)
+                .map(|p| ids[p - 1].clone())
+                .collect(),
+            "model",
+        )
+    };
+    recorder.program_event(
+        STORY_FINDINGS_EVENT,
+        json!({"found": found, "picks": picks, "by": by}),
+    )?;
+    let mut asked = input.clone();
+    asked["mode"] = json!("compose");
+    asked["question"] = json!(question);
+    asked["picks"] = json!(picks);
+    let page = child(&asked)?;
+    story_page(fill, &input, &page).map_err(|why| stop("fill", format!("story findings: {why}")))
+}
+
+/// What the findings child may add to a fill (review 11-22: rows, formats and names are layer 1's): the page's facts (declared
+/// queries, computed by layer 1), its sections and its leaf data, under knobs.spec and nothing else; a reply with any other
+/// key refuses. The rows the facts read and their formats are the flow's own story input (the knowledge group's rows), the
+/// members its places; nothing the fill holds is overwritten (merge_into).
+fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), String> {
+    let only = |v: &Value, keys: &[&str], at: &str| -> Result<(), String> {
+        match v.as_object() {
+            Some(o) => match o.keys().find(|k| !keys.contains(&k.as_str())) {
+                Some(k) => Err(format!(
+                    "the child gave {at}.{k}, which is layer 1's or no part of a fill"
+                )),
+                None => Ok(()),
+            },
+            None => Err(format!("the child gave no object as {at}")),
+        }
+    };
+    only(page, &["knobs"], "reply")?;
+    only(&page["knobs"], &["spec"], "knobs")?;
+    only(
+        &page["knobs"]["spec"],
+        &crate::next_leaf::STORY_TAKEN,
+        "knobs.spec",
+    )?;
+    // the headline words are the findings' own (the lead's conclusion and text, the first finding the model picked): they
+    // replace the draft the fill was picked with (and page_words keeps them over the text step's), the rest merges
+    let mut given = page["knobs"]["spec"].clone();
+    for key in crate::next_leaf::STORY_WORDS {
+        if let Some(words) = given.as_object_mut().and_then(|o| o.remove(key)) {
+            if !words.as_str().is_some_and(|w| !w.trim().is_empty()) {
+                return Err(format!(
+                    "the child gave knobs.spec.{key}, which is no wording"
+                ));
+            }
+            fill["knobs"]["spec"][key] = words;
+        }
+    }
+    merge_into(&mut fill["knobs"]["spec"], &given, "knobs.spec")?;
+    merge_into(
+        &mut fill["knobs"]["spec"],
+        &json!({"fmts": input["fmt_defs"]}),
+        "knobs.spec",
+    )?;
+    merge_into(
+        &mut fill["knobs"],
+        &json!({"members": input["main"]["members"]}),
+        "knobs",
+    )?;
+    let rows = fill["rows"]
+        .as_array_mut()
+        .ok_or("the fill's rows are no list")?;
+    for r in input["rows"].as_array().into_iter().flatten() {
+        if !rows.iter().any(|x| x["src"] == r["src"]) {
+            rows.push(r.clone());
+        }
+    }
+    // the page draws the leaves its sections name, in the recipe's order, and no other: a section naming a layer the recipe
+    // does not list refuses
+    let named: Vec<&str> = fill["knobs"]["spec"]["sections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s["layer"].as_str())
+        .collect();
+    if let Some(order) = fill["order"].as_array() {
+        let listed: Vec<&str> = order.iter().filter_map(Value::as_str).collect();
+        if let Some(l) = named.iter().find(|l| !listed.contains(l)) {
+            return Err(format!(
+                "a section names the layer {l}, which the page's recipe does not list"
+            ));
+        }
+        let kept: Vec<Value> = listed
+            .iter()
+            .filter(|l| named.contains(l))
+            .map(|l| json!(l))
+            .collect();
+        fill["order"] = Value::Array(kept);
+    }
+    Ok(())
+}
+
+/// A unit whose short form holds a digit (a chain-linked volume's base year, as in a euro-per-head unit at 2020 prices) goes to the findings child as the
+/// unit table's name entry (words.unit_src, name:unit_short_zh:<code>), never as typed words, and the page's ledger holds that entry
+/// (knobs.named) as the unit table gives it (fixed_name), as the column page's unit line does. Only a reference to a name-table entry
+/// is added: no word, number or choice of a picture is made here. A unit whose form holds no digit goes as words, as before.
+fn unit_name_entry(
+    input: &mut Value,
+    knobs: &mut Value,
+    unit: &str,
+) -> Result<(), (&'static str, String)> {
+    let Some(short) = next_pack::unit_line_form(unit) else {
+        return Ok(());
+    };
+    if !short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) {
+        return Ok(());
+    }
+    let src = format!("{}{unit}", FIXED_NAMES[1]);
+    if fixed_name(&src).as_deref() != Some(short) {
+        return Err((
+            "fill",
+            format!("unit {unit}: its short form {short:?} is not the unit table's"),
+        ));
+    }
+    input["words"]["unit_src"] = json!(src);
+    if !knobs["named"].is_object() {
+        knobs["named"] = json!({});
+    }
+    knobs["named"][src.as_str()] = json!(short);
+    Ok(())
+}
+
+/// `from` merged into `into`: an object key by key, a key `into` lacks (or holds as null) taken, a key both hold the same kept,
+/// an object in both merged the same way; any other key both hold refuses, named by its path from `at`. Nothing is overwritten.
+fn merge_into(into: &mut Value, from: &Value, at: &str) -> Result<(), String> {
+    match (into, from) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (k, v) in b {
+                match a.get_mut(k) {
+                    None | Some(Value::Null) => {
+                        a.insert(k.clone(), v.clone());
+                    }
+                    Some(was) if was == v => {}
+                    Some(was) if was.is_object() && v.is_object() => {
+                        merge_into(was, v, &format!("{at}.{k}"))?
+                    }
+                    Some(_) => return Err(format!("{at}.{k} is held another way")),
+                }
+            }
+            Ok(())
+        }
+        (into, from) if *into == *from => Ok(()),
+        _ => Err(format!("{at} is held another way")),
+    }
+}
+
 /// The recipe a page takes, its fill, and each recipe tried before it as "recipe: why it was passed over".
 type LeafPick = (&'static Recipe, Value, Vec<String>);
 
@@ -4652,7 +5813,11 @@ fn leaf_request(
     };
     for recipe in recipes_tried(catalogue, (of_blocks, many)) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
-            if kept != answers {
+            let also = recipe
+                .without
+                .as_ref()
+                .is_some_and(|w| w.relations.contains(kept));
+            if kept != answers && !also {
                 missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
                 continue;
             }
@@ -4938,7 +6103,10 @@ pub async fn reword(
     cancel: &AtomicBool,
 ) -> Result<BTreeMap<Target, String>, Stop> {
     let ask = drafts.ask(drafts.slot_ids());
-    let Ask::Text {
+    let Ask::Text(text_ask) = &ask else {
+        unreachable!("drafts ask for text")
+    };
+    let TextAsk {
         fields,
         numbers,
         periods,
@@ -4950,11 +6118,9 @@ pub async fn reword(
         places,
         members,
         unasked,
+        terms,
         ..
-    } = &ask
-    else {
-        unreachable!("drafts ask for text")
-    };
+    } = &**text_ask;
     let listed: Vec<String> = fields
         .iter()
         .map(|(n, text)| format!("{n}. {text}"))
@@ -5000,7 +6166,7 @@ pub async fn reword(
                 .iter()
                 .map(|a| ask.decode(a).0)
                 .collect();
-            let fields_only = Ask::Text {
+            let fields_only = Ask::Text(Box::new(TextAsk {
                 fields: fields.clone(),
                 slots: Vec::new(),
                 numbers: numbers.clone(),
@@ -5013,7 +6179,8 @@ pub async fn reword(
                 places: *places,
                 members: members.clone(),
                 unasked: unasked.clone(),
-            };
+                terms: terms.clone(),
+            }));
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
             for answer in &answers {
@@ -5024,7 +6191,7 @@ pub async fn reword(
                     }
                 }
                 for (id, name) in answer["names"].as_object().into_iter().flatten() {
-                    let one = Ask::Text {
+                    let one = Ask::Text(Box::new(TextAsk {
                         fields: BTreeMap::new(),
                         slots: vec![id.clone()],
                         numbers: numbers.clone(),
@@ -5037,7 +6204,8 @@ pub async fn reword(
                         places: None,
                         members: Vec::new(),
                         unasked: Vec::new(),
-                    };
+                        terms: Vec::new(),
+                    }));
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
                         && drafts.slot_ids().contains(id)
@@ -5207,7 +6375,7 @@ pub const LEAF_GATE_EVENT: &str = "next_leaf_gate";
 pub const DRAWN_CHECKED_EVENT: &str = "next_drawn_checked";
 
 /// The completion gate on the page just published, with the fetches the flow itself holds (its events are not on disk
-/// yet): each prepared table's file and its companions', a file counted only under the content-addressed name its fetch
+/// yet): each prepared table's file, its companions' and its event chain's, a file counted only under the content-addressed name its fetch
 /// gives it (data/<sha256>.<ext>), so other bytes there are no fetch of it. A table whose id ends "@2" (as step_for reads
 /// it) is a World Bank fetch, as the completion gate reads its recorded fetches (next_gate fetches): the gaps the flow
 /// records are the ones that gate finds again. Called once PAGE_STATE names the question the gate reads.
@@ -5217,11 +6385,17 @@ fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<Str
         Err(why) => return vec![why],
     };
     let files = prepared.iter().flat_map(|p| {
-        std::iter::once((p.id.as_str(), p.file.as_str())).chain(
-            p.companions
-                .iter()
-                .map(|(id, file)| (id.as_str(), file.as_str())),
-        )
+        std::iter::once((p.id.as_str(), p.file.as_str()))
+            .chain(
+                p.companions
+                    .iter()
+                    .map(|(id, file)| (id.as_str(), file.as_str())),
+            )
+            .chain(
+                p.chain
+                    .iter()
+                    .map(|c| (c.link.id.as_str(), c.file.as_str())),
+            )
     });
     let fetched: Vec<crate::next_gate::Fetch> = files
         .filter_map(|(table, file)| {
@@ -5913,7 +7087,7 @@ pub(crate) async fn page_of_block(
     // that names a change. A pick that stopped stops the run after the text step, as before.
     // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it; the recipes passed over
     // before the picked one go on the ring event with why (a stopped pick's why already names each)
-    let (picked, passed_over) = match leaf_request(
+    let (mut picked, passed_over) = match leaf_request(
         recorder.run_dir(),
         prepared,
         &drawn,
@@ -5925,6 +7099,26 @@ pub(crate) async fn page_of_block(
         Ok((recipe, fill, passed)) => (Ok((recipe, fill)), passed),
         Err(stopped) => (Err(stopped), Vec::new()),
     };
+    // a question that asks a future year a target is set for was held, not let through, at the search step (owner 11-22
+    // 23:59): only a page that runs against that year's target answers it; any other page, or none, stops with the search
+    // step's own refusal
+    let this_year = chrono::Datelike::year(&chrono::Local::now());
+    let held = catalogue.scope_refused(question, this_year);
+    if let Err(stopped) = held_settled(held.as_ref(), picked.as_ref().ok().map(|(_, fill)| fill)) {
+        record_page_calls(recorder, catalogue, calls)?;
+        return Err(stopped);
+    }
+    // a page that runs against a target tells the findings the model picks of the program's (story_findings), before the
+    // text step words the page
+    if let Ok((_, fill)) = picked.as_mut() {
+        if let Err(stopped) = story_findings(recorder, model, question, fill, &calls, cancel).await
+        {
+            if recorder.resume_under_last_accepted() {
+                record_page_calls(recorder, catalogue, calls)?;
+            }
+            return Err(stopped);
+        }
+    }
     // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
     // anything (review 11-16: a page left out must not cost a model call)
     if block == 0 {
@@ -8034,6 +9228,7 @@ mod tests {
             places_drawn: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         }
     }
 
@@ -8190,6 +9385,7 @@ mod tests {
                     claims: details["claims"].as_array().cloned().unwrap_or_default(),
                     places_zh: Vec::new(),
                     companions: Vec::new(),
+                    chain: Vec::new(),
                     asked: json!([]),
                     relation: None,
                 };
@@ -8766,10 +9962,10 @@ mod tests {
         }
     }
 
-    /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data and
-    /// the notes' hold (rule extent over the page input in both, next_tree_gen with_values), and the flow hands in none: an
-    /// extent set on the page input changes nothing, a moved map point moves the tree's extent (and it is no longer the
-    /// leaf's). The column recipe has had no map since v5 item 2 (11-13); the rule is the change recipe's circles' still, so
+    /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data
+    /// holds (rule extent over the page input, next_tree_gen with_values; the notes name none since 11-22, at the bars), and
+    /// the flow hands in none: an extent set on the page input changes nothing, a moved map point moves the tree's extent
+    /// (and it is no longer the leaf's). The column recipe has had no map since v5 item 2 (11-13); the rule is the change recipe's circles' still, so
     /// the q1 page is laid out here with the circles it had (the bindings and the recipe's layers as before).
     #[test]
     fn the_trees_extent_is_the_leaf_data_s_and_the_flow_hands_in_none() {
@@ -8786,7 +9982,7 @@ mod tests {
                 "leader_notes".into(),
             ],
             external: vec!["bars".into(), "bubbles".into(), "leader_notes".into()],
-            points: vec!["bubbles".into(), "leader_notes".into()],
+            points: vec!["bubbles".into()],
             ..recipe_like(column)
         };
         let (_, fill, _) = q1_fills_as(&overlay, with_map);
@@ -8809,7 +10005,8 @@ mod tests {
         let leaves = &fill["knobs"]["spec"]["hero"]["leaves"];
         let leaf = leaves["bubbles"]["ext"].clone();
         assert_eq!(leaf.as_array().map(Vec::len), Some(4));
-        assert_eq!(leaves["leader_notes"]["ext"], leaf);
+        // the notes stand at the bars (11-22): they name no extent of their own
+        assert!(leaves["leader_notes"].get("ext").is_none());
         assert_eq!(tree_ext(&page_in), vec![leaf.clone()]);
         let mut handed = page_in.clone();
         handed["page"] = json!({"ext": [0.0, 0.0, 1.0, 1.0]});
@@ -9335,6 +10532,71 @@ mod tests {
         }
     }
 
+    /// A hub page totals its origins and prints each as a share of that total, so over a unit the unit table marks not
+    /// additive (a chain-linked level, owner decision 11-25) its shape is refused, the refusal naming what a page over that
+    /// unit may do, with an example; the same rows in an amount that adds up read as before.
+    #[test]
+    fn a_hub_page_over_a_unit_that_does_not_add_up_is_refused_with_what_it_may_do() {
+        let partners: &[&str] = &["RU", "NO", "US", "DE", "TOTAL", "AFR_OTH"];
+        let tables = |unit: &str| {
+            let fixed = [("siec", "G3000"), ("unit", unit), ("geo", "EU27_2020")];
+            (
+                ring_rows("imp", &fixed, ("partner", partners), &["2021", "2024"]),
+                ring_rows(
+                    "impm",
+                    &fixed,
+                    ("partner", &["RU", "NO"]),
+                    &["2024-01", "2024-02"],
+                ),
+            )
+        };
+        let (main, monthly) = tables("MIO_M3");
+        assert!(ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).is_ok());
+        for unit in ["CLV10_MEUR", "CLV20_EUR_HAB", "PYP_MEUR"] {
+            let (main, monthly) = tables(unit);
+            let why = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap_err();
+            assert_eq!(
+                Some(why.clone()),
+                unit_sum_refused(unit).map(|w| format!("not this shape: {w}"))
+            );
+            assert!(
+                why.contains("the last value, a difference, a ratio or a rank")
+                    && why.contains("e.g."),
+                "{why}"
+            );
+        }
+        // a rate or an index the table marks not additive (pct_family, pct_change, index_base) is no level: a hub page over
+        // it is not refused for its sum, as before
+        for unit in ["PC_GDP", "PCH_M1_SA"] {
+            let (main, monthly) = tables(unit);
+            let got = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs);
+            assert!(
+                !matches!(&got, Err(e) if e.contains("does not add up")),
+                "{unit}: {:?}",
+                got.err()
+            );
+        }
+        // the unit table's own word decides: an amount that adds up, a not-additive rate or index, or a code it has no row
+        // for, is not refused here; a not-additive level (amount, amount_own_currency, per_capita) is
+        assert_eq!(
+            [
+                "MIO_M3",
+                "PER",
+                "GWH",
+                "NO_SUCH_UNIT",
+                "PC_GDP",
+                "PCH_M1_SA",
+                "CLV_I20",
+                "PD10_EUR"
+            ]
+            .map(unit_sum_refused),
+            [None, None, None, None, None, None, None, None]
+        );
+        for unit in ["CLV10_MEUR", "CLV10_MNAC", "CLV20_EUR_HAB", "PYP_MEUR"] {
+            assert!(unit_sum_refused(unit).is_some(), "{unit}");
+        }
+    }
+
     /// The ring page's fill on Hubs rows: its rows (no total or aggregate row), facts, unit format, share words, top list
     /// and window; the visual group's LeafFill computes it into one ring layer per name; a unit with no short form refuses.
     #[test]
@@ -9653,7 +10915,1049 @@ mod tests {
 
     /// The unit line's scope is the data's aggregate that holds every place drawn (EU27_2020; the euro area misses IT), named
     /// only through the name table and counted by the drawn fact: nothing the question says is printed, so a question
-    /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
+    /// Owner 11-22 (a story page runs against the target the law sets): has_target takes the latest target row the
+    /// knowledge group handed in for this main, at a place the main holds and after its last year; a target for another
+    /// table, for a place the main lacks, or at or before the last year does not count, and with none the shape fails.
+    #[test]
+    fn a_target_counts_only_for_this_main_at_a_held_place_after_the_last_year() {
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &["2005", "2024"],
+        );
+        for r in main.iter_mut() {
+            r["value"] = json!("20");
+        }
+        let target = |main_id: &str, geo: &str, t: &str| json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "slice": {"unit": "PC"}, "time": t, "value": "42.5"});
+        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"]
+            .map(String::from)
+            .to_vec();
+        let ok = [
+            target("ren", "EU27_2020", "2030"),
+            target("ren", "EU27_2020", "2040"),
+            target("other", "EU27_2020", "2050"),
+            target("ren", "US", "2060"),
+        ];
+        let shape = shape_of(
+            &eats,
+            &[("ren", &main[..]), ("targets", &ok[..])],
+            &Scoped(true),
+        )
+        .unwrap();
+        assert_eq!(
+            shape.target,
+            Some((
+                "targets".to_string(),
+                "EU27_2020".to_string(),
+                "2040".to_string()
+            ))
+        );
+        let none = [
+            target("ren", "EU27_2020", "2024"),
+            target("other", "EU27_2020", "2030"),
+        ];
+        let e = shape_of(
+            &eats,
+            &[("ren", &main[..]), ("targets", &none[..])],
+            &Scoped(true),
+        )
+        .unwrap_err();
+        assert!(e.contains("no target row after 2024"), "{e}");
+    }
+
+    /// I8: the EU renewable-share main reaches a target through the knowledge group's own command (the call GroupCatalogue's
+    /// `targets` makes), the registry's row is the table has_target reads, and the shape ends with that target, its place and
+    /// its year; a main with no target (a gas table) gets no row and the shape fails by name. The call leaves its event.
+    #[test]
+    fn the_registrys_target_row_reaches_a_renewable_main_s_shape() {
+        let calls = std::sync::Mutex::new(Vec::new());
+        let rows_for = |main: &str| match crate::next_flow::knowledge_call(
+            &calls,
+            "targets",
+            json!({"main": main}),
+            crate::next_knowledge::Request::Targets { main },
+        )
+        .unwrap()
+        {
+            crate::next_knowledge::Reply::Targets(rows) => rows,
+            _ => panic!("another reply"),
+        };
+        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"]
+            .map(String::from)
+            .to_vec();
+        for main_id in ["nrg_ind_ren", "sdg_07_40"] {
+            let main = ring_rows(
+                main_id,
+                &[("freq", "A"), ("nrg_bal", "REN"), ("unit", "PC")],
+                ("geo", &["DE", "FR", "EU27_2020"]),
+                &["2005", "2023"],
+            );
+            let target = rows_for(main_id);
+            assert_eq!(target.len(), 1, "{main_id}");
+            let by_table = target[0]["table"].as_str().unwrap().to_string();
+            assert_eq!(by_table, format!("target_{main_id}"));
+            let shape = shape_of(
+                &eats,
+                &[(main_id, &main[..]), (by_table.as_str(), &target[..])],
+                &Scoped(true),
+            )
+            .unwrap();
+            assert_eq!(
+                shape.target,
+                Some((by_table, "EU27_2020".to_string(), "2030".to_string()))
+            );
+        }
+        // A table no target is read against: no rows, so no shape with a target.
+        let gas = ring_rows(
+            "nrg_ti_gas",
+            &[("siec", "G3000"), ("unit", "MIO_M3")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &["2005", "2023"],
+        );
+        assert!(rows_for("nrg_ti_gas").is_empty());
+        let e = shape_of(&eats, &[("nrg_ti_gas", &gas[..])], &Scoped(true)).unwrap_err();
+        assert!(e.contains("no target row"), "{e}");
+        let events = calls.lock().unwrap();
+        assert_eq!(events.len(), 3);
+        assert!(events
+            .iter()
+            .all(|e| e["group"] == "knowledge" && e["request"] == "targets" && e["ok"] == true));
+    }
+
+    /// Every recipe's name with its verdict, in registry order.
+    type Verdicts<'a, T> = Vec<(&'a str, Result<T, String>)>;
+
+    /// The first recipe, in registry order, whose conditions the tables meet (what the pick tries one after the other), with
+    /// every recipe's verdict beside it.
+    fn first_shape<'a>(
+        tables: &[(&str, &[Value])],
+        catalogue: &dyn Catalogue,
+    ) -> (Option<&'a str>, Verdicts<'a, ()>) {
+        let all: Vec<(&str, Result<(), String>)> = Hubs
+            .recipes()
+            .iter()
+            .map(|r| {
+                (
+                    r.name.as_str(),
+                    shape_of(&r.eats, tables, catalogue).map(|_| ()),
+                )
+            })
+            .collect();
+        (all.iter().find(|(_, v)| v.is_ok()).map(|(n, _)| *n), all)
+    }
+
+    /// The story page is tried before the one-line page and is chosen only for a request that carries a target row (has_target
+    /// after the page's last year, at a held place), in both data shapes: a Eurostat table across places over twenty years with
+    /// the law's target at 2030 is the story page, the same table with no target row is not (it says so), and a World Bank
+    /// table of one economy over the years, which has no target to hand in and no places to compare, is the one-line page, the
+    /// story page refused.
+    #[test]
+    fn the_story_page_is_chosen_only_for_a_request_with_a_target_row() {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let mut eu = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &years,
+        );
+        for r in eu.iter_mut() {
+            r["value"] = json!("20");
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
+        let with = [target];
+        let (first, all) = first_shape(&[("ren", &eu[..]), ("targets", &with[..])], &Scoped(true));
+        assert_eq!(first, Some("page_story"), "{all:?}");
+        let (first, all) = first_shape(&[("ren", &eu[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"), "{all:?}");
+        let why = all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .clone()
+            .unwrap_err();
+        assert!(why.contains("no target row after 2024"), "{why}");
+        // a target for another table does not make the main a story
+        let other = [
+            json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
+        let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &other[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"));
+        // review 11-22: a target set on another slice of the table (renewables overall, the main renewables in transport),
+        // or a main holding more than one code of a slice's dimension, takes no target
+        for (slice, why) in [
+            (json!({"unit": "PC", "nrg_bal": "REN"}), "nrg_bal absent"),
+            (json!({"unit": "KTOE"}), "other unit"),
+        ] {
+            let t = [
+                json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": slice, "time": "2030", "value": "42.5"}),
+            ];
+            let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &t[..])], &Scoped(true));
+            assert_ne!(first, Some("page_story"), "{why}");
+        }
+        let mut two = eu.clone();
+        two.extend(eu.iter().map(|r| {
+            let mut r = r.clone();
+            r["dims"]["unit"] = json!("KTOE");
+            r["src"] = json!(format!("{}k", r["src"].as_str().unwrap()));
+            r
+        }));
+        let t = [
+            json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
+        let (first, _) = first_shape(&[("ren", &two[..]), ("targets", &t[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"), "two units");
+
+        let id = "NY.GDP.PCAP.CD@2";
+        let wb: Vec<Value> = ["2000", "2005", "2010", "2015", "2020", "2022"]
+            .iter()
+            .map(|t| json!({"src": format!("series:{id}/IND:{t}:value"), "table": id, "dims": {"country": "IND"}, "time": t, "value": "1000"}))
+            .collect();
+        let (first, all) = first_shape(&[(id, &wb[..])], &WbRanked(Vec::new()));
+        assert_eq!(first, Some("one_line"), "{all:?}");
+        assert!(all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .is_err());
+    }
+
+    /// Owner 11-22 19:0x (the sample's story put into the program): what a story page's findings step hands the findings child
+    /// (story_input) is read from the shape, and every fact the child declares for the picks is one layer 1 computes from the
+    /// rows (next_facts), its axis ticks the ones the leaf names. Two data shapes: a share over eight places and the whole with
+    /// the law's target above every pace (the path finds even the best year short), and the same table with a target the
+    /// past pace already reaches (no gap, the path says which pace gets there).
+    #[test]
+    fn a_story_pages_findings_are_facts_layer_1_computes_from_the_rows() {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let mut rows = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &places),
+            &years,
+        );
+        let pace = |g: &str| match g {
+            "MT" | "LU" => -0.05,
+            "SE" => 0.9,
+            "EU27_2020" => 0.75,
+            _ => 0.5,
+        };
+        for r in rows.iter_mut() {
+            let g = r["dims"]["geo"].as_str().unwrap().to_string();
+            let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+            let start = match g.as_str() {
+                "EU27_2020" => 10.0,
+                _ => 5.0 + 4.0 * places.iter().position(|p| *p == g).unwrap() as f64,
+            };
+            // the whole's best single year (2020) stands out, as the sample's does
+            let jump = if g == "EU27_2020" && y >= 2020.0 {
+                1.5
+            } else {
+                0.0
+            };
+            r["value"] = json!(format!("{:.1}", start + pace(&g) * (y - 2005.0) + jump));
+        }
+        let child = crate::next_leaf::Runner::python(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
+        );
+        let story = recipe("page_story");
+        // the story page places an opening picture over its header (IllusHero, the strip standing in); no other page does
+        assert!(story.opening && story.strip);
+        assert!(Hubs.recipes().iter().filter(|r| r.opening).count() == 1);
+        for (goal, short) in [("60", true), ("35", false)] {
+            let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
+                "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": goal});
+            let targets: BTreeMap<String, Vec<Value>> =
+                [("target_ren".to_string(), vec![target.clone()])].into();
+            let with = [target];
+            let shape = shape_of(
+                &story.eats,
+                &[("ren", &rows[..]), ("target_ren", &with[..])],
+                &Scoped(true),
+            )
+            .unwrap();
+            let at = shape.target.clone().unwrap();
+            assert_eq!(at, ("target_ren".into(), "EU27_2020".into(), "2030".into()));
+            let input =
+                story_input(&shape, Some(&at), None, (&rows, &targets), "可再生能源占比").unwrap();
+            // owner 11-22 23:59: a forecast held for the target year 2030 is settled by this page and by no other; held for
+            // another year, or with no page picked, it stops with the refusal's own words
+            let held = |year| crate::l5geo::ScopeRefusal {
+                class: "forecast".into(),
+                reason_zh: "将来".into(),
+                hit: format!("{year}年"),
+                target_year: Some(year),
+            };
+            // the main's event chain (chain_input), two shapes of link left out: a half-year price and two fuels a year
+            let mut input = input;
+            let chain_years: Vec<String> = (2010..=2024).map(|y| y.to_string()).collect();
+            let chain_years: Vec<&str> = chain_years.iter().map(String::as_str).collect();
+            let link = |id: &str, unit: &str, filter: &[(&str, &str)]| {
+                crate::next_knowledge::ChainCompanion {
+                    id: id.into(),
+                    tag: id.into(),
+                    position: String::new(),
+                    kind: crate::next_companion::LinkKind::Flow,
+                    measure_zh: "测量".into(),
+                    unit: unit.into(),
+                    slice: BTreeMap::new(),
+                    filter: filter
+                        .iter()
+                        .map(|(d, c)| (d.to_string(), c.to_string()))
+                        .collect(),
+                    overlap: crate::next_companion::ChainOverlap {
+                        places: 3,
+                        years: 10,
+                        first: 2010,
+                        last: 2024,
+                    },
+                    axis: crate::next_companion::Axis::Own,
+                }
+            };
+            let valued = |mut rows: Vec<Value>, at: f64| {
+                for (i, r) in rows.iter_mut().enumerate() {
+                    // a step at 2020 in each series, the band the chain finds
+                    let y: f64 = r["time"].as_str().unwrap()[..4].parse().unwrap();
+                    r["value"] = json!(format!(
+                        "{:.0}",
+                        at + if y >= 2020.0 {
+                            at / 3.0
+                        } else {
+                            i as f64 % 2.0
+                        }
+                    ));
+                }
+                rows
+            };
+            let gas = [("siec", "G3000"), ("unit", "MIO_M3")];
+            let air = [("airpol", "GHG"), ("unit", "MIO_T")];
+            let mut chain = ChainIn::default();
+            let geos = ["EU27_2020", "DE"];
+            chain_add(
+                &mut chain,
+                &link("gas_t", "MIO_M3", &gas),
+                valued(
+                    ring_rows("gas_t", &gas, ("geo", &geos), &chain_years),
+                    300000.0,
+                ),
+                "geo",
+                "EU27_2020",
+            );
+            let half: Vec<&str> = ["2020-S1", "2020-S2", "2021-S1"].into();
+            chain_add(
+                &mut chain,
+                &link("price_t", "EUR_KWH", &[("unit", "KWH")]),
+                ring_rows("price_t", &[("unit", "KWH")], ("geo", &geos), &half),
+                "geo",
+                "EU27_2020",
+            );
+            let mut two = ring_rows(
+                "solar_t",
+                &[("unit", "MW"), ("siec", "RA420")],
+                ("geo", &geos),
+                &chain_years,
+            );
+            two.extend(ring_rows(
+                "solar_t",
+                &[("unit", "MW"), ("siec", "RA300")],
+                ("geo", &geos),
+                &chain_years,
+            ));
+            chain_add(
+                &mut chain,
+                &link("solar_t", "MW", &[("unit", "MW")]),
+                two,
+                "geo",
+                "EU27_2020",
+            );
+            chain_add(
+                &mut chain,
+                &link("air_t", "MIO_T", &air),
+                valued(
+                    ring_rows("air_t", &air, ("geo", &geos), &chain_years),
+                    2000.0,
+                ),
+                "geo",
+                "EU27_2020",
+            );
+            assert_eq!(chain.tables, ["gas_t", "air_t"]);
+            assert_eq!(
+                chain.items[0]["filter"],
+                json!({"siec": "G3000", "unit": "MIO_M3", "geo": "EU27_2020"})
+            );
+            assert_eq!(
+                chain.items[0]["words"],
+                json!({"measure": "测量", "unit": "百万立方米"})
+            );
+            assert_eq!(
+                chain.rows.len(),
+                2 * chain_years.len(),
+                "the whole's rows only"
+            );
+            with_chain(&mut input, chain);
+            assert_eq!(input["fmt_defs"]["gas_t_d0"]["suffix"], " 百万立方米");
+            let input = input;
+            let story_fill = json!({STORY_IN: input.clone()});
+            assert!(held_settled(Some(&held(2030)), Some(&story_fill)).is_ok());
+            assert!(held_settled(None, Some(&json!({}))).is_ok());
+            for (r, fill) in [
+                (held(2050), Some(&story_fill)),
+                (held(2030), None),
+                (held(2030), Some(&rows[0])),
+            ] {
+                match held_settled(Some(&r), fill) {
+                    Err(Stop::NoTable(why)) => {
+                        assert!(why.contains("out of scope (forecast"), "{why}")
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+            // the places the page names are the shape's members (fill_of names them): every place, the whole among them
+            assert_eq!(shape.members.len(), places.len());
+            assert_eq!(input["main"]["whole"], "EU27_2020");
+            assert_eq!(input["main"]["filter"], json!({"freq": "A", "unit": "PC"}));
+            assert!(!input["main"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m == "EU27_2020"));
+            // the members' map points, as recipe_request gives the findings' map angle: one inside each member's country
+            let members: Vec<String> = input["main"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m.as_str().unwrap().to_string())
+                .collect();
+            let points = Scoped(true).place_points(&members).unwrap();
+            assert_eq!(points.len(), members.len());
+            assert!(
+                points["DE"][0] > 5.0
+                    && points["DE"][0] < 15.0
+                    && points["DE"][1] > 47.0
+                    && points["DE"][1] < 55.0,
+                "{points:?}"
+            );
+            assert_eq!(input["target"]["filter"], json!({"geo": "EU27_2020"}));
+            assert_eq!(input["fmt_defs"]["pc"]["dec"], 1);
+            // a pace or a difference of a share prints in percentage points
+            assert_eq!(input["fmt_defs"]["story_delta"]["suffix"], POINTS.1);
+            let mut asked = input.clone();
+            asked["mode"] = json!("candidates");
+            let found = crate::next_leaf::story(&child, &asked).unwrap();
+            let ids: Vec<&str> = found["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["id"].as_str())
+                .collect();
+            assert!(ids.contains(&"path") && ids.contains(&"spread"), "{found}");
+            assert!(ids.contains(&"chain"), "{found}");
+            let picks: Vec<&str> = ["path", "need", "chain"]
+                .into_iter()
+                .filter(|p| ids.contains(p))
+                .collect();
+            asked["mode"] = json!("compose");
+            asked["picks"] = json!(picks);
+            let page = crate::next_leaf::story(&child, &asked).unwrap();
+            // the fill as story_page leaves it over a fill that holds none of it yet
+            let mut fill = json!({"knobs": {"spec": {"facts": {}, "fmts": {"time": {}}, "hero": {}}}, "rows": []});
+            story_page(&mut fill, &input, &page).unwrap();
+            assert_eq!(fill["rows"], input["rows"]);
+            let request = fill.clone();
+            let (spec, read, _) = crate::next_facts::stored_request(&request);
+            let facts: BTreeMap<String, crate::next_facts::Fact> =
+                crate::next_facts::compute(&spec, &read)
+                    .unwrap_or_else(|e| panic!("goal {goal}: {e}"))
+                    .into_iter()
+                    .map(|f| (f.key.clone(), f))
+                    .collect();
+            // st1 11-23: the header's big numbers print each one's year from the request's ledger
+            let all: Vec<crate::next_facts::Fact> = facts.values().cloned().collect();
+            let ledger = crate::next_facts::leaf_ledger(&spec, &read, &all).unwrap();
+            // every fact or period entry the child's sections and leaves name is one the ledger holds (a value the program
+            // reads at a year has no .t.y of its own: its year is its table's period entry)
+            fn named(v: &Value, out: &mut Vec<String>) {
+                match v {
+                    Value::String(s) if s.starts_with("fact:") || s.starts_with("period:") => {
+                        out.push(s.clone())
+                    }
+                    Value::Array(a) => a.iter().for_each(|x| named(x, out)),
+                    Value::Object(o) => o.values().for_each(|x| named(x, out)),
+                    _ => {}
+                }
+            }
+            let mut srcs = Vec::new();
+            named(&page["knobs"]["spec"]["sections"], &mut srcs);
+            named(&page["knobs"]["spec"]["hero"], &mut srcs);
+            let missing: Vec<&String> = srcs
+                .iter()
+                .filter(|s| !ledger.contains_key(s.as_str()))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "goal {goal}: not in the ledger {missing:?}"
+            );
+            assert_eq!(facts["best"].t.as_deref(), Some("2020"));
+            assert_eq!(
+                (facts["best"].fmt.as_str(), facts["p_best"].fmt.as_str()),
+                ("story_delta", "pc")
+            );
+            assert_eq!(facts["p_best"].v < facts["goal"].v, short, "goal {goal}");
+            assert_eq!(facts.contains_key("gap"), short);
+            // every tick the path's leaf names is one next_facts gives its axis fact
+            let leaves = &page["knobs"]["spec"]["hero"]["leaves"];
+            for (layer, axis) in [("target_path", "path_top"), ("gap_axis", "need_top")] {
+                let named = leaves[layer]["axis"]["ticks"].as_array().unwrap().len();
+                assert_eq!(
+                    crate::next_facts::ticks(&facts[axis], &input["fmt_defs"])
+                        .unwrap()
+                        .len(),
+                    named,
+                    "{layer}"
+                );
+            }
+            let layers: Vec<&str> = page["knobs"]["spec"]["sections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|s| s["layer"].as_str())
+                .collect();
+            // the header's three big numbers open the story, the thesis right after (76 11-23)
+            assert_eq!(layers.get(..2), Some(&["bignums", "thesis_claims"][..]));
+            assert_eq!(layers.last(), Some(&"risk_notes"));
+            // I28: the lead finding's conclusion is the page's headline and its text the dek, written over the draft the fill
+            // held and kept by page_words over the text step's (the kicker is the text step's); each number in them is a fact
+            // the page declares, and no section prints the headline's sentence again
+            let mut drafted = json!({"knobs": {"spec": {"title": "draft", "dek": "draft", "end": "draft", "kicker": "k", "facts": {}, "hero": {}}}, "rows": []});
+            story_page(&mut drafted, &input, &page).unwrap();
+            let words = |f: &Value, k: &str| f["knobs"]["spec"][k].as_str().unwrap().to_string();
+            let (title, dek) = (words(&drafted, "title"), words(&drafted, "dek"));
+            // the arc's closing line replaces a draft the same way (I34), and prints no sentence the headline or dek printed
+            assert_eq!(
+                words(&drafted, "end"),
+                page["knobs"]["spec"]["end"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            assert!(
+                !words(&drafted, "end").is_empty()
+                    && words(&drafted, "end") != title
+                    && words(&drafted, "end") != dek
+            );
+            assert_eq!(
+                title,
+                page["knobs"]["spec"]["title"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            assert_eq!(
+                dek,
+                page["knobs"]["spec"]["dek"].as_str().unwrap(),
+                "goal {goal}"
+            );
+            page_words(
+                &mut drafted,
+                ("text step title", "text step dek", "text step kicker"),
+            );
+            assert_eq!(
+                (words(&drafted, "title"), words(&drafted, "dek")),
+                (title.clone(), dek.clone()),
+                "goal {goal}"
+            );
+            assert_eq!(words(&drafted, "kicker"), "text step kicker");
+            let facts_declared = page["knobs"]["spec"]["facts"].as_object().unwrap();
+            for (what, text) in [("title", &title), ("dek", &dek)] {
+                assert!(
+                    text.contains('{'),
+                    "goal {goal}: the {what} prints no number: {text}"
+                );
+                for ph in text
+                    .split('{')
+                    .skip(1)
+                    .filter_map(|t| t.split_once('}'))
+                    .map(|(k, _)| k)
+                {
+                    let key = ph.split('.').next().unwrap();
+                    assert!(
+                        key == "name" || facts_declared.contains_key(key),
+                        "goal {goal}: the {what}'s {{{ph}}} is no fact"
+                    );
+                }
+            }
+            for sec in page["knobs"]["spec"]["sections"].as_array().unwrap() {
+                for part in ["title", "text"] {
+                    assert!(
+                        sec[part].as_str() != Some(title.as_str())
+                            && sec[part].as_str() != Some(dek.as_str()),
+                        "goal {goal}: {} {part} repeats the headline",
+                        sec["id"]
+                    );
+                }
+            }
+            // a headline that is no wording refuses
+            let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
+            let mut empty = page.clone();
+            empty["knobs"]["spec"]["title"] = json!("  ");
+            assert!(
+                story_page(&mut f, &input, &empty)
+                    .unwrap_err()
+                    .contains("knobs.spec.title"),
+                "goal {goal}"
+            );
+            // review 11-22: the child gives facts, sections and leaf data only; rows, formats or any other key it adds refuse,
+            // and a fact the fill holds another way is never overwritten
+            for (bad, why) in [
+                (
+                    json!({"knobs": page["knobs"], "rows": [{"src": "target:x", "value": "99"}]}),
+                    "reply.rows",
+                ),
+                (
+                    json!({"knobs": {"spec": page["knobs"]["spec"], "labels": {"DE": "x"}}}),
+                    "knobs.labels",
+                ),
+                (
+                    json!({"knobs": {"spec": {"fmts": {"pc": {"scale": 100}}}}}),
+                    "knobs.spec.fmts",
+                ),
+            ] {
+                let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
+                let got = story_page(&mut f, &input, &bad).unwrap_err();
+                assert!(got.contains(why), "{got}");
+            }
+            let mut f = json!({"knobs": {"spec": {"facts": {"goal": {"table": "x"}}, "hero": {}}}, "rows": []});
+            let got = story_page(&mut f, &input, &page).unwrap_err();
+            assert!(got.contains("knobs.spec.facts.goal"), "{got}");
+        }
+    }
+
+    /// st1 11-23: a story page as the flow builds it (the fill, the findings child's candidates and composition over the
+    /// rows, story_page) is drawn by the real leaf child and published through the whole-page check, every layer's texts
+    /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
+    #[test]
+    fn a_story_page_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(None, false, true);
+    }
+
+    /// st1 11-23 run 3: the model picked need, path, rank and ends; the target path's first time on a page. The same page checks.
+    #[test]
+    fn a_story_page_with_the_path_picked_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(Some(&["need", "path", "rank", "ends"]), false, true);
+    }
+
+    /// I33: the dumbbell, the rank slope and the tile map (movers, overtake, tiles), each leaf's first time through the gate, on a
+    /// shape of twelve members and the whole (the tile map wants ten members with a point). The same page checks.
+    #[test]
+    fn a_story_page_with_the_three_new_charts_picked_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(Some(&["movers", "overtake", "tiles"]), true, true);
+    }
+
+    /// pj004-23: the same page with no target row (has_target passed over, shape_for): the "lagging" arc's picks lead, and the
+    /// page, its header, notes and closing line say nothing of a target. The same page checks.
+    #[test]
+    fn a_story_page_with_no_target_is_drawn_by_the_real_child_and_published() {
+        let html = story_page_through_the_gate(Some(&["rank", "spread", "ends"]), false, false);
+        assert!(!html.contains("目标"), "a page with no target names none");
+    }
+
+    /// The page of the tests above: `told` are the findings the model picked, none: the first STORY_TOLD candidates; `wide` adds four
+    /// members to the shape's eight (twelve and the whole); `targeted`: the request carries the law's target row, else none
+    /// (the recipe goes without has_target, its whole the data's aggregate). The published page's html.
+    fn story_page_through_the_gate(told: Option<&[&str]>, wide: bool, targeted: bool) -> String {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let narrow = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let wider = [
+            "DE",
+            "FR",
+            "IT",
+            "PL",
+            "SE",
+            "FI",
+            "MT",
+            "LU",
+            "ES",
+            "NL",
+            "AT",
+            "BE",
+            "EU27_2020",
+        ];
+        let places: &[&str] = if wide { &wider } else { &narrow };
+        let mut rows = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", places),
+            &years,
+        );
+        for r in rows.iter_mut() {
+            let g = r["dims"]["geo"].as_str().unwrap().to_string();
+            let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+            let k = places.iter().position(|p| *p == g).unwrap() as f64;
+            let pace = if g == "MT" || g == "LU" {
+                -0.05
+            } else if wide {
+                0.2 + (k * 3.0) % 5.0 / 2.0
+            } else {
+                0.4 + k / 20.0
+            }; // wide: paces that make the places swap
+            r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
+        }
+        let story = recipe("page_story");
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
+            "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": "60"});
+        let targets: BTreeMap<String, Vec<Value>> =
+            [("target_ren".to_string(), vec![target.clone()])].into();
+        let with = [target];
+        let shape = match targeted {
+            true => shape_of(
+                &story.eats,
+                &[("ren", &rows[..]), ("target_ren", &with[..])],
+                &Scoped(true),
+            )
+            .unwrap(),
+            false => shape_for(story, &[("ren", &rows[..])], &EuWide).unwrap(),
+        };
+        assert_eq!(shape.target.is_some(), targeted);
+        let picks = picks_of(&story.picks, &shape, &rows, &[]).unwrap();
+        let mut fill = test_fill(
+            story,
+            &shape,
+            &picks,
+            (&rows, &[]),
+            &Scoped(true),
+            ("标题", "导语"),
+            false,
+        )
+        .unwrap();
+        let mut input = story_input(
+            &shape,
+            shape.target.as_ref(),
+            shape.whole.as_deref(),
+            (&rows, &targets),
+            "可再生能源占比",
+        )
+        .unwrap();
+        // the members' points, as recipe_request gives them the findings' map and tile angles
+        let members: Vec<String> = input["main"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect();
+        if wide {
+            input["points"] = json!(Scoped(true).place_points(&members).unwrap());
+        }
+        let child = crate::next_leaf::Runner::python(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
+        );
+        let mut asked = input.clone();
+        asked["mode"] = json!("candidates");
+        let found = crate::next_leaf::story(&child, &asked).unwrap();
+        let ids: Vec<Value> = match told {
+            Some(p) => {
+                let have: Vec<&str> = found["candidates"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|c| c["id"].as_str())
+                    .collect();
+                assert!(
+                    p.iter().all(|id| have.contains(id)),
+                    "the candidates {have:?} lack one of {p:?}"
+                );
+                p.iter().map(|id| json!(id)).collect()
+            }
+            None => found["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(STORY_TOLD)
+                .map(|c| c["id"].clone())
+                .collect(),
+        };
+        asked["mode"] = json!("compose");
+        asked["picks"] = json!(ids);
+        let page = crate::next_leaf::story(&child, &asked).unwrap();
+        fill.as_object_mut().unwrap().remove(STORY_IN);
+        // the target's table names its law's clause in the footer, as recipe_request sets it
+        if targeted {
+            fill["knobs"]["spec"]["tables"]["target_ren"] = json!({"id": "target_ren"});
+        }
+        story_page(&mut fill, &input, &page).unwrap();
+        let (html, ..) = published("page_story", fill, "story page");
+        assert!(html.contains("thesis_claims"), "the thesis is on the page");
+        for id in told.unwrap_or(&[]) {
+            assert!(
+                html.contains(&format!("data-module-id=\"{id}\""))
+                    || html.contains(&format!("desc-{id}")),
+                "{id} is on the page"
+            );
+        }
+        html
+    }
+
+    /// A catalogue whose EU27_2020 member list holds every member a story test draws (Scoped's holds four), so shape_for finds
+    /// the whole; everything else Scoped's.
+    struct EuWide;
+    impl Catalogue for EuWide {
+        fn top5(
+            &self,
+            _: &str,
+            _: &[String],
+            _: bool,
+            _: Option<i32>,
+            _: Option<i32>,
+        ) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Scoped(true).countries(codes)
+        }
+        fn zh_names(
+            &self,
+            scheme: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Scoped(true).zh_names(scheme, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            match aggregate {
+                "EU27_2020" => Ok([
+                    "AT", "BE", "DE", "ES", "FI", "FR", "IT", "LU", "MT", "NL", "PL", "SE",
+                ]
+                .map(String::from)
+                .to_vec()),
+                _ => Scoped(true).members(aggregate),
+            }
+        }
+    }
+
+    /// The first recipe, in registry order, whose shape stands as the pick reads it (shape_for: a recipe may go without one
+    /// condition behind its minimums), with every recipe's verdict beside it.
+    fn first_recipe<'a>(
+        tables: &[(&str, &[Value])],
+        catalogue: &dyn Catalogue,
+    ) -> (Option<&'a str>, Verdicts<'a, Shape>) {
+        let all: Vec<(&str, Result<Shape, String>)> = Hubs
+            .recipes()
+            .iter()
+            .map(|r| (r.name.as_str(), shape_for(r, tables, catalogue)))
+            .collect();
+        (all.iter().find(|(_, v)| v.is_ok()).map(|(n, _)| *n), all)
+    }
+
+    /// pj004-23: with no target row the story page still comes first, behind the registry's minimums (knobs.json page_story
+    /// without: has_target, eight members, three findings). An EU table of eight members and the whole over twenty years is
+    /// the story page (its whole the data's aggregate, the findings child's candidates three or more, none needing a target, and
+    /// a first pick of a comparison tells the "lagging" arc); the same table of five members goes on to the change page, saying
+    /// why. A World Bank table of eight economies (no whole row) is the story page with no whole, of seven it is not. With a
+    /// target the pick is shape_of's (nothing passed over); fewer findings than the minimum is not this shape.
+    #[test]
+    fn the_story_page_goes_without_a_target_over_eight_members_and_three_findings() {
+        let story = recipe("page_story");
+        let w = story.without.clone().unwrap();
+        assert_eq!(
+            (w.condition.as_str(), w.members, w.findings),
+            (HAS_TARGET, 8, 3)
+        );
+        let child = crate::next_leaf::Runner::python(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
+        );
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let valued = |places: &[&str], by: &str, table: &str, fixed: &[(&str, &str)]| {
+            let mut rows = ring_rows(table, fixed, (by, places), &years);
+            for r in rows.iter_mut() {
+                let g = r["dims"][by].as_str().unwrap().to_string();
+                let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+                let k = places.iter().position(|p| *p == g).unwrap() as f64;
+                let pace = if k as usize % 4 == 3 {
+                    -0.05
+                } else {
+                    0.2 + (k * 3.0) % 5.0 / 2.0
+                };
+                r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
+            }
+            rows
+        };
+        let eu8 = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let rows = valued(&eu8[..], "geo", "ren", &[("freq", "A"), ("unit", "PC")][..]);
+        let (first, all) = first_recipe(&[("ren", &rows[..])], &EuWide);
+        assert_eq!(
+            first,
+            Some("page_story"),
+            "{:?}",
+            all.iter()
+                .map(|(n, r)| (n, r.as_ref().err()))
+                .collect::<Vec<_>>()
+        );
+        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()]
+            .1
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            (
+                shape.target.as_ref(),
+                shape.passed_over.as_deref(),
+                shape.whole.as_deref()
+            ),
+            (None, Some(HAS_TARGET), Some("EU27_2020"))
+        );
+        assert_eq!(
+            shape.members.len(),
+            eu8.len(),
+            "the page names the members and the whole"
+        );
+        let input = story_input(
+            shape,
+            None,
+            shape.whole.as_deref(),
+            (&rows, &BTreeMap::new()),
+            "可再生能源占比",
+        )
+        .unwrap();
+        assert!(
+            input.get("target").is_none() && input["main"]["whole"] == "EU27_2020",
+            "{}",
+            input["main"]
+        );
+        assert_eq!(
+            input["rows"].as_array().unwrap().len(),
+            rows.len(),
+            "the main's rows alone"
+        );
+        // the candidates as recipe_request asks them (through the visual group), at the registry's minimum or above
+        let calls = std::sync::Mutex::new(Vec::new());
+        let found =
+            story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
+        findings_minimum(HAS_TARGET, &w, &found).unwrap();
+        let ids: Vec<&str> = found["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|c| c["id"].as_str())
+            .collect();
+        assert!(
+            ids.len() >= 3 && !ids.contains(&"need") && !ids.contains(&"path"),
+            "{ids:?}"
+        );
+        let mut asked = input.clone();
+        asked["mode"] = json!("compose");
+        asked["picks"] = json!(["rank", "spread", "ends"]
+            .into_iter()
+            .filter(|p| ids.contains(p))
+            .collect::<Vec<_>>());
+        let page = crate::next_leaf::story(&child, &asked).unwrap();
+        let spec = &page["knobs"]["spec"];
+        assert_eq!(
+            spec["sections"][2]["id"], "rank",
+            "the lead after the header and the thesis"
+        );
+        assert!(
+            spec["facts"].get("goal").is_none() && !spec.to_string().contains("目标"),
+            "{spec}"
+        );
+        for key in ["title", "dek", "end"] {
+            assert!(
+                spec[key]
+                    .as_str()
+                    .is_some_and(|t| !t.trim().is_empty() && !t.contains("{}")),
+                "{key}: {}",
+                spec[key]
+            );
+        }
+        // two findings are under the minimum: not this shape, the count said
+        let two = json!({"candidates": [{"id": "rank"}, {"id": "ends"}]});
+        let e = findings_minimum(HAS_TARGET, &w, &two).unwrap_err();
+        assert!(
+            e.starts_with("not this shape") && e.contains("2 findings, fewer than 3"),
+            "{e}"
+        );
+
+        // five members: the ordinary page, the story page's why naming the count
+        let eu5 = ["DE", "FR", "IT", "PL", "SE", "EU27_2020"];
+        let rows5 = valued(&eu5[..], "geo", "ren", &[("freq", "A"), ("unit", "PC")][..]);
+        let (first, all) = first_recipe(&[("ren", &rows5[..])], &EuWide);
+        assert_eq!(first, Some("change"));
+        let why = all
+            .iter()
+            .find(|(n, _)| *n == "page_story")
+            .unwrap()
+            .1
+            .as_ref()
+            .err()
+            .unwrap()
+            .clone();
+        assert!(
+            why.contains("no target row") && why.contains("holds 5 countries, fewer than 8"),
+            "{why}"
+        );
+
+        // a World Bank table of eight economies, no whole row: the story page, no whole; of seven, not
+        let id = "EG.FEC.RNEW.ZS@2";
+        let wb8: Vec<&str> = WB_RANKED.iter().map(|(c, _, _)| *c).collect();
+        let wb_rows = valued(&wb8[..], "country", id, &[][..]);
+        let (first, all) = first_recipe(&[(id, &wb_rows[..])], &WbRanked(Vec::new()));
+        assert_eq!(
+            first,
+            Some("page_story"),
+            "{:?}",
+            all.iter()
+                .map(|(n, r)| (n, r.as_ref().err()))
+                .collect::<Vec<_>>()
+        );
+        let shape = all[all.iter().position(|(n, _)| *n == "page_story").unwrap()]
+            .1
+            .as_ref()
+            .unwrap();
+        assert_eq!((shape.whole.as_ref(), shape.countries.len()), (None, 8));
+        let input = story_input(shape, None, None, (&wb_rows, &BTreeMap::new()), "人均值").unwrap();
+        assert!(
+            input["main"].get("whole").is_none() && input.get("target").is_none(),
+            "{}",
+            input["main"]
+        );
+        let found =
+            story_candidates(&calls, Path::new(env!("CARGO_MANIFEST_DIR")), &input).unwrap();
+        findings_minimum(HAS_TARGET, &w, &found).unwrap();
+        let wb7: Vec<Value> = wb_rows
+            .iter()
+            .filter(|r| r["dims"]["country"] != wb8[7])
+            .cloned()
+            .collect();
+        let (first, _) = first_recipe(&[(id, &wb7[..])], &WbRanked(Vec::new()));
+        assert_ne!(first, Some("page_story"));
+
+        // with a target nothing is passed over: shape_for is shape_of
+        let target = [
+            json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"}),
+        ];
+        let tables: [(&str, &[Value]); 2] = [("ren", &rows[..]), ("targets", &target[..])];
+        let (a, b) = (
+            shape_for(story, &tables, &EuWide).unwrap(),
+            shape_of(&story.eats, &tables, &EuWide).unwrap(),
+        );
+        assert_eq!(
+            (
+                a.target.clone(),
+                a.passed_over.clone(),
+                a.whole.clone(),
+                a.members.clone()
+            ),
+            (b.target, None, None, b.members)
+        );
+        assert!(a.target.is_some());
+    }
+
+    /// naming Germany beside the EU (places_zh Germany, EU) still scopes the page by EU27_2020 alone. With no reviewed name
     /// for the aggregate there is no scope at all, never a raw word.
     #[test]
     fn the_scope_is_the_datas_aggregate_by_its_reviewed_name_or_none() {
@@ -9691,6 +11995,17 @@ mod tests {
         );
         assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
         assert_eq!(spec["title"], "标题");
+        // owner 11-22 23:59: a ranking page never settles a forecast held for a target year
+        let held = crate::l5geo::ScopeRefusal {
+            class: "forecast".into(),
+            reason_zh: "将来".into(),
+            hit: "2030年".into(),
+            target_year: Some(2030),
+        };
+        assert!(matches!(
+            held_settled(Some(&held), Some(&fill)),
+            Err(Stop::NoTable(_))
+        ));
         let unnamed = test_fill(
             column,
             &shape,
@@ -9738,6 +12053,12 @@ mod tests {
         )
         .unwrap();
         without_the_map(&mut rust);
+        // the declared count of the places drawn names them (the ranked codes, 11-21: a page drawing the first n of a ranking
+        // counts only those n); the frozen rust fill counted every row it kept, the same places here
+        let place = rust["knobs"]["spec"]["facts"]["drawn"]["by"].clone();
+        if let Some(place) = place.as_str() {
+            rust["knobs"]["spec"]["facts"]["drawn"]["filter"] = json!({ place: picks.ranked });
+        }
         let page_in = page_input(&external, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked {
@@ -9778,6 +12099,33 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .retain(|l| l != "bubbles" && l != "bubble_key");
+        notes_off_the_map(rust);
+    }
+
+    /// The frozen fill less the map points its notes stood on: the notes stand at the bars since 11-22 (an aggregate with no
+    /// map point gets them too), so the points kept with the request, the notes' extent and each note's point go.
+    fn notes_off_the_map(rust: &mut Value) {
+        rust["knobs"]
+            .as_object_mut()
+            .unwrap()
+            .remove("points")
+            .expect("the frozen fill's map points");
+        notes_at_the_bars(&mut rust["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]);
+    }
+
+    /// Frozen leader notes less their extent and each note's map point (the notes stand at the bars since 11-22).
+    fn notes_at_the_bars(notes: &mut Value) {
+        notes
+            .as_object_mut()
+            .unwrap()
+            .remove("ext")
+            .expect("the frozen notes' extent");
+        for n in notes["notes"].as_array_mut().unwrap() {
+            n.as_object_mut()
+                .unwrap()
+                .remove("at")
+                .expect("a frozen note's point");
+        }
     }
 
     /// The frozen fill's facts and formats with what the generator raised so the page's printed differences agree
@@ -9867,16 +12215,21 @@ mod tests {
         (facts, fmts, raised)
     }
 
-    /// The production bindings less form A's notes (the extreme against the mean of the places drawn, 11-03), which the
-    /// frozen rust notes never had: the parity with them holds on every other branch.
+    /// The production bindings less form A's notes (the extreme against the mean of the places drawn, 11-03; the lowest
+    /// of a column page against that mean, 11-23), which the frozen rust notes never had: the parity with them holds on every
+    /// other branch.
     fn without_mean_notes() -> crate::next_tree::J {
         let mut v = crate::next_tree::bindings().to_value();
-        for (recipe, end) in [("column", "hi"), ("change", "first")] {
+        for (recipe, end, fact) in [
+            ("column", "hi", "fact:vs_mean"),
+            ("column", "lo", "fact:lo_vs_mean"),
+            ("change", "first", "fact:vs_mean"),
+        ] {
             let list = v["nodes"]["leader_notes"]["declares_by_recipe"][recipe]["candidates"][end]
                 .as_array_mut()
                 .unwrap();
             let before = list.len();
-            list.retain(|c| c["value_text"] != "fact:vs_mean");
+            list.retain(|c| c["value_text"] != fact);
             assert_eq!(list.len(), before - 1, "{recipe} {end}: one form A note");
         }
         crate::next_tree::J::from_value(&v)
@@ -9917,8 +12270,8 @@ mod tests {
             .unwrap()
             .remove("page_in")
             .expect("the page input kept for draw_nodes");
-        // the circles were declared over the map points the flow keeps (knobs.points), their extent the visual group's
-        assert_eq!(page_in["points"], fill["knobs"]["points"]);
+        // no layer stands on a map point (the notes stand at the bars): the flow reads and keeps none
+        assert!(page_in.get("points").is_none() && fill["knobs"].get("points").is_none());
         assert!(
             page_in.get("page").is_none(),
             "the extent is the visual group's (rule extent), not handed in"
@@ -9987,8 +12340,10 @@ mod tests {
     /// their change page declaration: both ends read, the change in percentage points, the measure the page's lead reads)
     /// merge into the q1 ten-year change fill exactly as the rust bubbles_fill and change_bars_fill did
     /// (scripts/fixtures/p4a2/change-rust-fill.json, frozen from them before they were deleted): equal key by key, no key
-    /// more, the circles asked first as the recipe draws them. A ranked place with no map point stops the fill as the rust
-    /// circles did, before any node is asked (F1).
+    /// more. Since 11-22 the change recipe draws no map: the frozen fill is compared less its circles (their leaf data,
+    /// their level fact val, their place in the order with their key, their drawn rows) and the map points its notes stood
+    /// on, the rest key by key as before. A ranked place with no map point no longer stops the fill (F1): the notes stand
+    /// at the bars.
     #[test]
     fn declare_equals_rust_fill_on_a_change_page() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -9997,17 +12352,30 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
+        // the frozen fill less its circles (11-22: the change page has no map), nothing else taken out
+        rust["knobs"]["spec"]["hero"]["leaves"]
+            .as_object_mut()
+            .unwrap()
+            .remove("bubbles")
+            .expect("the frozen fill's circles");
+        rust["knobs"]["spec"]["facts"]
+            .as_object_mut()
+            .unwrap()
+            .remove("val")
+            .expect("the frozen circles' level fact");
+        rust["order"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|l| l != "bubbles" && l != "bubble_key");
+        rust["drawn"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|d| d["layer"] != "bubbles");
+        notes_off_the_map(&mut rust);
         let change = recipe("change");
         assert_eq!(
             (change.external.clone(), change.points.clone()),
-            (
-                vec![
-                    "bubbles".to_string(),
-                    "bars".to_string(),
-                    "leader_notes".to_string()
-                ],
-                vec!["bubbles".to_string(), "leader_notes".to_string()]
-            )
+            (vec!["bars".to_string(), "leader_notes".to_string()], vec![])
         );
         let main = q1_ten_years();
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
@@ -10055,6 +12423,15 @@ mod tests {
             rust["knobs"]["spec"]["facts"],
             rust["knobs"]["spec"]["fmts"],
         ) = (json!(facts), json!(fmts));
+        // the same rows, row for row: the frozen fill took the circles' t1 rows first, the bars alone read each place's two
+        // ends together (11-22), so the rows are compared in one order (by src)
+        let by_src = |v: &mut Value| {
+            v.as_array_mut()
+                .unwrap()
+                .sort_by(|a, b| a["src"].as_str().cmp(&b["src"].as_str()))
+        };
+        by_src(&mut rust["rows"]);
+        by_src(&mut fill["rows"]);
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
         assert!(
@@ -10067,16 +12444,9 @@ mod tests {
             .filter(|e| e["request"] == "node_declare")
             .map(|e| e["node"].as_str())
             .collect();
-        assert_eq!(
-            asked,
-            [
-                Some("bubbles"),
-                Some("bars"),
-                Some("leader_notes"),
-                Some("finding")
-            ]
-        );
-        // F1: a ranked place the map point table has no point for (an aggregate) stops the fill, no node asked
+        assert_eq!(asked, [Some("bars"), Some("leader_notes"), Some("finding")]);
+        // F1: a ranked place the map point table has no point for (an aggregate) no longer stops the fill (11-22: the notes
+        // stand at the bars, no layer on a map point): the bars, the notes and the finding are each declared
         let mut picks = picks;
         picks.ranked.push("EU27_2020".into());
         let calls = std::sync::Mutex::new(Vec::new());
@@ -10084,7 +12454,7 @@ mod tests {
             calls: &calls,
             page_in: Some(&page_in),
         };
-        let why = fill_of(
+        fill_of(
             change,
             &shape,
             &picks,
@@ -10094,12 +12464,18 @@ mod tests {
             false,
             Some(&asked),
         )
-        .unwrap_err();
-        assert!(
-            why.starts_with("not this shape: ") && why.contains("EU27_2020"),
-            "{why}"
+        .unwrap_or_else(|e| panic!("an aggregate ranked: {e}"));
+        let calls = calls.into_inner().unwrap();
+        let asked: Vec<Option<&str>> = calls
+            .iter()
+            .filter(|e| e["request"] == "node_declare")
+            .map(|e| e["node"].as_str())
+            .collect();
+        assert_eq!(
+            asked,
+            [Some("bars"), Some("leader_notes"), Some("finding")],
+            "{calls:#?}"
         );
-        assert!(calls.into_inner().unwrap().is_empty());
     }
 
     /// S3 (P4a): the q1 column page with its bars bound external over the production bindings, the whole path: fill_of
@@ -10231,6 +12607,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -10321,6 +12698,7 @@ mod tests {
             claims: picked["claims"].as_array().unwrap().clone(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -10537,59 +12915,54 @@ mod tests {
     /// The column recipe takes one frequency throughout (one_freq): years, half years (2026-S1) or months (2026-09), kept as
     /// the shape's freq; a quarterly main or one that mixes is not this shape, named. Every other recipe still asks for
     /// annual, so a half-yearly main reaches column alone.
-    /// A place the map has no point for (the EU named beside countries) is not the column page's shape, whose circles and
-    /// notes stand on map points, and goes to the bars alone (ranked_bars), on a World Bank page (iso3: EUU) as on a Eurostat
-    /// one (EU27_2020); countries alone stay on the column page.
+    /// A place the map has no point for (the EU named beside countries) is the column page's shape as countries are (11-22:
+    /// its notes stand at the bars, no layer on a map point), on a World Bank page (iso3: EUU) as on a Eurostat one
+    /// (EU27_2020). The bars alone (ranked_bars) eat, pick and answer as column does, take no chart it does not, and are
+    /// tried after it, so no page reaches them: they stay registered, a fallback.
     #[test]
-    fn a_place_off_the_map_goes_to_the_bars_alone() {
+    fn a_place_off_the_map_stays_on_the_column_page() {
         let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let (column, bars) = (recipe("column"), recipe("ranked_bars"));
-        assert!(!column.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
-        for (ranked, off) in [
-            (s(&["USA", "EUU", "CHN"]), "EUU"),
-            (s(&["US", "EU27_2020", "CN"]), "EU27_2020"),
+        assert!(column.points.is_empty() && column.layers.iter().any(|l| l == "leader_notes"));
+        assert_eq!(
+            (&bars.eats, &bars.picks, &bars.relation),
+            (&column.eats, &column.picks, &column.relation)
+        );
+        assert!(bars.charts.iter().all(|c| column.charts.contains(c)));
+        for ranked in [
+            s(&["USA", "EUU", "CHN"]),
+            s(&["US", "EU27_2020", "CN"]),
+            s(&["USA", "CHN"]),
+            s(&["US", "DE", "CN"]),
         ] {
-            let (stage, why) = on_the_map(column, &ranked, &Hubs).unwrap_err();
-            assert!(
-                stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
-                "{why}"
-            );
-            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
-        }
-        for ranked in [s(&["USA", "CHN"]), s(&["US", "DE", "CN"])] {
             assert_eq!(on_the_map(column, &ranked, &Hubs), Ok(()), "{ranked:?}");
         }
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
         let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
         assert!(
             at("column") < at("ranked_bars"),
-            "the bars alone are tried after the column page"
+            "the column page is tried first"
         );
     }
 
     /// The same for a change (owner 11-19 23:1x): a place the map has no point for (World Bank's regions and the world, the
-    /// EU) is not the change page's shape, whose circles and notes stand on map points, and goes to the change bars alone
-    /// (change_bars: the change page's bars, its eats and picks, no layer on the map), which answers Change as the change
-    /// page does and is tried right after it; countries alone stay on the change page.
+    /// EU) is the change page's shape (11-22: its notes stand at the bars). The change bars alone (change_bars) eat, pick and
+    /// answer as change does, take no chart it does not, and are tried right after it, so no page reaches them.
     #[test]
-    fn a_change_with_a_place_off_the_map_goes_to_the_change_bars_alone() {
+    fn a_change_with_a_place_off_the_map_stays_on_the_change_page() {
         let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let (change, bars) = (recipe("change"), recipe("change_bars"));
-        assert!(!change.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
-        assert_eq!((&bars.eats, &bars.picks), (&change.eats, &change.picks));
-        assert_eq!(bars.relation.as_deref(), Some("Change"));
-        for (ranked, off) in [
-            (s(&["WLD", "SSF", "SAS"]), "WLD"),
-            (s(&["DE", "EU27_2020", "FR"]), "EU27_2020"),
+        assert!(change.points.is_empty() && change.layers.iter().any(|l| l == "leader_notes"));
+        assert_eq!(
+            (&bars.eats, &bars.picks, &bars.relation),
+            (&change.eats, &change.picks, &change.relation)
+        );
+        assert!(bars.charts.iter().all(|c| change.charts.contains(c)));
+        for ranked in [
+            s(&["WLD", "SSF", "SAS"]),
+            s(&["DE", "EU27_2020", "FR"]),
+            s(&["USA", "CHN"]),
         ] {
-            let (stage, why) = on_the_map(change, &ranked, &Hubs).unwrap_err();
-            assert!(
-                stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
-                "{why}"
-            );
-            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
-        }
-        for ranked in [s(&["USA", "CHN"]), s(&["SE", "DE", "FR"])] {
             assert_eq!(on_the_map(change, &ranked, &Hubs), Ok(()), "{ranked:?}");
         }
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
@@ -10597,17 +12970,402 @@ mod tests {
         assert_eq!(at("change_bars"), at("change") + 1);
     }
 
+    /// 11-22, end to end on two data shapes: a ranking of one year and a change over two whose places hold an aggregate with
+    /// no map point (the EU beside four countries, at the top end so a note names it) are a column and a change page with
+    /// notes, as countries alone are. No map point is asked (the catalogue would panic), each note names a ranked place and
+    /// holds no point, the page input carries the ranked places' names (the EU's among them), and the real leaf child draws
+    /// the notes at the bars; the page is published (the whole-page check passes) and checked clean.
+    #[test]
+    fn an_aggregate_page_is_a_column_or_change_page_with_notes() {
+        struct Aggregates;
+        impl Catalogue for Aggregates {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            // the aggregate is kept among the places, as a question naming it beside countries keeps it
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Ok(codes.to_vec())
+            }
+            fn zh_names(
+                &self,
+                scheme: &str,
+                codes: &[String],
+            ) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+                panic!("a map point asked for {codes:?}")
+            }
+        }
+        let places = ["EU27_2020", "DE", "FR", "IT", "SE"];
+        let value = |code: &str, t: &str| {
+            let (base, delta) = match code {
+                "EU27_2020" => (30.0, 9.5),
+                "DE" => (25.0, 3.0),
+                "FR" => (20.0, 1.0),
+                "IT" => (15.0, -2.0),
+                _ => (10.0, -4.5),
+            };
+            format!("{:.1}", if t == "2024" { base + delta } else { base })
+        };
+        for (name, years) in [("column", &["2024"][..]), ("change", &["2015", "2024"][..])] {
+            let r = recipe(name);
+            let mut main = ring_rows(
+                "sdg_07_40",
+                &[("freq", "A"), ("unit", "PC")],
+                ("geo", &places),
+                years,
+            );
+            for row in main.iter_mut() {
+                let v = value(
+                    row["dims"]["geo"].as_str().unwrap(),
+                    row["time"].as_str().unwrap(),
+                );
+                row["value"] = json!(v);
+            }
+            let shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &Aggregates)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            assert_eq!(
+                picks.ranked.first().map(String::as_str),
+                Some("EU27_2020"),
+                "{name}"
+            );
+            assert_eq!(on_the_map(r, &picks.ranked, &Aggregates), Ok(()), "{name}");
+            let mut fill = test_fill(
+                r,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Aggregates,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(
+                fill["order"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("leader_notes")),
+                "{name}"
+            );
+            assert!(
+                fill["knobs"].get("points").is_none(),
+                "{name}: no map point kept"
+            );
+            assert_eq!(
+                fill["page_in"]["names"]["EU27_2020"], "名EU27_2020",
+                "{name}: the notes' names"
+            );
+            assert_eq!(fill["page_in"]["scoped"], json!(false), "{name}");
+            let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"].clone();
+            assert!(notes.get("ext").is_none(), "{name}: {notes}");
+            let named: Vec<&str> = notes["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| {
+                    assert!(n.get("at").is_none(), "{name}: {n}");
+                    n["name"].as_str().unwrap()
+                })
+                .collect();
+            assert!(named.contains(&"EU27_2020"), "{name}: {named:?}");
+            assert!(
+                named.iter().all(|c| picks.ranked.iter().any(|r| r == c)),
+                "{name}"
+            );
+            let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            let (html, ledger, refs, spec, rows, facts) = published_page(name, fill);
+            assert_eq!(
+                crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts),
+                Vec::<String>::new(),
+                "{name}"
+            );
+            assert!(
+                html.contains(r#"data-layer="leader_notes""#),
+                "{name}: the notes drawn"
+            );
+            assert!(
+                html.contains(r#"<span data-src="name:zh_names:iso3:EU27_2020">"#)
+                    || html.contains("名EU27_2020"),
+                "{name}: the EU named"
+            );
+        }
+    }
+
+    /// v8 (rounds 17-18): a column page of ten members whose first two bars all but tie (the first bar's end was reached only
+    /// past the second bar's value, so its note found no free place and the page stopped at notes_dropped). Drawn by the
+    /// real leaf child on two data shapes (a Eurostat-coded page and a World Bank iso3 page), both its notes are laid and
+    /// nothing is dropped.
+    #[test]
+    fn a_column_page_whose_first_two_bars_all_but_tie_keeps_both_its_notes() {
+        // Eurostat-coded rows
+        let codes = ["CN", "IN", "ZA", "JP", "US", "DE", "FR", "BR", "RU", "TR"];
+        let life = [
+            78.02, 77.85, 74.53, 74.37, 73.44, 72.53, 72.40, 72.24, 71.93, 67.80,
+        ];
+        let mut main = group_rows(&codes, &["2025"]);
+        for (row, v) in main.iter_mut().zip(life) {
+            row["value"] = json!(format!("{v:.2}"));
+        }
+        let (fill, _) = group_request_by(
+            "2025 年各国人均预期寿命谁最长？",
+            main,
+            json!([]),
+            ("column", "horizontal_bar"),
+        );
+        let fill = fill.unwrap_or_else(|e| panic!("eurostat: {e:?}"));
+        let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+            .as_array()
+            .map_or(0, Vec::len);
+        assert_eq!(notes, 2, "the page declares its first and last note");
+        let (html, ..) = group_published_by(fill, "column", "eurostat near tie");
+        assert!(html.contains(r#"data-layer="leader_notes""#));
+        LAST_DROPPED.with(|d| assert!(d.borrow().is_empty(), "eurostat: dropped {:?}", d.borrow()));
+        // World Bank rows (iso3), the same two bars all but tied
+        let id = "SP.DYN.LE00.IN@2";
+        let tied = [
+            ("CHN", "78.02"),
+            ("IND", "77.85"),
+            ("USA", "74.53"),
+            ("IDN", "74.37"),
+            ("PAK", "73.44"),
+            ("NGA", "72.53"),
+            ("BRA", "72.40"),
+            ("BGD", "67.80"),
+        ];
+        let rows: Vec<Value> = tied
+            .iter()
+            .map(|(c, v)| {
+                json!({"src": format!("series:{id}/{c}:2024:value"), "table": id,
+                    "dims": {"country": c}, "time": "2024", "value": v})
+            })
+            .collect();
+        let run = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        std::fs::write(
+            run.path().join("shadow/candidate_sheet-s1.json"),
+            json!({"candidates": []}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(run.path().join("le.csv"), "").unwrap();
+        let prepared = Prepared {
+            id: id.into(),
+            title: String::new(),
+            file: "le.csv".into(),
+            args: Map::new(),
+            sheet: "s1".into(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            chain: Vec::new(),
+            asked: json!([]),
+            relation: None,
+        };
+        let calls = std::sync::Mutex::new(Vec::new());
+        let cat = WbRanked(rows);
+        let fill = recipe_request(
+            run.path(),
+            &[prepared],
+            &["horizontal_bar"],
+            recipe("column"),
+            &cat,
+            (
+                "2024 年各国人均预期寿命谁最长？",
+                ("标题", "导语", "栏目"),
+                &[],
+            ),
+            (&calls, None),
+        )
+        .unwrap_or_else(|e| panic!("world bank: {e:?}"));
+        let (html, ..) = group_published_by(fill, "column", "wb near tie");
+        assert!(html.contains(r#"data-layer="leader_notes""#));
+        LAST_DROPPED.with(|d| {
+            assert!(
+                d.borrow().is_empty(),
+                "world bank: dropped {:?}",
+                d.borrow()
+            )
+        });
+    }
+
+    /// A World Bank change page over three regions (aggregates, iso3 codes with no map point): the change page, not the
+    /// bars alone, so its notes stand at the bars; the first one compares (with the mean of the places drawn or with the
+    /// second) and the last, in the same words, with the one before it, on a rise and on a fall.
+    #[test]
+    fn a_three_region_world_bank_change_page_notes_compare_its_ends() {
+        let id = "SH.H2O.SMDW.ZS@2";
+        const REGIONS: [(&str, &str); 3] = [("SAS", "8S"), ("SSF", "ZF"), ("LCN", "ZJ")];
+        struct Regions;
+        impl Catalogue for Regions {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Ok(codes.to_vec())
+            }
+            fn zh_names(
+                &self,
+                scheme: &str,
+                codes: &[String],
+            ) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+                panic!("a map point asked for {codes:?}")
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                Some(crate::l5geo::TableMeta {
+                    id: id.into(),
+                    worldbank: true,
+                    dims: Vec::new(),
+                    end_year: None,
+                    places: REGIONS
+                        .iter()
+                        .map(|(c, i)| (i.to_string(), c.to_string()))
+                        .collect(),
+                    place_members: Vec::new(),
+                    freqs: Vec::new(),
+                    unit: Some(crate::l5geo::Unit {
+                        code: "PC_POP".into(),
+                        label: String::new(),
+                        kind: Some("rate"),
+                    }),
+                })
+            }
+        }
+        // a rise (the shares of the population with safe water) and a fall (a rate per thousand), three regions each
+        for (label, start, end) in [
+            (
+                "rise",
+                [("SAS", 50.0), ("SSF", 20.0), ("LCN", 60.0)],
+                [("SAS", 83.3), ("SSF", 33.6), ("LCN", 68.1)],
+            ),
+            (
+                "fall",
+                [("SAS", 90.0), ("SSF", 100.0), ("LCN", 40.0)],
+                [("SAS", 60.5), ("SSF", 59.3), ("LCN", 15.1)],
+            ),
+        ] {
+            let r = recipe("change");
+            let mut main = Vec::new();
+            for (code, _) in REGIONS {
+                for (t, vals) in [("2000", start), ("2022", end)] {
+                    let v = vals.iter().find(|(c, _)| *c == code).unwrap().1;
+                    main.push(
+                        json!({"src": format!("series:{id}/{code}:{t}:value"), "table": id,
+                        "dims": {"country": code}, "time": t, "value": format!("{v:.1}")}),
+                    );
+                }
+            }
+            let shape = shape_of(&r.eats, &[(id, &main[..])], &Regions)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            assert_eq!(picks.ranked.len(), 3, "{label}");
+            assert_eq!(on_the_map(r, &picks.ranked, &Regions), Ok(()), "{label}");
+            let fill = test_fill(
+                r,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Regions,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{label}: no notes"))
+                .clone();
+            let said: Vec<(String, Vec<String>)> = notes
+                .iter()
+                .map(|n| {
+                    (
+                        n["name"].as_str().unwrap().to_string(),
+                        n["text"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|t| t["word"].as_str().map(String::from))
+                            .collect(),
+                    )
+                })
+                .collect();
+            // the first end's note and the last's, as the cases pick them: the mean for a leader of three, the one before the last
+            let want: [&[&str]; 2] = if label == "rise" {
+                [
+                    &["column.note.rise_most", "column.note.vs_mean_after"],
+                    &["column.note.rise_least", "column.note.vs_prev"],
+                ]
+            } else {
+                [
+                    &["column.note.fall_least", "column.note.vs_next"],
+                    &["column.note.fall_most", "column.note.vs_prev"],
+                ]
+            };
+            for ((_, words), want) in said.iter().zip(want) {
+                assert_eq!(words, want, "{label}");
+            }
+            assert_eq!(said.len(), 2, "{label}: {said:?}");
+            // each end's note carries a comparison word beside its own change, not its own change alone
+            for (code, words) in &said {
+                assert!(
+                    words.iter().any(|w| w.contains("vs_")),
+                    "{label}: the note of {code} compares nothing: {words:?}"
+                );
+            }
+        }
+    }
+
     /// on_the_map tells "try the next recipe" from "stop the page" by the refusal's words alone, so the words (NO_POINT),
     /// the place that writes them (next_flow place_points_reply, reached here through the catalogue's own place_points and
     /// the two groups' doors) and that reading are held together: a reworded refusal fails here instead of quietly turning
-    /// the EU page from the bars alone into a stopped page. A refusal that only quotes the words, or any other, stops.
+    /// the EU page from the next recipe into a stopped page. A refusal that only quotes the words, or any other, stops. No
+    /// recipe stands a layer on a map point since 11-22, so the column page with its circles is the one that does here.
     #[test]
     fn the_no_point_words_tie_the_map_refusal_to_the_recipe_switch() {
         assert_eq!(
             crate::next_flow::NO_POINT,
             "the map point table has no point for"
         );
-        let column = recipe("column");
+        let column = &Recipe {
+            points: vec!["bubbles".into()],
+            ..recipe("column").clone()
+        };
         for code in ["EUU", "EU27_2020"] {
             let why = Hubs.place_points(&[code.to_string()]).unwrap_err();
             assert_eq!(
@@ -10925,7 +13683,23 @@ mod tests {
             vec![("2026-09".to_string(), places[14..].to_vec())]
         );
         assert_eq!(LATEST_PERIOD_PCT, 80);
-        // an annual main: its last year, whatever the count, and no record
+        // an annual main: its last year when at least half as many hold it as the best year (three of four), else the latest
+        // year that many hold, the later one recorded with the countries it misses (dev g10: one of seven)
+        assert_eq!(LATEST_YEAR_PCT, 50);
+        let mut most = ring_rows(
+            "sdg",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["SE", "BE", "DE", "FR"]),
+            &["2024"],
+        );
+        most.extend(ring_rows(
+            "sdg",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["SE", "BE", "DE"]),
+            &["2025"],
+        ));
+        let shape = shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap();
+        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2025", 0));
         let mut annual = ring_rows(
             "sdg",
             &[("freq", "A"), ("unit", "PC")],
@@ -10939,13 +13713,43 @@ mod tests {
             &["2025"],
         ));
         let shape = shape_of(&column.eats, &[("sdg", &annual[..])], &Hubs).unwrap();
-        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2025", 0));
+        assert_eq!(shape.year, "2024", "one of four at 2025 is 25%");
+        assert_eq!(
+            shape.passed,
+            vec![(
+                "2025".to_string(),
+                vec!["BE".to_string(), "DE".into(), "FR".into()]
+            )]
+        );
         let picks = picks_of(&column.picks, &shape, &annual, &[]).unwrap();
-        assert!(test_fill(
+        let ends = test_fill(
             column,
             &shape,
             &picks,
             (&annual, &[]),
+            &Hubs,
+            ("标题", "导语"),
+            false,
+        )
+        .unwrap()["ends"]
+            .clone();
+        assert_eq!(ends["t1"], "2024");
+        assert_eq!(ends["later"][0]["period"], "2025");
+        assert_eq!(ends["later"][0]["missing"], json!(["BE", "DE", "FR"]));
+        // a year most hold keeps no record, as before
+        let picks = picks_of(
+            &column.picks,
+            &shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap(),
+            &most,
+            &[],
+        )
+        .unwrap();
+        let shape = shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap();
+        assert!(test_fill(
+            column,
+            &shape,
+            &picks,
+            (&most, &[]),
             &Hubs,
             ("标题", "导语"),
             false
@@ -11016,6 +13820,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -11081,6 +13886,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": name});
         let published =
@@ -12060,6 +14866,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -12227,6 +15034,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: Some(&strip),
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -12262,6 +15070,7 @@ mod tests {
                 "ring",
                 "composition_steps",
                 "composition",
+                "page_story",
                 "one_line",
                 "change",
                 "change_bars",
@@ -12341,7 +15150,7 @@ mod tests {
         );
         let spec = &fill["knobs"]["spec"];
         // no big numbers: the bars' and bubbles' family val and the count of places they draw (the unit line's scope), and
-        // the leader notes' hi, lo, gap and times, and the highest's note's mean of the places drawn, in no hero.data key
+        // the leader notes' hi, lo, gap and times, and the mean of the places drawn the highest's and the lowest's notes read, in no hero.data key
         assert_eq!(
             spec["facts"]
                 .as_object()
@@ -12349,13 +15158,24 @@ mod tests {
                 .keys()
                 .collect::<Vec<_>>(),
             [
-                "drawn", "gap", "hi", "lead1", "lo", "mean", "mean_n", "mean_sum", "times", "val",
+                "drawn",
+                "gap",
+                "hi",
+                "lead1",
+                "lo",
+                "lo_vs_mean",
+                "mean",
+                "mean_n",
+                "mean_sum",
+                "times",
+                "val",
                 "vs_mean"
             ]
         );
+        // the count names the ranked places it counts (a page drawing the first n of a ranking counts those n)
         assert_eq!(
             spec["facts"]["drawn"],
-            json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"})
+            json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "filter": {"geo": ["SE", "DE", "FR", "BE"]}, "fmt": "n"})
         );
         // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
@@ -12407,7 +15227,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             yfill[HEADLINE],
-            json!({"title": "{name.SE}最高", "scoped": "{name.SE}居首"})
+            json!({"title": "{name.SE}居首，为{hi}", "scoped": "{name.SE}居首"})
         );
         assert_eq!(
             spec["facts"]["lead1"],
@@ -12423,38 +15243,18 @@ mod tests {
             spec["fmts"]["pp"],
             json!({"scale": 1, "dec": 1, "suffix": " 个百分点"})
         );
-        // no circles; the notes' extent is still the visual group's over each ranked country's Natural Earth label point, the
-        // points' box MAP_PAD past it (a box this small holds every label at that), the pinned table named (the leaf points
-        // them at the bars, by name)
+        // no circles, and no map point read or kept: the notes stand at the bars (the leaf points them there, by name), with
+        // no extent and no point of their own (11-22)
         assert!(spec["hero"]["leaves"].get("bubbles").is_none());
         let notes = &spec["hero"]["leaves"]["leader_notes"];
-        let ext = notes["ext"]
+        assert!(notes.get("ext").is_none() && fill["knobs"].get("points").is_none());
+        assert!(notes["notes"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect::<Vec<_>>();
-        let lon: Vec<f64> = fill["knobs"]["points"]["at"]
-            .as_object()
-            .unwrap()
-            .values()
-            .map(|p| p[0].as_f64().unwrap())
-            .collect();
-        assert_eq!(
-            ext[0],
-            lon.iter().copied().fold(f64::INFINITY, f64::min) - MAP_PAD
-        );
-        // each point kept with the request, with the pinned table it was read from
-        assert_eq!(
-            fill["knobs"]["points"]["sha256"],
-            crate::next_flow::NE_POINTS_SHA256
-        );
-        assert_eq!(
-            fill["knobs"]["points"]["at"]["DE"],
-            json!([9.678348, 50.961733])
-        );
-        assert_eq!(fill["knobs"]["points"]["at"].as_object().unwrap().len(), 4);
-        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times
+            .all(|n| n.get("at").is_none()));
+        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) how far below it
+        // (the times the dek prints is no second card, 11-23)
         let said: Vec<(&str, &str, &str)> = notes["notes"]
             .as_array()
             .unwrap()
@@ -12471,7 +15271,7 @@ mod tests {
             said,
             [
                 ("SE", "column.note.vs_mean", "fact:vs_mean"),
-                ("BE", "column.note.lo", "fact:times")
+                ("BE", "column.note.vs_mean_low", "fact:lo_vs_mean")
             ]
         );
         assert_eq!(spec["hero"]["unit"], "单位：%");
@@ -12915,8 +15715,8 @@ mod tests {
 
     /// M8 (P4a-2): a change page whose largest change is 0 and the rest fall ends where and in the words it ended before its
     /// bars were external: the leaf prints that 0's value past the bars' right edge and layer 1 stops the page on it. The
-    /// generator leaves the bars to their leaf (leaf_draws), the circles laid out by their node; the page drawn with no
-    /// layer bound external (as before P4a-2) stops in the same words.
+    /// generator leaves the bars to their leaf (leaf_draws) (and asks no circles: the change page has no map since 11-22);
+    /// the page drawn with no layer bound external (as before P4a-2) stops in the same words.
     #[test]
     fn a_change_page_whose_largest_change_is_0_stops_where_the_leaf_stopped() {
         // SE, BE and DE fall, FR flat: the largest change is 0, its value printed past the bars' right edge
@@ -12947,12 +15747,12 @@ mod tests {
             false,
         )
         .unwrap();
-        // the generator asked the circles' node and left the bars to their leaf, to stop there
+        // the generator left the bars to their leaf, to stop there; no circles are asked (no map since 11-22)
         assert_eq!(
             fill["knobs"]["placed"]["bars"],
             json!({"leaf_stop": "zero_end_past_frame"})
         );
-        assert!(fill["knobs"]["placed"]["bubbles"]["order"].is_array());
+        assert!(fill["knobs"]["placed"].get("bubbles").is_none());
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
@@ -12997,6 +15797,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": "change"});
             crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa)
@@ -13157,14 +15958,10 @@ mod tests {
                 );
             }
         }
-        // only the bubbles print a row's own value; the bars and notes print changes
+        // no layer prints a row's own value: the bars and notes print changes (the circles that printed the level at 2024
+        // are gone with the map, 11-22)
         let drawn = fill["drawn"].as_array().unwrap().clone();
-        assert!(
-            drawn
-                .iter()
-                .all(|d| d["layer"] == "bubbles" && d["time"] == "2024"),
-            "{drawn:?}"
-        );
+        assert!(drawn.is_empty(), "{drawn:?}");
 
         // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name's placeholder
         // kept for the leaf, which prints the name marked with its name row
@@ -13249,6 +16046,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published =
@@ -13314,6 +16112,194 @@ mod tests {
             "{:?}",
             checks[2]
         );
+    }
+
+    /// 11-22: the change page has no map, so its notes stand in the bars' picture, each leader ending just past its place's
+    /// printed change on the side the value stands (a rise's right of its value, a fall's left), as the level bars' notes do.
+    /// On two data shapes, q1's (rises and a fall) and the same with every place rising: the page publishes with no note
+    /// dropped, one leader end per note, each at its own bar's value.
+    #[test]
+    fn a_change_page_s_notes_point_at_their_bars_values_on_two_shapes() {
+        let mixed = q1_ten_years();
+        let mut rising = q1_ten_years();
+        rising
+            .iter_mut()
+            .find(|r| r["dims"]["geo"] == "FR" && r["time"] == "2024")
+            .unwrap()["value"] = json!("17.25");
+        // the numbers of an svg attribute after `key="` in `s`
+        let attr = |s: &str, key: &str| -> Option<f64> {
+            let at = s.find(&format!(" {key}=\""))? + key.len() + 3;
+            s[at..].split('"').next()?.parse().ok()
+        };
+        for (shape_name, main, falls) in [("mixed", mixed, 1), ("rising", rising, 0)] {
+            let change = recipe("change");
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let mut fill = test_fill(
+                change,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Hubs,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap();
+            let noted: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]
+                ["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n["name"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(noted.len(), 2, "{shape_name}");
+            let dek = dek_finding(&fill).unwrap().0;
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+            fill["knobs"]["spec"]["kicker"] = json!("栏目");
+            fill["knobs"]["spec"]["source"] = json!("来源");
+            let order: Vec<String> = fill["order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|l| l.as_str().map(str::to_string))
+                .collect();
+            assert_eq!(order, ["bars", "leader_notes"], "{shape_name}");
+            let calls = std::sync::Mutex::new(Vec::new());
+            let request = crate::next_visual::Request::LeafFill {
+                recipe: "change",
+                rows: fill["rows"].as_array().unwrap(),
+                knobs: &fill["knobs"],
+                order: &order,
+                runtime: Path::new("runtime"),
+            };
+            let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+                Ok(crate::next_visual::Reply::Filled(page)) => page,
+                Ok(_) => panic!("{shape_name}: not a filled page"),
+                Err(e) => panic!("{shape_name}: leaf fill: {e}"),
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = {
+                let _command = crate::group_guard::command_for_test("investigate");
+                crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+            };
+            let _command = crate::group_guard::command_for_test("investigate");
+            let _doors = crate::group_guard::doors_for_test(true);
+            let bake =
+                crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+            let mut qa =
+                crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+            qa.args.push("pass".into());
+            let leaf = crate::next_visual::LeafPage {
+                draw: &page.draw,
+                bake: &bake,
+                w: page.w,
+                h: page.h,
+                frame: page.frame.clone(),
+                layers: &page.layers,
+                ledger: &page.ledger,
+                refs: &page.refs,
+                facts: (&page.spec, &page.rows, &page.facts),
+                strip: None,
+                hero: None,
+            };
+            let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+            let published = crate::next_flow::publish_leaf_page(
+                &calls,
+                &bundle.dir,
+                "change",
+                (&leaf, &plan),
+                &qa,
+            )
+            .unwrap_or_else(|e| panic!("{shape_name}: {e}"));
+            assert!(
+                published.dropped.is_empty(),
+                "{shape_name}: {:?}",
+                published.dropped
+            );
+            let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+            assert!(!html.contains(r#"class="cmap""#), "{shape_name}: no map");
+            let notes = html
+                .split(r#"<g data-layer="leader_notes">"#)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{shape_name}: no notes layer"));
+            // the leader ends: one dot per note
+            let ends: Vec<(f64, f64)> = notes
+                .split("<circle")
+                .skip(1)
+                .filter(|c| c.contains(r#"r="2.5""#))
+                .map(|c| (attr(c, "cx").unwrap(), attr(c, "cy").unwrap()))
+                .collect();
+            assert_eq!(ends.len(), noted.len(), "{shape_name}: {ends:?}");
+            let mut seen_falls = 0;
+            for code in &noted {
+                // the place's printed change: its text's x, y and anchor
+                let at = html
+                    .find(&format!(r#"<tspan data-src="fact:chg.{code}""#))
+                    .unwrap_or_else(|| panic!("{shape_name}: no value of {code}"));
+                let text = &html[html[..at].rfind("<text").unwrap()..at];
+                let (x, y) = (attr(text, "x").unwrap(), attr(text, "y").unwrap());
+                let fall = text.contains(r#"text-anchor="end""#);
+                seen_falls += usize::from(fall);
+                let end = ends
+                    .iter()
+                    .find(|e| (e.1 - y).abs() <= 1.0)
+                    .unwrap_or_else(|| {
+                        panic!("{shape_name}: no leader ends at {code}'s row ({y}): {ends:?}")
+                    });
+                assert!(
+                    if fall { end.0 < x } else { end.0 > x },
+                    "{shape_name}: {code}'s leader ends at {end:?}, its value at {x} ({})",
+                    if fall {
+                        "a fall: left of it"
+                    } else {
+                        "a rise: right of it"
+                    }
+                );
+            }
+            assert_eq!(
+                seen_falls, falls,
+                "{shape_name}: the falls the notes point at"
+            );
+        }
+    }
+
+    /// A change page's bars print each place's change and no row of their own, so no drawn row holds a place: the count
+    /// of places it draws is the places its bars draw, on the text step (places_drawn) and in the core's words check
+    /// alike. q1's four places pass a four-country kicker and refuse a three-country one; the same table less FR, three
+    /// places, passes the three-country kicker and refuses the four-country one.
+    #[test]
+    fn a_change_page_s_kicker_counts_the_places_its_bars_draw() {
+        let four = q1_ten_years();
+        let three: Vec<Value> = four
+            .iter()
+            .filter(|r| r["dims"]["geo"] != "FR")
+            .cloned()
+            .collect();
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        for (main, n, good, bad) in [
+            (four, 4, "四国对比", "三国对比"),
+            (three, 3, "三国对比", "四国对比"),
+        ] {
+            let change = recipe("change");
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            assert!(fill["drawn"].as_array().unwrap().is_empty(), "{n}");
+            assert_eq!(places_drawn(&fill), Some(n));
+            for (kicker, passes) in [(good, true), (bad, false)] {
+                let mut f = fill.clone();
+                page_words(&mut f, ("标题", "导语", kicker));
+                let calls = std::sync::Mutex::new(Vec::new());
+                let got = draw_nodes(&mut f, &change.external, &calls, &runtime);
+                if passes {
+                    got.unwrap_or_else(|e| panic!("{n} places, {kicker}: {e}"));
+                } else {
+                    let e = got.expect_err(kicker);
+                    assert!(e.contains("C3 $.texts.kicker"), "{n} places, {kicker}: {e}");
+                }
+            }
+        }
     }
 
     /// The q5-shaped change page (a World Bank share by iso3 country, CHN, IND, USA), the second shape beside q1's Eurostat
@@ -13629,6 +16615,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published =
@@ -13715,6 +16702,20 @@ mod tests {
         ) -> Result<Vec<Value>, String> {
             Fetched(self.0.clone(), "").series_rows(table, csv)
         }
+        fn asks_top(&self, question_zh: &str) -> Option<(usize, bool)> {
+            crate::answer_plan::asks_top(question_zh)
+        }
+        fn asks_position(&self, question_zh: &str) -> bool {
+            crate::answer_plan::asks_position(question_zh)
+        }
+        fn targets(&self, _main: &str) -> Vec<Value> {
+            REGISTERED_TARGETS.with(|t| t.borrow().clone())
+        }
+    }
+
+    thread_local! {
+        /// The target rows the Groups catalogue's `targets` answers with (none unless a test sets them).
+        static REGISTERED_TARGETS: std::cell::RefCell<Vec<Value>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
@@ -13729,6 +16730,11 @@ mod tests {
             row["value"] = json!(format!("{}.5", 10 + (i * 7) % 23));
         }
         main
+    }
+
+    thread_local! {
+        /// The notes the last page `published` laid out dropped, as the publication lists them.
+        static LAST_DROPPED: std::cell::RefCell<Vec<(String, String)>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
@@ -13777,11 +16783,13 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": name});
         let published =
             crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa)
                 .unwrap_or_else(|e| panic!("{at}: publish: {e}"));
+        LAST_DROPPED.with(|d| *d.borrow_mut() = published.dropped.clone());
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         let text = std::fs::read_to_string(
             bundle
@@ -14172,6 +17180,16 @@ mod tests {
         main: Vec<Value>,
         asked: Value,
     ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
+        group_request_by(question, main, asked, ("change", "dumbbell"))
+    }
+
+    /// group_request_asked by a recipe (`name`), the charts step having drawn `chart`.
+    fn group_request_by(
+        question: &str,
+        main: Vec<Value>,
+        asked: Value,
+        (name, chart): (&str, &str),
+    ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
         let run = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(run.path().join("shadow")).unwrap();
         std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
@@ -14190,6 +17208,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked,
             relation: None,
         };
@@ -14199,8 +17218,8 @@ mod tests {
         let fill = recipe_request(
             run.path(),
             &[prepared],
-            &["dumbbell"],
-            recipe("change"),
+            &[chart],
+            recipe(name),
             &cat,
             (question, ("标题", "导语", "栏目"), &places),
             (&calls, None),
@@ -14211,18 +17230,380 @@ mod tests {
 
     /// A group's fill laid out where leaf_page lays the external layers out, by the repository's own nodes (whole paths: the
     /// child runs in its own folder), then drawn, published and read back.
-    fn group_published(mut fill: Value, at: &str) -> PublishedPage {
+    fn group_published(fill: Value, at: &str) -> PublishedPage {
+        group_published_by(fill, "change", at)
+    }
+
+    /// group_published by a recipe (`name`).
+    fn group_published_by(mut fill: Value, name: &str, at: &str) -> PublishedPage {
         let calls = std::sync::Mutex::new(Vec::new());
         fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
         draw_nodes(
             &mut fill,
-            &recipe("change").external,
+            &recipe(name).external,
             &calls,
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime"),
         )
-        .unwrap();
-        published("change", fill, at)
+        .unwrap_or_else(|e| panic!("{at}: draw: {e}"));
+        published(name, fill, at)
+    }
+
+    /// A question that asks where one place stands (what rank it is) and names one place the page ranks makes that place the
+    /// page's focus (picks.focus: the Position finding says the place it holds, the page marks it), on both ranking
+    /// recipes; a question naming no ranked place or two of them, or one that does not ask a place, sets none; the
+    /// leader named stays the leader (the level finding).
+    #[test]
+    fn a_question_asking_where_a_named_place_stands_makes_it_the_focus() {
+        // places the knowledge group names by their Chinese names (the l5geo test world's), read by code
+        let brics = ["CN", "IN", "ZA", "JP", "US"];
+        for (name, chart) in [
+            ("column", "horizontal_bar"),
+            ("ranked_bars", "horizontal_bar"),
+        ] {
+            let ask = |q: &str| {
+                let main = group_rows(&brics, &["2025"]);
+                let (fill, _) = group_request_by(q, main, json!([]), (name, chart));
+                fill.unwrap_or_else(|e| panic!("{name} {q}: {e:?}"))["page_in"]["picks"].clone()
+            };
+            let plain = ask("2025 年各国失业率谁最高？");
+            assert!(plain.get("focus").is_none(), "{name}: {plain}");
+            let ranked: Vec<String> = plain["ranked"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c.as_str().unwrap().to_string())
+                .collect();
+            let zh = |code: &str| {
+                ["中国", "印度", "南非", "日本", "美国"]
+                    [brics.iter().position(|c| *c == code).unwrap()]
+                .to_string()
+            };
+            let (leader, third) = (&ranked[0], &ranked[2]);
+            // a place that is not the leader: the focus
+            let at = ask(&format!("2025 年各国失业率，{}排第几？", zh(third)));
+            assert_eq!(at["focus"], json!(third), "{name}");
+            // its page is drawn and published, passes the whole-page check, and says the place the focus holds
+            let q = format!("2025 年各国失业率，{}排第几？", zh(third));
+            let (fill, _) =
+                group_request_by(&q, group_rows(&brics, &["2025"]), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let (html, ledger, refs, spec, rows, facts) =
+                group_published_by(fill, name, &format!("{name} focus"));
+            assert_eq!(
+                crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts),
+                Vec::<String>::new(),
+                "{name}"
+            );
+            // the finding's own facts carry the place: its position among the places drawn, computed from the rows
+            // (the ranked bars page has no finding of its own, so it holds none)
+            assert!(
+                name == "ranked_bars"
+                    || spec.facts.iter().any(|(k, v)| k == "pos1"
+                        && v["op"] == "position"
+                        && v["code"] == json!(third)),
+                "{name}: the page holds the place's position fact"
+            );
+            // the leader named: the focus is the leader
+            let at = ask(&format!("2025 年各国失业率，{}排第几？", zh(leader)));
+            assert_eq!(at["focus"], json!(leader), "{name}");
+            // a word that holds a country's name ("developing countries" holds China in Chinese) is no place: the named one is the focus
+            let word = ask(&format!("2025 年发展中国家的失业率，{}排第几？", zh(third)));
+            assert_eq!(word["focus"], json!(third), "{name}: {word}");
+            // two places named: none to say the place of
+            let two = ask(&format!(
+                "2025 年各国失业率，{}和{}各排第几？",
+                zh(&ranked[1]),
+                zh(third)
+            ));
+            assert!(two.get("focus").is_none(), "{name}: {two}");
+            // the same place named in a question that does not ask a place: none
+            let other = ask(&format!("2025 年各国失业率，{}怎么样？", zh(third)));
+            assert!(other.get("focus").is_none(), "{name}: {other}");
+        }
+    }
+
+    /// A World Bank ranking page (rows by iso3 code, the registered population unit) over the economies a question asks the
+    /// place in, as the open-ranking pages of "the ten most populous, where does one rank" are shaped.
+    struct WbRanked(Vec<Value>);
+    impl Catalogue for WbRanked {
+        fn top5(
+            &self,
+            q: &str,
+            t: &[String],
+            m: bool,
+            y: Option<i32>,
+            y0: Option<i32>,
+        ) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            Hubs.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(
+            &self,
+            kind: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Hubs.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Some(crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: true,
+                dims: Vec::new(),
+                end_year: None,
+                places: WB_RANKED
+                    .iter()
+                    .map(|(c, i, _)| (i.to_string(), c.to_string()))
+                    .collect(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: Some(crate::l5geo::Unit {
+                    code: "PER".into(),
+                    label: String::new(),
+                    kind: Some("amount"),
+                }),
+            })
+        }
+        fn series_rows(&self, _: &crate::l5geo::TableMeta, _: &str) -> Result<Vec<Value>, String> {
+            Ok(self.0.clone())
+        }
+        fn asks_position(&self, question_zh: &str) -> bool {
+            crate::answer_plan::asks_position(question_zh)
+        }
+    }
+
+    /// The most populous economies at 2024 as the World Bank gives them (iso3 codes), largest first.
+    const WB_RANKED: [(&str, &str, &str); 8] = [
+        ("IND", "IN", "1450935791"),
+        ("CHN", "CN", "1408975000"),
+        ("USA", "US", "340003797"),
+        ("IDN", "ID", "283487931"),
+        ("PAK", "PK", "251269164"),
+        ("NGA", "NG", "232679478"),
+        ("BRA", "BR", "211998573"),
+        ("BGD", "BD", "173562364"),
+    ];
+
+    /// The same ask on a World Bank page (iso3 codes, a World Bank table's shape): the named economy that is not the
+    /// leader becomes the focus and the page says the place from its position fact; the leader named, two named, and a
+    /// question that does not ask a place set none or the leader.
+    #[test]
+    fn a_world_bank_ranking_page_takes_the_named_economy_as_its_focus() {
+        let id = "SP.POP.TOTL@2";
+        let rows: Vec<Value> = WB_RANKED
+            .iter()
+            .map(|(c, _, v)| {
+                json!({"src": format!("series:{id}/{c}:2024:value"), "table": id,
+                    "dims": {"country": c}, "time": "2024", "value": v})
+            })
+            .collect();
+        let country = |iso: &str| crate::l5geo::Place::Country(iso.to_string());
+        let ask = |q: &str, named: &[&str]| {
+            let run = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+            std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+            std::fs::write(
+                run.path().join("shadow/candidate_sheet-s1.json"),
+                json!({"candidates": []}).to_string(),
+            )
+            .unwrap();
+            std::fs::write(run.path().join("pop.csv"), "").unwrap();
+            let prepared = Prepared {
+                id: id.into(),
+                title: String::new(),
+                file: "pop.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                chain: Vec::new(),
+                asked: json!([]),
+                relation: None,
+            };
+            let calls = std::sync::Mutex::new(Vec::new());
+            let cat = WbRanked(rows.clone());
+            // the countries the knowledge group reads in the question, by iso2 code
+            let places: Vec<crate::l5geo::Place> = named.iter().map(|i| country(i)).collect();
+            recipe_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                recipe("column"),
+                &cat,
+                (q, ("标题", "导语", "栏目"), &places),
+                (&calls, None),
+            )
+            .unwrap_or_else(|e| panic!("{q}: {e:?}"))
+        };
+        let plain = ask("2024 年人口最多的十个国家是哪些？", &[]);
+        assert!(plain["page_in"]["picks"].get("focus").is_none());
+        assert_eq!(plain["page_in"]["picks"]["ranked"][0], json!("IND"));
+        let nga = ask("2024 年人口最多的十个国家里，尼日利亚排第几？", &["NG"]);
+        assert_eq!(nga["page_in"]["picks"]["focus"], json!("NGA"));
+        let lead = ask("2024 年人口最多的十个国家里，印度排第几？", &["IN"]);
+        assert_eq!(lead["page_in"]["picks"]["focus"], json!("IND"));
+        let two = ask(
+            "2024 年人口最多的十个国家里，尼日利亚和巴西各排第几？",
+            &["NG", "BR"],
+        );
+        assert!(two["page_in"]["picks"].get("focus").is_none());
+        let asked_not = ask("2024 年人口最多的十个国家里，尼日利亚怎么样？", &["NG"]);
+        assert!(asked_not["page_in"]["picks"].get("focus").is_none());
+        // a name inside another word ("developing countries" holds China in Chinese) is no place the knowledge group read: only India is named
+        let word = ask("2024 年发展中国家里，印度排第几？", &["IN"]);
+        assert_eq!(word["page_in"]["picks"]["focus"], json!("IND"));
+        // a named country the page does not rank (Japan) is none; one ranked and one not is the ranked one
+        let off = ask("2024 年人口最多的十个国家里，日本排第几？", &["JP"]);
+        assert!(off["page_in"]["picks"].get("focus").is_none());
+        let mixed = ask(
+            "2024 年人口最多的十个国家里，日本和尼日利亚各排第几？",
+            &["JP", "NG"],
+        );
+        assert_eq!(mixed["page_in"]["picks"]["focus"], json!("NGA"));
+        // its page is drawn and published, passes the whole-page check, and holds the place's position fact (6th)
+        let (html, ledger, refs, spec, rows_back, facts) =
+            group_published_by(nga, "column", "wb focus");
+        assert_eq!(
+            crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows_back, &facts),
+            Vec::<String>::new()
+        );
+        let pos = spec
+            .facts
+            .iter()
+            .find(|(k, _)| k == "pos1")
+            .map(|(_, v)| v.clone())
+            .expect("the page holds the position fact");
+        assert_eq!(
+            (pos["op"].clone(), pos["code"].clone()),
+            (json!("position"), json!("NGA"))
+        );
+        let at = facts
+            .iter()
+            .find(|f| f.key == "pos1")
+            .expect("pos1 computed");
+        assert_eq!(at.v, 6.0);
+    }
+
+    /// A group's page asking for the first or the last n (owner 11-21 12:07, ask item 9: cut to those n), end to end over a
+    /// run folder: recipe_request ranks the BRICS members (Ethiopia with no row), draws only the n (column and ranked bars,
+    /// first and last), keeps every ranked member's row in its request, says the places-drawn line naming Ethiopia, and
+    /// writes the members left out; the page is drawn, published and passes the whole-page check. The same page with a
+    /// member left out that has a better value than one drawn, or one with no row, fails it.
+    #[test]
+    fn a_group_page_asking_the_first_n_draws_only_them_and_holds_the_rest_against_them() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "IR", "AE", "ID"];
+        for (name, chart) in [
+            ("column", "horizontal_bar"),
+            ("ranked_bars", "horizontal_bar"),
+        ] {
+            for (question, low) in [
+                ("2025 年金砖国家失业率最高的三个是谁？", false),
+                ("2025 年金砖国家失业率最低的三个是谁？", true),
+            ] {
+                let at = format!("{name} {question}");
+                let main = group_rows(&brics, &["2016", "2025"]);
+                let (fill, _) = group_request_by(question, main, json!([]), (name, chart));
+                let fill = fill.unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                let page_in = &fill["page_in"];
+                assert_eq!(
+                    page_in["picks"]["ranked"].as_array().unwrap().len(),
+                    3,
+                    "{at}"
+                );
+                let key = if low { "asked_last_n" } else { "asked_first_n" };
+                assert_eq!(page_in["picks"][key], json!(3), "{at}");
+                let basis = &fill["knobs"]["spec"]["basis"];
+                assert_eq!(basis["missing"], json!(["ET"]), "{at}");
+                assert_eq!(basis["cut"]["codes"].as_array().unwrap().len(), 6, "{at}");
+                assert_eq!(basis["cut"]["low"], json!(low), "{at}");
+                // every ranked member's row at the year is in the request, the cut ones among them
+                let kept: BTreeSet<&str> = fill["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|r| r["time"] == "2025")
+                    .filter_map(|r| r["dims"]["geo"].as_str())
+                    .collect();
+                assert_eq!(kept.len(), 9, "{at}: {kept:?}");
+                let (html, ledger, refs, spec, rows, facts) =
+                    group_published_by(fill.clone(), name, &at);
+                let fails = |s: &crate::next_facts::Spec| {
+                    crate::next_leaf::check_leaf_page(&html, &ledger, &refs, s, &rows, &facts)
+                };
+                assert_eq!(fails(&spec), Vec::<String>::new(), "{at}");
+                assert_eq!(ledger[&format!("fact:{DRAWN}.n")], "3", "{at}");
+                let plain: String = html
+                    .split('<')
+                    .map(|p| p.split_once('>').map_or(p, |(_, t)| t))
+                    .collect();
+                assert!(
+                    plain.contains("画出 3 国"),
+                    "{at}: the line says the places drawn"
+                );
+                // a column's notes say the drawn set (the mean of the places drawn: "against the mean of those drawn"), not the ranking's ends
+                // the page no longer draws (the ranked bars have no notes)
+                assert!(
+                    name != "column" || plain.contains("比图中平均低"),
+                    "{at}: the notes say the drawn set"
+                );
+                assert!(
+                    !plain.contains("比最高者") && !plain.contains("最高者是它的"),
+                    "{at}: {plain}"
+                );
+                // must fail: a drawn place passed off as cut (it is drawn), and a member never ranked passed off as cut
+                let mut drawn_cut = spec.clone();
+                let first = page_in["picks"]["ranked"][0].as_str().unwrap().to_string();
+                drawn_cut
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push(first);
+                assert!(
+                    fails(&drawn_cut).iter().any(|f| f.contains("and draws it")),
+                    "{at}: {:?}",
+                    fails(&drawn_cut)
+                );
+                let mut no_row = spec.clone();
+                no_row
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push("ET".into());
+                assert!(
+                    !fails(&no_row).is_empty(),
+                    "{at}: a member with no row passed off as cut"
+                );
+                // must fail: the cut said the other end (a better value left out)
+                let mut flipped = spec.clone();
+                let c = flipped.basis.as_mut().unwrap().cut.as_mut().unwrap();
+                c.low = !c.low;
+                assert!(
+                    fails(&flipped).iter().any(|f| f.contains("leaves out")),
+                    "{at}: {:?}",
+                    fails(&flipped)
+                );
+            }
+        }
     }
 
     /// With the main chosen, the search step's record of the quantities asked keeps only those the knowledge group still
@@ -14598,6 +17979,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": "change"});
             let published = crate::next_flow::publish_leaf_page(
@@ -14770,6 +18152,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": name});
             let published = crate::next_flow::publish_leaf_page(
@@ -14878,6 +18261,7 @@ mod tests {
             claims: vec![json!({"candidate": "c1", "claim_id": "k1"})],
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -14941,6 +18325,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -14973,6 +18358,51 @@ mod tests {
             "{}",
             fill["composition"]
         );
+    }
+
+    /// A composition sums its parts and draws each as a share of their sum, so q3's tables with their unit read as a
+    /// chain-linked level (owner decision 11-25: not additive) are refused by composition_groups in both recipes that name
+    /// it, the refusal naming what a page over that unit may do; the same tables in GWH read as before.
+    #[test]
+    fn a_composition_over_a_unit_that_does_not_add_up_is_refused_with_what_it_may_do() {
+        let (_, _, _, main, sums) = q3_tables(&[]);
+        let all = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+        assert!(shape_of(&recipe("composition").eats, &all, &Hubs).is_ok());
+        let in_unit = |rows: &[Value], unit: &str| {
+            rows.iter()
+                .cloned()
+                .map(|mut r| {
+                    r["dims"]["unit"] = json!(unit);
+                    r
+                })
+                .collect::<Vec<_>>()
+        };
+        for unit in ["CLV10_MEUR", "CLV20_EUR_HAB"] {
+            let (main, sums) = (in_unit(&main[..], unit), in_unit(&sums[..], unit));
+            let tables = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+            for name in ["composition", "composition_steps"] {
+                assert_eq!(
+                    shape_of(&recipe(name).eats, &tables, &Hubs).err(),
+                    unit_sum_refused(unit).map(|w| format!("not this shape: {w}")),
+                    "{name} {unit}"
+                );
+            }
+        }
+        assert!(unit_sum_refused("PYP_MEUR").is_some());
+        // a rate or an index the table marks not additive is no level: composition_groups does not refuse it for its sum
+        for unit in ["PC_GDP", "PCH_M1_SA", "CLV_I20", "PD10_EUR"] {
+            assert_eq!(unit_sum_refused(unit), None, "{unit}");
+            let (main, sums) = (in_unit(&main[..], unit), in_unit(&sums[..], unit));
+            let tables = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+            for name in ["composition", "composition_steps"] {
+                let got = shape_of(&recipe(name).eats, &tables, &Hubs);
+                assert!(
+                    !matches!(&got, Err(e) if e.contains("does not add up")),
+                    "{name} {unit}: {:?}",
+                    got.err()
+                );
+            }
+        }
     }
 
     /// One place's parts on a short page are its 100% bar, the waterfall only a block's (owner 11-16 08:4x item 10): of the
@@ -16008,11 +19438,16 @@ mod tests {
             None
         );
         assert_eq!(places_drawn(&json!({"knobs": {}})), None);
+        // with no drawn row, the places the hero's ranked names (a change page's bars), each a place of a row; a code no row
+        // holds counts no place
+        let ranked = json!({"rows": fill["rows"], "drawn": [], "knobs": {"spec": {"hero": {"data": {"ranked": ["DE", "FR", "XX"]}}}}});
+        assert_eq!(places_drawn(&ranked), Some(2));
         let mut drafts = q1_drafts();
         drafts.places_drawn = places_drawn(&fill);
-        let Ask::Text { places, .. } = drafts.ask(Vec::new()) else {
+        let Ask::Text(text_ask) = drafts.ask(Vec::new()) else {
             unreachable!()
         };
+        let TextAsk { places, .. } = *text_ask;
         assert_eq!(places, Some(3));
     }
 
@@ -16185,6 +19620,7 @@ mod tests {
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
                 ("composition_steps", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
+                ("page_story", Err("not this shape: main spans one year (2025)".to_string())),
                 ("one_line", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change_bars", Err("not this shape: main spans one year (2025)".to_string())),
@@ -16647,6 +20083,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "flow"});
         let published =
@@ -16962,6 +20399,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -17000,11 +20438,13 @@ mod tests {
             window: r.window.clone(),
             same_measure: r.same_measure.clone(),
             strip: r.strip,
+            opening: r.opening,
             external: r.external.clone(),
             points: r.points.clone(),
             short_notes: r.short_notes.clone(),
             relation: r.relation.clone(),
             blocks_only: r.blocks_only,
+            without: r.without.clone(),
         }
     }
 
@@ -17137,6 +20577,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(
@@ -17267,6 +20708,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(
@@ -17399,6 +20841,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(
@@ -17790,6 +21233,7 @@ mod tests {
                 claims: registered,
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                chain: Vec::new(),
                 asked: json!([]),
                 relation: None,
             },
@@ -18136,6 +21580,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18204,6 +21649,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18238,6 +21684,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18318,6 +21765,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18568,6 +22016,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18612,6 +22061,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18743,7 +22193,7 @@ mod tests {
             notes,
             [
                 ("AF".to_string(), "column.note.vs_mean".to_string()),
-                ("IQ".into(), "column.note.lo.scoped".into())
+                ("IQ".into(), "column.note.vs_mean_low".into())
             ]
         );
         // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
@@ -18824,14 +22274,15 @@ mod tests {
             notes,
             [
                 ("SE".to_string(), "column.note.vs_mean".to_string()),
-                ("BE".into(), "column.note.lo.scoped".into())
+                ("BE".into(), "column.note.vs_mean_low".into())
             ]
         );
     }
 
-    /// The set's count the page prints ({drawn}, counted over the rows the page keeps) is the places the finding compares:
-    /// a narrowed column page whose table holds an aggregate row (EU27_2020) beside its 4 places keeps 4 and draws; the
-    /// aggregate's row kept on the page counts 5 places for 4 compared, and the draw recheck stops the page.
+    /// The set's count the page prints ({drawn}, counted over the rows the page keeps of the ranked places) is the places the
+    /// finding compares: a narrowed column page whose table holds an aggregate row (EU27_2020) beside its 4 places keeps 4
+    /// and draws; the aggregate's row kept on the page is no ranked place, so the count stays 4 and the page draws. A count
+    /// that names a fifth place counts 5 for 4 compared, and the draw recheck stops the page.
     #[test]
     fn a_set_count_that_counts_an_aggregate_row_is_refused_at_draw() {
         let column = recipe("column");
@@ -18861,6 +22312,10 @@ mod tests {
             .unwrap()
             .clone();
         counted["rows"].as_array_mut().unwrap().push(aggregate);
+        let calls = std::sync::Mutex::new(Vec::new());
+        draw_nodes(&mut counted.clone(), &column.external, &calls, &runtime).unwrap();
+        let filter = &mut counted["knobs"]["spec"]["facts"]["drawn"]["filter"]["geo"];
+        filter.as_array_mut().unwrap().push(json!("EU27_2020"));
         let calls = std::sync::Mutex::new(Vec::new());
         let why = draw_nodes(&mut counted, &column.external, &calls, &runtime).unwrap_err();
         assert!(why.starts_with("node finding: the set's count drawn counts 5 places over the page's rows, the finding compares 4"), "{why}");
@@ -19090,6 +22545,26 @@ mod tests {
         );
     }
 
+    /// A column page of two places has no mean to set the two ends against (a mean needs three places, as the highest's note
+    /// has always had it): its lowest keeps the times, its highest the gap to the lowest, the words the dek prints (11-23).
+    #[test]
+    fn a_column_page_of_two_places_keeps_the_gap_and_the_times_for_its_notes() {
+        let two: Vec<Value> = column_rows()
+            .into_iter()
+            .filter(|r| ["SE", "BE"].contains(&r["dims"]["geo"].as_str().unwrap()))
+            .collect();
+        assert_eq!(two.len(), 2);
+        let (_, _, _, _, notes) =
+            cut_page(&[json!({"origin": "download", "file": "data/t.csv"})], &two);
+        assert_eq!(
+            notes,
+            [
+                ("SE".to_string(), "column.note.hi".to_string()),
+                ("BE".into(), "column.note.lo".into())
+            ]
+        );
+    }
+
     /// A table no one cut (its own download record, and a cut of another file beside it): no scope, so no scope word on the
     /// page, the plain dek that names the lowest, and the plain note keys.
     #[test]
@@ -19114,7 +22589,7 @@ mod tests {
             notes,
             [
                 ("SE".to_string(), "column.note.vs_mean".to_string()),
-                ("BE".into(), "column.note.lo".into())
+                ("BE".into(), "column.note.vs_mean_low".into())
             ]
         );
     }
@@ -19971,6 +23446,7 @@ mod tests {
             claims,
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation,
         };
@@ -21341,6 +24817,7 @@ for line in sys.stdin:
                 ("ring", false),
                 ("composition_steps", false),
                 ("composition", false),
+                ("page_story", true),
                 ("one_line", false),
                 ("change", true),
                 ("change_bars", true),
@@ -21559,6 +25036,7 @@ for line in sys.stdin:
                 ("ring", vec![]),
                 ("composition_steps", vec![]),
                 ("composition", vec![]),
+                ("page_story", vec![]),
                 ("one_line", vec![]),
                 ("change", vec![]),
                 ("change_bars", vec![]),
@@ -23597,15 +27075,12 @@ for line in sys.stdin:
                 .ok_or_else(|| format!("leader notes: no word for the change of {code}"))?;
             let own = json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}],
                 "value_text": format!("fact:{}.{code}", CHANGE_FAMILIES[2])});
-            // the first's neighbour is the second ranked, the last's the one before it, never the first itself
+            // the first's neighbour is the second ranked, the last's the one before it (of two places, the first: each of the
+            // two notes then compares with the other, so the last has a comparison where it had only its own change)
             let (vs_word, key) = OLD_CHANGE_VS[usize::from(!most)];
             let neighbour = match most {
                 true => ranked.get(1),
-                false => ranked
-                    .len()
-                    .checked_sub(2)
-                    .filter(|i| *i > 0)
-                    .and_then(|i| ranked.get(i)),
+                false => ranked.len().checked_sub(2).and_then(|i| ranked.get(i)),
             };
             let Some(other) = neighbour else {
                 notes.push(own);
@@ -23997,6 +27472,28 @@ for line in sys.stdin:
                 None,
             ),
             (
+                "fall tie c",
+                "change",
+                ten(&span(&[
+                    ("SE", "20", "25"),
+                    ("BE", "7", "6"),
+                    ("DE", "9", "8"),
+                ])),
+                false,
+                None,
+            ),
+            (
+                "rise tie c",
+                "change",
+                ten(&span(&[
+                    ("SE", "1", "9"),
+                    ("BE", "1", "2"),
+                    ("DE", "1", "2"),
+                ])),
+                false,
+                None,
+            ),
+            (
                 "all rise a",
                 "change",
                 ten(&span(&[
@@ -24059,6 +27556,7 @@ for line in sys.stdin:
             ),
         ];
         let mut seen = BTreeSet::new();
+        let mut of_two = BTreeSet::new();
         for (label, name, main, scoped, names) in cases {
             let named = names.map(Named);
             let cat: &dyn Catalogue = match &named {
@@ -24108,8 +27606,10 @@ for line in sys.stdin:
             old_leader_notes_fill(&filling, &mut old, scoped)
                 .unwrap_or_else(|e| panic!("{label}: the rust notes: {e}"));
             let spec = &fill["knobs"]["spec"];
+            let mut want = old.hero["leaves"]["leader_notes"].clone();
+            notes_at_the_bars(&mut want);
             assert_eq!(
-                spec["hero"]["leaves"]["leader_notes"], old.hero["leaves"]["leader_notes"],
+                spec["hero"]["leaves"]["leader_notes"], want,
                 "{label}: the notes"
             );
             let (old_facts, old_fmts, _) = with_printed_raise(
@@ -24146,7 +27646,21 @@ for line in sys.stdin:
                     .filter_map(|t| t["word"].as_str())
                     .collect();
                 seen.insert(words.join("+"));
+                if label.starts_with("rank of two") {
+                    of_two.insert(words.join("+"));
+                }
             }
+        }
+        // a page of two places: the last end compares with the first (before, it printed its own change alone)
+        for want in [
+            "column.note.rise_most+column.note.vs_next",
+            "column.note.rise_least+column.note.vs_prev",
+            "column.note.fall_most+column.note.vs_prev",
+        ] {
+            assert!(
+                of_two.contains(want),
+                "no page of two reaches {want}: {of_two:?}"
+            );
         }
         for want in [
             "column.note.rise_most+column.note.vs_next",
@@ -25503,6 +29017,7 @@ for line in sys.stdin:
                 claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
                 places_zh: Vec::new(),
                 companions: vec![("impm".into(), "impm.csv".into())],
+                chain: Vec::new(),
                 asked: json!([]),
                 relation: None,
             };
@@ -25553,6 +29068,7 @@ for line in sys.stdin:
                 claims: Vec::new(),
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                chain: Vec::new(),
                 asked: json!([]),
                 relation,
             };
@@ -25623,6 +29139,7 @@ for line in sys.stdin:
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: Some(Relation::Change),
         };
@@ -25643,6 +29160,273 @@ for line in sys.stdin:
                 why.contains(&format!("{r}: not this relation: the table step kept Change, the recipe answers Ranking")),
                 "{r}: {why}"
             );
+        }
+    }
+
+    /// A unit whose short name holds a digit (CLV20_EUR_HAB, a base year) goes to the findings child as the unit table's name entry
+    /// and the page's ledger holds it as the table gives it; a unit with no digit (PC, MIO_EUR) is left as words, nothing added; a
+    /// code the unit table has no name for adds nothing (the story's own refusal of it stands).
+    #[test]
+    fn a_unit_name_with_a_digit_goes_to_the_story_as_the_unit_table_s_name_entry() {
+        let (mut input, mut knobs) = (
+            json!({"words": {"measure": "m", "unit": "u"}}),
+            json!({"spec": {}}),
+        );
+        unit_name_entry(&mut input, &mut knobs, "CLV20_EUR_HAB").unwrap();
+        let short = next_pack::unit_line_form("CLV20_EUR_HAB").unwrap();
+        assert!(short.contains("2020"), "{short}");
+        assert_eq!(
+            input["words"]["unit_src"],
+            json!("name:unit_short_zh:CLV20_EUR_HAB")
+        );
+        assert_eq!(
+            knobs["named"],
+            json!({"name:unit_short_zh:CLV20_EUR_HAB": short})
+        );
+        assert_eq!(
+            fixed_name("name:unit_short_zh:CLV20_EUR_HAB").as_deref(),
+            Some(short)
+        );
+        for unit in ["PC", "MIO_EUR", "NO_SUCH_UNIT"] {
+            let (mut input, mut knobs) = (
+                json!({"words": {"measure": "m", "unit": "u"}}),
+                json!({"spec": {}}),
+            );
+            unit_name_entry(&mut input, &mut knobs, unit).unwrap();
+            assert!(
+                input["words"].get("unit_src").is_none() && knobs.get("named").is_none(),
+                "{unit}"
+            );
+        }
+    }
+
+    /// pj004-23: with no target row the story page takes a table the table step kept as a ranking too (knobs.json page_story
+    /// without.relations), behind the same minimums; with a target it answers Change alone, as before. Over a run folder with no
+    /// candidate sheet each recipe the pick takes stops at its claims ("<recipe>: shadow/candidate_sheet…"), so reaching that
+    /// stop is the recipe's relation and shape both taken. A ten-year EU table of eight members and the whole, kept Ranking or
+    /// Change, reaches the story page; of seven members the story page is not this shape and the column page is reached; with the
+    /// law's target row and kept Ranking the story page is not this relation (said with its condition) and the column page is
+    /// reached, kept Change it reaches the story page. A World Bank table of eight economies (no whole row) reaches the story
+    /// page kept Ranking or Change.
+    #[test]
+    fn a_ranking_with_no_target_reaches_the_story_page_and_with_a_target_the_column_page() {
+        assert_eq!(
+            recipe("page_story")
+                .without
+                .as_ref()
+                .map(|w| w.relations.clone()),
+            Some(vec!["Ranking".to_string()])
+        );
+        let run = tempfile::tempdir().unwrap();
+        std::fs::write(run.path().join("sdg.csv"), "").unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        let years: Vec<String> = (2015..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let eu = |n: usize| {
+            let geo: Vec<&str> = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "LU"][..n]
+                .iter()
+                .copied()
+                .chain(["EU27_2020"])
+                .collect();
+            let mut rows = ring_rows(
+                "sdg",
+                &[("freq", "A"), ("unit", "PC")],
+                ("geo", &geo),
+                &years,
+            );
+            for r in rows.iter_mut() {
+                let k = geo.iter().position(|g| r["dims"]["geo"] == *g).unwrap() as f64;
+                let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+                r["value"] = json!(format!(
+                    "{:.1}",
+                    5.0 + 4.0 * k + (0.2 + k % 3.0 / 2.0) * (y - 2015.0)
+                ));
+            }
+            rows
+        };
+        let target = json!({"src": "target:sdg-EU27_2020-2030", "main": "sdg", "table": "target_sdg", "dims": {"geo": "EU27_2020"},
+            "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": "42.5"});
+        let reached = |id: &str, relation: Relation, cat: &dyn Catalogue| -> String {
+            let prepared = Prepared {
+                id: id.into(),
+                title: String::new(),
+                file: "sdg.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                chain: Vec::new(),
+                asked: json!([]),
+                relation: Some(relation),
+            };
+            match leaf_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                cat,
+                ("", ("标题", "导语", "栏目")),
+                (&Default::default(), None),
+                (false, false),
+            ) {
+                Ok((recipe, _, passed)) => format!("picked {}; {}", recipe.name, passed.join("; ")),
+                Err((recipe, stage, why)) => format!("{recipe}-{stage}: {why}"),
+            }
+        };
+        let story_reached = "page_story: shadow/candidate_sheet";
+        let column_reached = "column: shadow/candidate_sheet";
+        let no_target = |n: usize| Fetched(BTreeMap::from([("sdg".to_string(), eu(n))]), "");
+        for kept in [Relation::Ranking, Relation::Change] {
+            let why = reached("sdg", kept, &no_target(8));
+            assert!(why.contains(story_reached), "{kept:?}: {why}");
+            assert!(
+                !why.contains("page_story: not this relation"),
+                "{kept:?}: {why}"
+            );
+        }
+        let why = reached("sdg", Relation::Ranking, &no_target(7));
+        assert!(
+            !why.contains(story_reached) && why.contains("holds 7 countries, fewer than 8"),
+            "{why}"
+        );
+        assert!(why.contains(column_reached), "{why}");
+        let targeted = WithTargets(no_target(8), vec![target]);
+        let why = reached("sdg", Relation::Ranking, &targeted);
+        assert!(
+            why.contains("page_story: not this relation: the table step kept Ranking, the recipe answers Change when it runs to its has_target"),
+            "{why}"
+        );
+        assert!(
+            !why.contains(story_reached) && why.contains(column_reached),
+            "{why}"
+        );
+        let why = reached("sdg", Relation::Change, &targeted);
+        assert!(why.contains(story_reached), "{why}");
+        // a World Bank table of eight economies, no whole row
+        let id = "EG.FEC.RNEW.ZS@2";
+        let wb: Vec<Value> = WB_RANKED
+            .iter()
+            .enumerate()
+            .flat_map(|(k, (c, _, _))| {
+                years.iter().map(move |t| {
+                    let y: f64 = t.parse().unwrap();
+                    json!({"src": format!("series:{id}/{c}:{t}:value"), "table": id, "dims": {"country": c}, "time": t,
+                        "value": format!("{:.1}", 5.0 + 4.0 * k as f64 + (0.2 + (k % 3) as f64 / 2.0) * (y - 2015.0))})
+                })
+            })
+            .collect();
+        for kept in [Relation::Ranking, Relation::Change] {
+            let why = reached(id, kept, &WbRanked(wb.clone()));
+            assert!(why.contains(story_reached), "World Bank {kept:?}: {why}");
+        }
+    }
+
+    /// H2b walk 11-23 (an ASEAN question): a page that went without its condition has no count of its own to say the basis of a
+    /// group the question names, so with a basis line the story page is not this shape and the ordinary page is reached
+    /// (said_basis would stop that page at the fill, no other recipe tried). A question naming the EU over eight members that
+    /// each have a row at the last year has no basis line (union_basis) and still reaches the story page. Over a run folder
+    /// with no candidate sheet, as a_ranking_with_no_target_reaches_the_story_page_and_with_a_target_the_column_page reads it.
+    #[test]
+    fn a_group_with_a_basis_line_and_no_target_goes_on_to_the_ordinary_page() {
+        let run = tempfile::tempdir().unwrap();
+        std::fs::write(run.path().join("sdg_07_40.csv"), "").unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        let years: Vec<String> = (2016..=2025).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let reached = |question: &str, places: &[&str]| -> String {
+            let main = group_rows(places, &years);
+            let prepared = Prepared {
+                id: "sdg_07_40".into(),
+                title: String::new(),
+                file: "sdg_07_40.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                chain: Vec::new(),
+                asked: json!([]),
+                relation: Some(Relation::Change),
+            };
+            let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
+            match leaf_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                &cat,
+                (question, ("标题", "导语", "栏目")),
+                (&Default::default(), None),
+                (false, false),
+            ) {
+                Ok((recipe, _, passed)) => format!("picked {}; {}", recipe.name, passed.join("; ")),
+                Err((recipe, stage, why)) => format!("{recipe}-{stage}: {why}"),
+            }
+        };
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
+        let why = reached("金砖国家近十年的GDP增长率", &brics);
+        assert!(
+            why.contains("page_story: not this shape: without has_target the page has no count of its own to say the basis of the group the question names"),
+            "{why}"
+        );
+        assert!(
+            !why.contains("page_story: shadow/candidate_sheet")
+                && why.contains("change: shadow/candidate_sheet"),
+            "{why}"
+        );
+        let eu = ["SE", "FI", "AT", "DE", "FR", "PL", "NL", "MT", "EU27_2020"];
+        let why = reached("欧盟各国的可再生能源占比", &eu);
+        assert!(why.contains("page_story: shadow/candidate_sheet"), "{why}");
+        assert!(!why.contains("the basis of the group"), "{why}");
+    }
+
+    /// Fetched with the knowledge group's target rows for the main (Catalogue::targets), as GroupCatalogue hands them in.
+    struct WithTargets(Fetched, Vec<Value>);
+    impl Catalogue for WithTargets {
+        fn top5(
+            &self,
+            q: &str,
+            t: &[String],
+            m: bool,
+            y: Option<i32>,
+            y0: Option<i32>,
+        ) -> crate::l5geo::Ranking {
+            self.0.top5(q, t, m, y, y0)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            self.0.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            self.0.source()
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            self.0.countries(codes)
+        }
+        fn zh_names(
+            &self,
+            kind: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
+            self.0.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            self.0.members(aggregate)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            self.0.table(id)
+        }
+        fn series_rows(
+            &self,
+            table: &crate::l5geo::TableMeta,
+            at: &str,
+        ) -> Result<Vec<Value>, String> {
+            self.0.series_rows(table, at)
+        }
+        fn targets(&self, main: &str) -> Vec<Value> {
+            self.1
+                .iter()
+                .filter(|r| r["main"] == main)
+                .cloned()
+                .collect()
         }
     }
 
@@ -27065,127 +30849,6 @@ for line in sys.stdin:
         }
     }
 
-    /// P6 step 8 on real data: the stored stand-in change and column requests (P6_REQS, as p6_finding_over_stored_requests;
-    /// run with --ignored) refilled, the extent the circles' and the notes' leaf data hold (the visual group's rule extent)
-    /// the frozen flow's (ranked_points over the same rows and catalogue) bit for bit, and the page tree's (the stored
-    /// requests keep no extent). Prints one P6REQ line each.
-    #[test]
-    #[ignore]
-    fn p6_extent_over_stored_requests() {
-        let list = std::fs::read_to_string(std::env::var("P6_REQS").unwrap()).unwrap();
-        for path in list.lines().filter(|l| !l.trim().is_empty()) {
-            let req: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-            let main: Vec<Value> = req["rows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:")))
-                .map(|r| {
-                    let mut r = r.clone();
-                    if let Some(n) = r["value"].as_f64().and_then(serde_json::Number::from_f64) {
-                        r["value"] = json!(n.to_string());
-                    }
-                    r
-                })
-                .collect();
-            let names: BTreeMap<String, String> = req["ledger"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .filter_map(|(k, v)| {
-                    Some((
-                        k.strip_prefix("name:zh_names:")?
-                            .split_once(':')?
-                            .1
-                            .to_string(),
-                        v.as_str()?.to_string(),
-                    ))
-                })
-                .collect();
-            let cat = Ledgered(names);
-            let table = main[0]["table"].as_str().unwrap().to_string();
-            let name = if path.contains("/change/") {
-                "change"
-            } else {
-                "column"
-            };
-            let r = recipe(name);
-            let Ok(shape) = shape_of(&r.eats, &[(table.as_str(), &main[..])], &cat) else {
-                println!("P6REQ extent {name} not refilled here");
-                continue;
-            };
-            let picks =
-                picks_of(&r.picks, &shape, &main, &[]).unwrap_or_else(|e| panic!("{path}: {e}"));
-            let page_in = page_input(r, &shape, &picks, (&main, &[]));
-            let calls = std::sync::Mutex::new(Vec::new());
-            let asked = Asked {
-                calls: &calls,
-                page_in: Some(&page_in),
-            };
-            let fill = fill_of(
-                r,
-                &shape,
-                &picks,
-                (&main, &[]),
-                &cat,
-                ("标题", "导语"),
-                false,
-                Some(&asked),
-            )
-            .unwrap_or_else(|e| panic!("{path}: {e}"));
-            let short = next_pack::unit_short(&shape.unit).unwrap();
-            let filling = Filling {
-                shape: &shape,
-                picks: &picks,
-                main: &main,
-                companion: &[],
-                catalogue: &cat,
-                fmt: shape.unit.to_lowercase(),
-                short,
-                window: None,
-                asked: None,
-            };
-            let (_, old) = ranked_points(&filling, &mut Filled::default()).unwrap();
-            let leaves = &fill["knobs"]["spec"]["hero"]["leaves"];
-            let bits = |v: &Value| {
-                v.as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.as_f64().unwrap().to_bits())
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(
-                bits(&leaves["bubbles"]["ext"]),
-                old.map(f64::to_bits).to_vec(),
-                "{path}: the circles' extent"
-            );
-            assert_eq!(
-                leaves["leader_notes"]["ext"], leaves["bubbles"]["ext"],
-                "{path}: the notes' extent"
-            );
-            let reg = crate::next_tree::load_registry(&crate::next_tree::bindings());
-            let pi = crate::next_tree::J::from_value(&fill["page_in"]);
-            let tree = crate::next_tree_gen::tree_j(
-                &pi,
-                &crate::next_tree::J::from_value(&fill),
-                &reg,
-                &["bubbles".to_string()],
-            )
-            .unwrap_or_else(|e| panic!("{path}: {e}"));
-            let mut exts = Vec::new();
-            tree_exts(&tree.to_value(), &mut exts);
-            assert_eq!(
-                exts,
-                vec![leaves["bubbles"]["ext"].clone()],
-                "{path}: the tree's extent"
-            );
-            println!(
-                "P6REQ extent {name}: {} equal to the frozen and the tree's",
-                leaves["bubbles"]["ext"]
-            );
-        }
-    }
-
     /// P6 step 7 on real data: the gas fixture under scmp and ring (env as ring_fill_of_the_gas_fixture; --ignored), the
     /// page's share finding held to the frozen one's, and found. Prints one P6REQ line per recipe.
     #[test]
@@ -27577,6 +31240,7 @@ for line in sys.stdin:
             claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
             places_zh: Vec::new(),
             companions: vec![("impm".into(), "impm.csv".into())],
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -27658,5 +31322,342 @@ for line in sys.stdin:
             let rows = old.drawn.iter().filter(|(l, _)| l == "map").count();
             println!("P6REQ map {recipe_name} gas facts {n} (finding's among them) rows {rows} equal: top {:?} focus {} hub {}", old.data["top"], old.data["focus"], old.data["hub_name"]);
         }
+    }
+
+    /// I36: a page input's external coordinates in the Eurostat shape (geo members beside the EU's own row EU27_2020, annual
+    /// years). The whole's row is never a place the column or change page ranks or counts; shape.whole is the EU when its row
+    /// has a value at the page's year (and at the earlier end of a page with two ends), shape.prev the year before when every
+    /// ranked member has a value there, shape.target the registered target with its one row appended to the rows; each is
+    /// absent, as no key, when its rows are not there.
+    #[test]
+    fn a_page_input_carries_the_whole_the_year_before_and_the_target_only_when_rows_hold_them() {
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "IT", "EU27_2020"]),
+            &["2016", "2023", "2024"],
+        );
+        for (i, r) in main.iter_mut().enumerate() {
+            r["value"] = json!(format!("{}", 10 + i));
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "targets_ren", "dims": {"geo": "EU27_2020"},
+            "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
+        let other = json!({"src": "target:gas-EU27_2020-2030", "main": "gas", "table": "targets_gas", "dims": {"geo": "EU27_2020"},
+            "time": "2030", "value": "1"});
+        let coords = |name: &str, main: &[Value], targets: &[Value]| -> Value {
+            let r = recipe(name);
+            let shape = shape_of(&r.eats, &[("ren", main)], &Scoped(true)).unwrap();
+            let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
+            assert_eq!(shape.countries, ["DE", "FR", "IT"], "{name}");
+            assert!(!picks.ranked.iter().any(|c| c == "EU27_2020"), "{name}");
+            assert_eq!(picks.ranked.len(), 3, "{name}");
+            let mut p = page_input(r, &shape, &picks, (main, &[]));
+            assert_eq!(p["shape"]["countries"], json!(["DE", "FR", "IT"]));
+            external_coords(&mut p, &shape, &picks, (main, targets), &Scoped(true));
+            p
+        };
+        for name in ["column", "change", "ranked_bars", "change_bars"] {
+            let p = coords(name, &main, &[target.clone(), other.clone()]);
+            assert_eq!(p["shape"]["whole"], "EU27_2020", "{name}");
+            assert_eq!(p["shape"]["prev"], "2023", "{name}");
+            assert_eq!(
+                p["shape"]["target"],
+                json!({"table": "targets_ren", "time": "2030", "place": "EU27_2020"}),
+                "{name}"
+            );
+            let rows = p["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), main.len() + 1, "{name}");
+            assert_eq!(rows.last().unwrap()["src"], "target:ren-EU27_2020-2030");
+            // no target registered for this main: no key and no row added
+            let p = coords(name, &main, std::slice::from_ref(&other));
+            assert!(p["shape"].get("target").is_none(), "{name}");
+            assert_eq!(p["rows"].as_array().unwrap().len(), main.len(), "{name}");
+        }
+        // the whole with no value at the page's year: no whole
+        let mut gap = main.clone();
+        gap.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
+        let p = coords("column", &gap, &[]);
+        assert!(p["shape"].get("whole").is_none());
+        assert_eq!(p["shape"]["prev"], "2023");
+        // the whole missing at the earlier end of a change page only: the change page has no whole, the column page has one
+        let mut early = main.clone();
+        early.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2016"));
+        assert!(coords("change", &early, &[])["shape"]
+            .get("whole")
+            .is_none());
+        assert_eq!(coords("column", &early, &[])["shape"]["whole"], "EU27_2020");
+        // a ranked member with no value the year before: no prev
+        let mut no_prev = main.clone();
+        no_prev.retain(|r| !(r["dims"]["geo"] == "FR" && r["time"] == "2023"));
+        let p = coords("column", &no_prev, &[]);
+        assert!(p["shape"].get("prev").is_none());
+        assert_eq!(p["shape"]["whole"], "EU27_2020");
+        // members alone (the ordinary fetch): no whole, the year before still there
+        let mut members = main.clone();
+        members.retain(|r| r["dims"]["geo"] != "EU27_2020");
+        let p = coords("column", &members, std::slice::from_ref(&target));
+        assert!(p["shape"].get("whole").is_none());
+        assert!(p["shape"].get("target").is_none());
+        assert_eq!(p["shape"]["prev"], "2023");
+    }
+
+    /// I36 in the World Bank shape (iso3 places, the world aggregate WLD beside them): WLD is never a ranked place, and is the
+    /// page's whole when the knowledge group's member list holds every ranked economy under it; with no member list for it
+    /// (WbTable) the page has no whole. A World Bank main has no registered target here, so no target key.
+    #[test]
+    fn a_world_bank_page_input_takes_wld_as_the_whole_only_through_its_member_list() {
+        struct World;
+        impl Catalogue for World {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                WbTable {
+                    unit: Some("TCO2E_HAB"),
+                    listed: true,
+                }
+                .table(id)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                match aggregate {
+                    "WLD" => Ok(["CHN", "IND", "USA"].map(String::from).to_vec()),
+                    _ => Err(format!("the member list has no aggregate {aggregate}")),
+                }
+            }
+        }
+        let id = "EN.GHG.CO2.PC.CE.AR5@2";
+        let mut rows = Vec::new();
+        for (place, v) in [("USA", 13.8), ("CHN", 9.2), ("IND", 2.1), ("WLD", 4.7)] {
+            for (t, d) in [("2023", 0.1), ("2024", 0.0)] {
+                rows.push(json!({"src": format!("series:{id}/{place}:{t}:value"), "table": id, "dims": {"country": place},
+                    "time": t, "value": format!("{}", v + d)}));
+            }
+        }
+        let wb = WbTable {
+            unit: Some("TCO2E_HAB"),
+            listed: true,
+        };
+        for (catalogue, whole) in [
+            (&World as &dyn Catalogue, Some("WLD")),
+            (&wb as &dyn Catalogue, None),
+        ] {
+            let r = recipe("column");
+            let shape = shape_of(&r.eats, &[(id, &rows[..])], catalogue).unwrap();
+            assert_eq!(shape.countries, ["CHN", "IND", "USA"]);
+            let picks = picks_of(&r.picks, &shape, &rows, &[]).unwrap();
+            assert_eq!(picks.ranked, ["USA", "CHN", "IND"]);
+            let mut p = page_input(r, &shape, &picks, (&rows, &[]));
+            external_coords(&mut p, &shape, &picks, (&rows, &[]), catalogue);
+            assert_eq!(p["shape"].get("whole").and_then(Value::as_str), whole);
+            assert_eq!(p["shape"]["prev"], "2023");
+            assert!(p["shape"].get("target").is_none());
+            assert_eq!(p["name_kind"], "iso3");
+        }
+    }
+
+    /// I36: an ordinary column page's ends say only how far they are from the year before. The page input still carries the
+    /// whole and the registered target when its rows hold them (external_coords: the story pages read them), but the notes
+    /// over them are not in the registry: with the whole, with a target, the ends take the notes they had without them.
+    #[test]
+    fn column_notes_compare_only_with_the_year_before_whether_or_not_the_input_holds_the_whole_or_the_target(
+    ) {
+        let value = |g: &str, t: &str| match (g, t) {
+            ("DE", "2024") => "30",
+            ("DE", _) => "28",
+            ("FR", "2024") => "20",
+            ("FR", _) => "21",
+            ("IT", "2024") => "10",
+            ("IT", _) => "9",
+            (_, "2024") => "18",
+            _ => "17",
+        };
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "IT", "EU27_2020"]),
+            &["2023", "2024"],
+        );
+        for r in main.iter_mut() {
+            let v = value(
+                r["dims"]["geo"].as_str().unwrap(),
+                r["time"].as_str().unwrap(),
+            );
+            r["value"] = json!(v);
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "targets_ren", "dims": {"geo": "EU27_2020"},
+            "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
+        let notes_of = |label: &str, main: &[Value], targets: &[Value]| -> (Vec<String>, Value) {
+            let r = recipe("column");
+            let shape = shape_of(&r.eats, &[("ren", main)], &Scoped(true)).unwrap();
+            let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
+            let mut page_in = page_input(r, &shape, &picks, (main, &[]));
+            external_coords(&mut page_in, &shape, &picks, (main, targets), &Scoped(true));
+            let calls = std::sync::Mutex::new(Vec::new());
+            let asked = Asked {
+                calls: &calls,
+                page_in: Some(&page_in),
+            };
+            let fill = fill_of(
+                r,
+                &shape,
+                &picks,
+                (main, &[]),
+                &Scoped(true),
+                ("标题", "导语"),
+                false,
+                Some(&asked),
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let words: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]
+                ["notes"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{label}: no notes"))
+                .iter()
+                .map(|n| {
+                    n["text"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|t| {
+                            match (t["word"].as_str(), t["name"].as_str(), t["src"].as_str()) {
+                                (Some(w), ..) => w.to_string(),
+                                (_, Some(n), _) => format!("name:{n}"),
+                                (_, _, Some(s)) => s.to_string(),
+                                _ => String::new(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("+")
+                })
+                .collect();
+            (words, fill)
+        };
+        let srcs = |fill: &Value| -> Vec<String> {
+            fill["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["src"].as_str().unwrap().to_string())
+                .collect()
+        };
+        // the whole at the page's year, a registered target too: neither is named by a note, no row of either is read
+        let (words, fill) = notes_of("whole", &main, std::slice::from_ref(&target));
+        assert_eq!(words.len(), 2, "whole: {words:?}");
+        assert!(
+            words
+                .iter()
+                .all(|w| !w.contains("EU27_2020") && !w.contains("target")),
+            "whole: {words:?}"
+        );
+        assert!(
+            srcs(&fill)
+                .iter()
+                .all(|s| !s.contains("EU27_2020") && !s.starts_with("target:")),
+            "whole: {:?}",
+            srcs(&fill)
+        );
+        // no whole at the year, a registered target: the same
+        let mut no_whole = main.clone();
+        no_whole.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
+        let (words, fill) = notes_of("target", &no_whole, std::slice::from_ref(&target));
+        assert_eq!(words.len(), 2, "target: {words:?}");
+        assert!(
+            words
+                .iter()
+                .all(|w| !w.contains("EU27_2020") && !w.contains("target")),
+            "target: {words:?}"
+        );
+        assert!(
+            srcs(&fill).iter().all(|s| !s.starts_with("target:")),
+            "target: {:?}",
+            srcs(&fill)
+        );
+        // members alone: the year before
+        let mut members = main.clone();
+        members.retain(|r| r["dims"]["geo"] != "EU27_2020");
+        let (words, fill) = notes_of("prev", &members, &[]);
+        assert_eq!(
+            words,
+            [
+                "column.note.whole_above+column.note.last_year_name",
+                "column.note.whole_above+column.note.last_year_name"
+            ],
+            "prev"
+        );
+        assert!(srcs(&fill).contains(&"series:ren/DE:2023:OBS_VALUE".to_string()));
+    }
+
+    /// An ordinary column or change page whose input carries the registered target (external_coords) names the law the
+    /// target is set in, last in the footer, with the clause marked as a table id: a page that may print the target's value
+    /// and year never prints them with no source. With no target registered the footer is the table's line alone.
+    #[test]
+    fn an_ordinary_page_with_a_target_in_its_input_names_the_law_in_the_footer() {
+        let target = json!({"src": "target:sdg_07_40-EU27_2020-2030", "main": "sdg_07_40", "table": "targets_ren",
+            "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5",
+            "source_line": "欧盟法规第三条", "source_ref": "2023/2413"});
+        let main = || group_rows(&["DE", "FR", "IT", "EU27_2020"], &["2023", "2024"]);
+        for (name, chart) in [("column", "horizontal_bar"), ("change", "horizontal_bar")] {
+            REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![target.clone()]);
+            let (fill, _) =
+                group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let spec = &fill["knobs"]["spec"];
+            let lines = spec["source"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
+            assert_eq!(
+                lines.last().unwrap(),
+                "欧盟法规第三条",
+                "{name}: the law's line is last"
+            );
+            assert_eq!(
+                spec["tables"]["targets_ren"],
+                json!({"id": "2023/2413"}),
+                "{name}"
+            );
+            // a page whose input holds the whole and the target draws: no note reads them
+            let (html, ..) =
+                group_published_by(fill.clone(), name, "whole and target in the input");
+            assert!(html.contains(r#"data-layer="leader_notes""#), "{name}");
+            // no target registered: the table's own line, no law line, no clause table
+            REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
+            let (fill, _) =
+                group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name} without: {e:?}"));
+            assert!(
+                fill["knobs"]["spec"]["source"].is_string(),
+                "{name}: one line without a target"
+            );
+            assert!(
+                fill["knobs"]["spec"]["tables"].get("targets_ren").is_none(),
+                "{name}"
+            );
+        }
+        // a target row with no source line or clause stops the page, never prints a target with no source
+        let mut bare = target.clone();
+        bare.as_object_mut().unwrap().remove("source_line");
+        REGISTERED_TARGETS.with(|t| *t.borrow_mut() = vec![bare]);
+        let (fill, _) = group_request_by(
+            "各国可再生能源占比",
+            main(),
+            json!([]),
+            ("column", "horizontal_bar"),
+        );
+        let err = fill.unwrap_err();
+        assert!(err.1.contains("names no source line and clause"), "{err:?}");
+        REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
     }
 }

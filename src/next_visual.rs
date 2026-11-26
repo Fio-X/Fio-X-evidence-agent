@@ -7,7 +7,7 @@
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{
-    bake_leaf_page, draw_page_given, leaves, Layer, Recipe, Record, Runner, Strip,
+    bake_leaf_page, draw_page_given, hero, leaves, HeroMiss, Layer, Recipe, Record, Runner, Strip,
 };
 use crate::next_ledger::{check_numbers, dropped_entry, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
@@ -105,6 +105,32 @@ pub enum Request<'a> {
         width: f64,
         runtime: &'a Path,
     },
+    /// The opening illustration for a page of these tables (its refs), `width` wide: the first piece set that names one of them
+    /// and holds a `hero` block gives the semantic tags of its parts, which the hero child (runtime/illus_hero/run_hero.py:
+    /// Blender's scene, then the painting) draws in the set's ground and accent. Blender or a package missing, or a child that
+    /// takes longer than the deadline, leaves the hero out and the page's strip (IllusStrip's own answer) stands in for it, with
+    /// the reason in the note. A request the child refuses is an error. Nothing is written. `lead` is the angle of the page's
+    /// lead finding (its first titled section's id, runtime/leaves_py/findings.py), which picks the picture's scene (node.json
+    /// stories: a path to a target, a ranking, the members as a map, events in order, ...); none, the set's panorama.
+    ///
+    /// `subject` is the lead finding's own rows (the findings child's `picture.subject`: members, a path, a series or groups
+    /// with the values read from the page's rows): with it the child composes the picture from them, in the topic of the
+    /// measure family the tables belong to (measure-families.json), the lit units recounted by the child from the rows. The
+    /// reply's `omitted` is the members it does not draw.
+    IllusHero {
+        tables: &'a [String],
+        lead: Option<&'a str>,
+        subject: Option<&'a Value>,
+        width: f64,
+        runtime: &'a Path,
+    },
+    /// The story findings over a story page's rows (the findings child under `runtime`, runtime/leaves_py/findings.py): with
+    /// mode "candidates" the scored findings, best first, with the ones left out and why; with mode "compose" and the picks,
+    /// the page's facts (declarations layer 1 computes and checks), sections and each section's leaf data. Nothing is written.
+    Story {
+        request: &'a Value,
+        runtime: &'a Path,
+    },
     /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
     /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
     /// (plain data: shape, picks, rows), every select recomputed by the core.
@@ -123,7 +149,11 @@ pub enum Request<'a> {
 
 /// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
 /// tables it illustrates), in the order a page's tables are matched against them.
-const PIECE_SETS: &[&str] = &[include_str!("../runtime/leaves_js/pieces-energy.json")];
+const PIECE_SETS: &[&str] = &[
+    include_str!("../runtime/leaves_js/pieces-energy.json"),
+    include_str!("../runtime/leaves_js/pieces-people.json"),
+    include_str!("../runtime/leaves_js/pieces-economy.json"),
+];
 
 /// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and second pen by name, so the page
 /// colours it and no second copy of a colour is kept. The second pen (the request's "accent", each piece's one marked part)
@@ -132,14 +162,8 @@ const PAGE_TOKENS: &str = include_str!("../runtime/leaves_py/tokens.css");
 const STRIP_INK: &str = "--t-title";
 const STRIP_SECOND: &str = "--t-sec";
 
-/// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
-/// palette lacks a colour, or the strip is refused or not taken.
-fn illus_strip(
-    tables: &[String],
-    width: f64,
-    runtime: &Path,
-) -> Result<(Option<Strip>, String), String> {
-    let mut picked = None;
+/// The first piece set of PIECE_SETS that names one of `tables`; none when no set does.
+fn pick_set(tables: &[String]) -> Result<Option<Value>, String> {
     for text in PIECE_SETS {
         let set: Value = serde_json::from_str(text)
             .map_err(|e| format!("illus: a piece set does not parse: {e}"))?;
@@ -149,11 +173,20 @@ fn illus_strip(
             .flatten()
             .any(|t| t.as_str().is_some_and(|t| tables.iter().any(|x| x == t)));
         if named {
-            picked = Some(set);
-            break;
+            return Ok(Some(set));
         }
     }
-    let Some(set) = picked else {
+    Ok(None)
+}
+
+/// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
+/// palette lacks a colour, or the strip is refused or not taken.
+fn illus_strip(
+    tables: &[String],
+    width: f64,
+    runtime: &Path,
+) -> Result<(Option<Strip>, String), String> {
+    let Some(set) = pick_set(tables)? else {
         return Ok((
             None,
             format!("illus: no piece set illustrates {}", tables.join(", ")),
@@ -181,6 +214,100 @@ fn illus_strip(
         strip.dropped.join("; ")
     );
     Ok((Some(strip), note))
+}
+
+/// The opening illustration of a page of `tables` (Request::IllusHero): (the hero, the strip standing in for it, why). The hero
+/// is drawn from the semantic tags the set's `hero` block gives the tables (the union over the tables it names), its hero
+/// part, ground and accent, in the scene the page's lead finding (`lead`, its angle) asks for; when the child cannot make it
+/// here the strip of the same tables stands in, and the note says why.
+fn illus_hero(
+    tables: &[String],
+    lead: Option<&str>,
+    subject: Option<&Value>,
+    width: f64,
+    runtime: &Path,
+) -> Result<(Option<Strip>, Option<Strip>, String), String> {
+    let Some(set) = pick_set(tables)? else {
+        return Ok((
+            None,
+            None,
+            format!("illus: no piece set illustrates {}", tables.join(", ")),
+        ));
+    };
+    let name = set["set"].as_str().unwrap_or_default().to_string();
+    let block = &set["hero"];
+    let mut tags: Vec<String> = Vec::new();
+    for t in tables {
+        for tag in block["tables"][t.as_str()].as_array().into_iter().flatten() {
+            if let Some(tag) = tag.as_str().filter(|x| !tags.iter().any(|y| y == x)) {
+                tags.push(tag.to_string());
+            }
+        }
+    }
+    let fall_back = |why: String| -> Result<(Option<Strip>, Option<Strip>, String), String> {
+        let (strip, note) = illus_strip(tables, width, runtime)?;
+        Ok((
+            None,
+            strip,
+            format!("illus_hero: {why}; the strip stands in: {note}"),
+        ))
+    };
+    // a picture composed from the finding's rows needs no hero parts; without them it needs the parts
+    if tags.is_empty() && subject.is_none() {
+        return fall_back(format!(
+            "the {name} set gives no hero parts to these tables"
+        ));
+    }
+    let mut request = json!({"tags": tags, "hero": block["hero"], "width": width, "ground": block["ground"], "accent": block["accent"]});
+    if let Some(lead) = lead {
+        request["lead"] = json!(lead);
+    }
+    if let Some(subject) = subject {
+        request["subject"] = subject.clone();
+        if let Some(family) = measure_family(tables) {
+            request["family"] = json!(family);
+        }
+    }
+    let runner = Runner::python(&runtime.join("illus_hero/run_hero.py"));
+    match hero(&runner, &request) {
+        Ok(h) => {
+            let note = format!(
+                "illus_hero: {name} {} drawn {}x{} in {} ms, parts {}, lead {}",
+                block["hero"].as_str().unwrap_or(""),
+                h.w,
+                h.h,
+                h.ms,
+                tags.join(","),
+                lead.unwrap_or("none")
+            );
+            Ok((Some(h), None, note))
+        }
+        Err(HeroMiss::Unavailable(why)) => fall_back(why),
+        Err(HeroMiss::Refused(why)) => Err(format!("illus_hero: {why}")),
+    }
+}
+
+/// The measure families (id, and the table ids or id prefixes each holds) the knowledge group's question reading shares with
+/// the picture: which topic a page's tables are about.
+const MEASURE_FAMILIES: &str = include_str!("../runtime/pi/assets/measure-families.json");
+
+/// The id of the first measure family one of `tables` belongs to (a family lists table ids, or a prefix ending in `_` or `.`
+/// for a group of tables); none when no family holds them (the neutral topic's picture). The file is vendored and parsed by a
+/// test, so a file that does not parse is no family either.
+fn measure_family(tables: &[String]) -> Option<String> {
+    let all: Value = serde_json::from_str(MEASURE_FAMILIES).ok()?;
+    all["families"].as_array()?.iter().find_map(|fam| {
+        let held = fam["tables"].as_array()?;
+        held.iter()
+            .filter_map(Value::as_str)
+            .any(|h| {
+                let prefix = h.ends_with('_') || h.ends_with('.');
+                tables
+                    .iter()
+                    .any(|t| if prefix { t.starts_with(h) } else { t == h })
+            })
+            .then(|| fam["id"].as_str().map(String::from))?
+    })
 }
 
 /// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
@@ -241,6 +368,9 @@ pub struct LeafPage<'a> {
     pub facts: (&'a Spec, &'a [Row], &'a [Fact]),
     /// The page's illustration strip (Request::IllusStrip), placed by the page as its layer illus_strip; none, no strip.
     pub strip: Option<&'a Strip>,
+    /// The page's opening picture (Request::IllusHero), placed by the page as its layer illus_hero over its header; none, no
+    /// opening picture (a recipe with an opening slot then places the strip that stood in for it, if any).
+    pub hero: Option<&'a Strip>,
 }
 
 /// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, the leaf child's
@@ -792,6 +922,14 @@ pub enum Reply<'a> {
     Rechecked(Vec<String>),
     /// The page's illustration strip, none when no piece set names its tables, and what was drawn or why none.
     Strip { strip: Option<Strip>, note: String },
+    /// The page's opening illustration, the strip that stands in for it when it could not be made, and what was drawn or why not.
+    Opening {
+        drawn: Option<Strip>,
+        instead: Option<Strip>,
+        note: String,
+    },
+    /// The story findings child's reply, as it gave it (the candidates, or the composed page).
+    Story(Value),
     /// What the flow's fill takes from an external layer, derived by the generator (drawn rows, facts, formats, hero data).
     NodeDeclared(Box<crate::next_tree_gen::NodeDeclared>),
     /// The external layers' checked geometry by layer, and per layer the child's and the core's milliseconds.
@@ -838,8 +976,12 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Page(page)
         }
         Request::LeafPage { page } => {
-            let given: Vec<(&str, &Strip)> =
-                page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
+            let given: Vec<(&str, &Strip)> = page
+                .strip
+                .map(|s| ("illus_strip", s))
+                .into_iter()
+                .chain(page.hero.map(|h| ("illus_hero", h)))
+                .collect();
             let (panel, html, records) = draw_page_given(
                 page.draw,
                 page.w,
@@ -913,6 +1055,10 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
         }
         Request::Recipes => Reply::Recipes(&leaves().recipes),
+        Request::Story { request, runtime } => Reply::Story(crate::next_leaf::story(
+            &Runner::python(&runtime.join("leaves_py/findings.py")),
+            request,
+        )?),
         Request::Stack { title, pages } => Reply::Stacked(stack_html(title, pages)),
         Request::RecipeLayers { recipe } => Reply::Layers(recipe_layers(recipe)),
         Request::LeafRecheck {
@@ -1012,6 +1158,20 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         } => {
             let (strip, note) = illus_strip(tables, width, runtime)?;
             Reply::Strip { strip, note }
+        }
+        Request::IllusHero {
+            tables,
+            lead,
+            subject,
+            width,
+            runtime,
+        } => {
+            let (drawn, instead, note) = illus_hero(tables, lead, subject, width, runtime)?;
+            Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }
         }
         Request::NodeDeclare { layer, page_in } => {
             Reply::NodeDeclared(Box::new(crate::next_tree_gen::declare(layer, page_in)?))
@@ -1383,5 +1543,183 @@ mod tests {
             knob("rings", "years"),
             Err("knob: the leaf registry has no node rings".to_string())
         );
+    }
+
+    fn hero_for(tables: &[&str], runtime: &Path) -> (Option<Strip>, Option<Strip>, String) {
+        lead_hero_for(tables, None, runtime)
+    }
+
+    fn lead_hero_for(
+        tables: &[&str],
+        lead: Option<&str>,
+        runtime: &Path,
+    ) -> (Option<Strip>, Option<Strip>, String) {
+        let tables: Vec<String> = tables.iter().map(|t| t.to_string()).collect();
+        match call(Request::IllusHero {
+            tables: &tables,
+            lead,
+            subject: None,
+            width: 1140.0,
+            runtime,
+        }) {
+            Ok(Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }) => (drawn, instead, note),
+            Ok(_) => panic!("illus_hero answered with another reply"),
+            Err(e) => panic!("illus_hero: {e}"),
+        }
+    }
+
+    /// No piece set for the tables: no hero and no strip. A set that gives the tables hero parts but a run folder with no hero
+    /// child (a machine that cannot draw one): the strip of the same tables stands in, and the note says why.
+    #[test]
+    fn a_hero_the_machine_cannot_draw_falls_back_to_the_strip() {
+        let none = hero_for(&["sdg"], Path::new("runtime"));
+        assert_eq!(
+            (none.0, none.1, none.2.as_str()),
+            (None, None, "illus: no piece set illustrates sdg")
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let js = dir.path().join("leaves_js");
+        std::fs::create_dir_all(&js).unwrap();
+        for f in std::fs::read_dir("runtime/leaves_js").unwrap() {
+            let f = f.unwrap();
+            std::fs::copy(f.path(), js.join(f.file_name())).unwrap();
+        }
+        let (hero, strip, note) = hero_for(&["nrg_ind_ren"], dir.path());
+        assert!(hero.is_none(), "{note}");
+        let strip = strip.expect("the strip stands in");
+        assert_eq!((strip.w, strip.h), (1140.0, 225.0));
+        assert!(note.starts_with("illus_hero: "), "{note}");
+        assert!(
+            note.contains("the strip stands in: illus: energy drawn 1140x225"),
+            "{note}"
+        );
+    }
+
+    fn subject_hero_for(
+        tables: &[&str],
+        lead: &str,
+        subject: &Value,
+    ) -> (Option<Strip>, Option<Strip>, String) {
+        let tables: Vec<String> = tables.iter().map(|t| t.to_string()).collect();
+        match call(Request::IllusHero {
+            tables: &tables,
+            lead: Some(lead),
+            subject: Some(subject),
+            width: 1140.0,
+            runtime: Path::new("runtime"),
+        }) {
+            Ok(Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }) => (drawn, instead, note),
+            Ok(_) => panic!("illus_hero answered with another reply"),
+            Err(e) => panic!("illus_hero: {e}"),
+        }
+    }
+
+    fn story_subject(name: &str) -> Value {
+        let specs: Value = serde_json::from_str(
+            &std::fs::read_to_string("fixtures/illus-vary-specs.json").unwrap(),
+        )
+        .unwrap();
+        specs[name]["subject"].clone()
+    }
+
+    /// An energy page's lead finding gives the picture its own rows: the hand-drawn line picture is drawn from them (no Blender, no
+    /// numpy), in the page's colour variables only, and says how many members it leaves out (a ranking draws its head and tail).
+    /// A layout the line drawing does not draw (the pair of ends and spread) leaves the page its strip.
+    #[test]
+    fn a_lead_finding_with_its_rows_is_drawn_as_the_line_picture() {
+        let rank = story_subject("st2");
+        let members = rank["members"].as_array().unwrap().len() as u64;
+        let (hero, strip, note) = subject_hero_for(&["nrg_ind_ren"], "rank", &rank);
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert!(strip.is_none(), "{note}");
+        assert_eq!(hero.w, 1140.0);
+        assert_eq!(hero.omitted, members - 10);
+        assert!(crate::next_leaf::hero_faults(&hero.svg).is_empty());
+        // the page's accent as its palette gives it in hex, and no variable and no colour of the picture's own
+        assert!(hero.svg.contains("#c93f2b") && !hero.svg.contains("var("));
+        let need = story_subject("st1");
+        let (hero, _, note) = subject_hero_for(&["nrg_ind_ren"], "need", &need);
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert_eq!(hero.omitted, 0);
+        let (hero, strip, note) = subject_hero_for(&["nrg_ind_ren"], "ends", &rank);
+        assert!(hero.is_none() && strip.is_some(), "{note}");
+        assert!(note.contains("the strip stands in"), "{note}");
+    }
+
+    /// The measure family of a page is the first family that holds one of its tables, by id or by the prefix a family lists.
+    #[test]
+    fn the_measure_family_of_the_tables_is_the_one_that_holds_them() {
+        let f = |t: &[&str]| measure_family(&t.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        assert_eq!(f(&["nrg_ind_ren"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["sdg", "sdg_07_40"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["EG.ELC.RNEW.ZS"]).as_deref(), Some("renewable_share"));
+        assert_eq!(f(&["nrg_bal_c"]).as_deref(), Some("energy_balance"));
+        assert_eq!(f(&["not_a_table"]), None);
+        // a World Bank family prefix ends in a dot, so the page's own indicator id is held (not the neutral topic)
+        assert_eq!(f(&["SL.UEM.1524.ZS"]).as_deref(), Some("unemployment"));
+        assert_eq!(f(&["NY.GDP.PCAP.CD"]).as_deref(), Some("gdp_pc"));
+        // a national headline rate table the family lists by its full id (the youth rate a stand-in picked, 11-25)
+        assert_eq!(f(&["tipslm80"]).as_deref(), Some("unemployment"));
+        assert_eq!(f(&["tipslm100"]), None);
+        assert_eq!(f(&["SP.POP.TOTL"]).as_deref(), Some("population"));
+    }
+
+    /// The economy tables have a piece set (so the opening picture is asked for them at all); a table no set names has none.
+    #[test]
+    fn the_economy_tables_have_their_piece_set() {
+        let set = |t: &str| {
+            pick_set(&[t.to_string()])
+                .unwrap()
+                .map(|s| s["set"].as_str().unwrap_or_default().to_string())
+        };
+        for t in ["nama_10_pc", "NY.GDP.PCAP.CD"] {
+            assert_eq!(set(t).as_deref(), Some("economy"), "{t}");
+        }
+        assert_eq!(set("une_rt_a").as_deref(), Some("people"));
+        assert_eq!(set("tipslm80").as_deref(), Some("people"));
+        assert_eq!(set("tec00114"), None);
+    }
+
+    /// With Blender installed and a python3 that has the painting's packages, the energy tables get a drawn hero and no strip;
+    /// the picture is as wide as asked and a hero's shapes only. Run with `-- --ignored` on such a machine.
+    #[test]
+    #[ignore = "needs Blender and numpy, scipy, shapely, pillow, contourpy for python3"]
+    fn a_hero_is_drawn_for_the_energy_tables() {
+        let (hero, strip, note) = hero_for(&["nrg_ind_ren"], Path::new("runtime"));
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert!(strip.is_none());
+        assert_eq!(hero.w, 1140.0);
+        assert!(crate::next_leaf::hero_faults(&hero.svg).is_empty());
+        assert!(
+            note.starts_with("illus_hero: energy wind drawn 1140x"),
+            "{note}"
+        );
+        assert!(note.ends_with(", lead none"), "{note}");
+    }
+
+    /// The same tables under two lead findings get two different pictures (the path to a target, a ranking), each a hero's
+    /// shapes only; the note names the lead. Run with `-- --ignored` on a machine that draws heroes.
+    #[test]
+    #[ignore = "needs Blender and numpy, scipy, shapely, pillow, contourpy for python3"]
+    fn the_lead_finding_picks_the_opening_scene() {
+        let rt = Path::new("runtime");
+        let (path, _, a) = lead_hero_for(&["nrg_ind_ren"], Some("path"), rt);
+        let (rank, _, b) = lead_hero_for(&["nrg_ind_ren"], Some("rank"), rt);
+        let (path, rank) = (path.expect(&a), rank.expect(&b));
+        assert!(
+            a.ends_with(", lead path") && b.ends_with(", lead rank"),
+            "{a}\n{b}"
+        );
+        assert_ne!(path.svg, rank.svg);
+        assert!(crate::next_leaf::hero_faults(&path.svg).is_empty());
+        assert!(crate::next_leaf::hero_faults(&rank.svg).is_empty());
     }
 }

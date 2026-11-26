@@ -25,6 +25,22 @@ import dumbbell
 import waterfall
 import waffle
 import stacked_area
+import gap_axis
+import winners_losers
+import event_chain
+import target_path
+import pair_bars
+import thesis_claims
+import risk_notes
+import small_multiples
+import member_map
+import change_dots
+import rank_slope
+import tile_map
+import unit_grid
+import glyph_row
+import dot_strip
+import story
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -63,22 +79,34 @@ RECIPES = [
          picks=[], exposes=[], main="waterfall", blocks_only=True, relation="Composition"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100", relation="Composition"),
+    # a long page of sections (the sample page's shape: an opening picture, the thesis, the one-axis answer, sections each with its
+    # kicker, conclusion title, text and one picture, the notes under it): the leaves are story.STORY_LAYERS and the sections, their
+    # titles and texts are the request's (spec.sections), so the page is tried first for a request that carries a target (has_target:
+    # a row the page runs to), before the one-line page of the same table. Layers print from the sections the flow writes.
+    # With no target row (pj004-23, 11-23) the page is still tried first, without has_target, behind the minimums of "without": the
+    # arcs that need no target ("happened", "lagging", findings.py ARCS) tell three findings of different kinds (a lead, the
+    # finding its arc needs, one more), and the comparisons that say who lags (rank, members, map, findings.py MAP_MIN) need a
+    # field of eight members at least; a smaller field or fewer findings goes on to the ordinary page
+    dict(name="page_story", layers=list(story.STORY_LAYERS), eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends", "has_target"],
+         without=dict(condition="has_target", members=8, findings=3, relations=["Ranking"],
+                      why="with no target: three findings of different kinds make an arc, eight members at least say who lags; a table step that kept a ranking (who lags, how far apart) holds the same years, so the arcs read it too"),
+         charts=[], picks=[], exposes=[], strip=True, opening=True, relation="Change"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
     # 11-14 16:0x item 2's line leaf; round 16: v3, r2v14, r2v17, r2v18 asked one place's change and had no page)
     dict(name="one_line", layers=["line"], eats=["annual", "one_freq", "years_2", "one_country", "one_unit", "last_year", "two_ends"],
          charts=["line"], picks=["changed"], exposes=[], main="line", relation="Change"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
-    # the map its level at t1; a table of one year has no two ends and goes on to column. It answers the Change relation
-    # (relation): a table step that kept another relation for the main table (a ranking of the last year) goes on to column
-    dict(name="change", layers=["bubbles", "bars", "leader_notes"],
+    # and their notes, no map (11-22: readers took a map of the level at t1 for the change); a table of one year has no two
+    # ends and goes on to column. It answers the Change relation (relation): a table step that kept another relation for the
+    # main table (a ranking of the last year) goes on to column
+    dict(name="change", layers=["bars", "leader_notes"],
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
          main="bars", relation="Change"),
-    # the same two ends when a place has no map point (an aggregate: World Bank's regions and the world, the EU; owner
-    # 11-19 23:1x): each place's change as signed bars alone, no map, no circles; change, whose circles and notes stand on map
-    # points, is not that shape (the flow asks for the points before it fills), as column goes on to ranked_bars. No notes
-    # yet: the change page's notes point at a map
+    # the same two ends as signed bars alone, no notes (owner 11-19 23:1x, for a place with no map point: an aggregate,
+    # World Bank's regions and the world, the EU). Since change's notes stand at its bars (11-22), change takes those
+    # places too and comes first, so no page reaches this recipe; it stays registered, a fallback
     dict(name="change_bars", layers=["bars"], eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True, main="bars",
          relation="Change"),
@@ -87,9 +115,9 @@ RECIPES = [
     dict(name="column", layers=["bars", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars",
          relation="Ranking"),
-    # the same period across places when a place has no map point (an aggregate the question names beside countries, the
-    # EU): the bars alone, no map; column, whose circles and notes stand on map points, is not that shape (the flow asks
-    # for the points before it fills). No notes yet: the column page's notes point at a map, as flow's
+    # the same period across places as the bars alone, no notes (for a place with no map point: an aggregate the question
+    # names beside countries, the EU). Since column's notes stand at its bars (11-22), column takes those places too and
+    # comes first, so no page reaches this recipe; it stays registered, a fallback
     dict(name="ranked_bars", layers=["bars"], eats=["one_freq", "one_place", "one_unit", "last_year"],
          charts=["horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars", relation="Ranking"),
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
@@ -117,7 +145,8 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             line=["one_freq", "one_unit"], rank_lines=["one_freq", "one_place"],
             dumbbell=["annual", "years_2", "one_place", "one_unit", "two_ends"],
             waterfall=["annual", "one_unit", "composition_groups"],
-            waffle=["annual", "one_unit", "composition_groups"], stacked_area=["one_freq", "one_unit", "composition_groups"])
+            waffle=["annual", "one_unit", "composition_groups"], stacked_area=["one_freq", "one_unit", "composition_groups"],
+            gap_axis=["annual", "one_unit"], winners_losers=["one_unit"], event_chain=[], target_path=["annual", "one_unit"], pair_bars=["one_unit"], thesis_claims=[], risk_notes=[], small_multiples=["annual", "one_unit"], member_map=["annual", "one_unit"], change_dots=["annual", "one_unit"], rank_slope=["annual", "one_unit"], tile_map=["annual", "one_unit"], unit_grid=["annual", "one_unit"], glyph_row=["one_unit"], dot_strip=["annual", "one_unit"])
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
@@ -133,7 +162,7 @@ WITH = dict(bubbles=["bubble_key"])
 # them from the geometry the core checked (run.py placed_layer). Every other layer of a recipe prints only from what the
 # others put (PRINTS_ONLY); the flow fills none itself (P6), so a layer that is neither refuses here. Data, not a switch.
 # The layers that put nothing into a page's request: each prints from what the recipe's other layers put.
-PRINTS_ONLY = ["callouts", "legend", "inset", "bubble_key"]
+PRINTS_ONLY = ["callouts", "legend", "inset", "bubble_key", *story.STORY_LAYERS]   # story: its sections are the request's (spec.sections)
 BINDINGS_OF_CORE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page_tree", "node-bindings.json")
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
@@ -197,7 +226,7 @@ def table():
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
                   ranked_bars=list(run.KINDS["ranked_bars"][0]), change_bars=list(run.KINDS["change_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
-                  composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]),
+                  composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]), page_story=list(run.KINDS["page_story"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
@@ -260,6 +289,12 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
+        w = r.get("without")
+        if w is not None and (set(w) != {"condition", "members", "findings", "relations", "why"} or w["condition"] not in r["eats"]
+                              or not isinstance(w["relations"], list) or not set(w["relations"]) <= set(RELATIONS) - {r.get("relation")}
+                              or not all(isinstance(w[k], int) and not isinstance(w[k], bool) and w[k] >= 1 for k in ("members", "findings"))
+                              or not isinstance(w["why"], str) or not w["why"].strip()):
+            raise SystemExit(f"{r['name']}: without {w!r}; one of its eats as condition, members and findings whole numbers of 1 or more, and why")
         if r.get("relation") not in RELATIONS:
             raise SystemExit(f"{r['name']}: relation {r.get('relation')!r}; one of {RELATIONS}, the one its page answers")
         if r.get("blocks_only", False) not in (True, False) or (r.get("blocks_only") and "blocks" in r["eats"]):
@@ -277,6 +312,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: same_measure {pair!r}; a pair is two of its own layers")
         if r.get("strip", False) not in (True, False) or r.get("strip", False) != (r["name"] in run.STRIP_SLOT):
             raise SystemExit(f"{r['name']}: strip {r.get('strip')!r}; its page {'places' if r['name'] in run.STRIP_SLOT else 'has no slot for'} the strip (run.STRIP_SLOT)")
+        if r.get("opening", False) not in (True, False) or r.get("opening", False) != (r["name"] in run.OPENING_SLOT):
+            raise SystemExit(f"{r['name']}: opening {r.get('opening')!r}; its page {'places' if r['name'] in run.OPENING_SLOT else 'has no slot for'} an opening picture (run.OPENING_SLOT)")
         if r.get("main") != run.MAIN.get(r["name"]) or ("main" in r and r["main"] not in r["layers"]):
             raise SystemExit(f"{r['name']}: main {r.get('main')!r}; its page's main layer is {run.MAIN.get(r['name'])!r} (run.MAIN), one of its layers")
         out.append(r)

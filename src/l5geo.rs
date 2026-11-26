@@ -22,6 +22,13 @@ const LAMBDA: f64 = 0.5;
 /// A Eurostat table with fewer non-European countries than this covers only Europe (geo-filter plan).
 const WORLD_MIN: usize = 10;
 const TOP: usize = 5;
+/// A Eurostat table whose data ends more than this many years before the catalogue's usual last year (`usual_end`) is
+/// stale for a question that asks the latest (dev r2, rounds 17-19: two tables that end in 2019 kept the live household
+/// table out of the five offered).
+const STALE_YEARS: i32 = 5;
+/// What a stale table loses from its combined score (its title score over the best one's, plus LAMBDA times the same for
+/// member labels): a freshness prior, as search engines weigh recency, that a much better match still outranks.
+const STALE_PENALTY: f64 = 0.3;
 const STOP: &str = "a an and the of in by to for from per on at as or with all each its is are be how what which over";
 /// Search-text tokens (as `toks` cuts them) that name the question's places as a whole, the union, its member states, the
 /// countries, rather than what is measured. The places are read from the Chinese question (scope, places_zh) and filter
@@ -479,6 +486,8 @@ pub struct Catalog {
     metabase: String,
     labels: BTreeMap<String, Vec<(String, String)>>,
     end_year: HashMap<String, i32>,
+    /// The last data year most Eurostat tables share (the mode of `end_year`): what a stale table is measured against.
+    usual_end: Option<i32>,
     wb_places: Vec<(String, String)>,
     /// dim -> its place-valued members outside geo and time (`place_members` in from_raw).
     place_members: HashMap<String, HashSet<String>>,
@@ -774,12 +783,28 @@ pub struct GroupBasis {
     #[serde(default)]
     pub unfetched: Vec<String>,
     pub line: Option<String>,
+    /// The line a page that draws only some of the members with data says instead (its "places drawn" variant, the members
+    /// with no data named as `line` names them): a page asking for the first n at one end; None where the basis has none.
+    #[serde(default)]
+    pub line_drawn: Option<String>,
     pub join: String,
     pub missing_join: String,
     /// The basis is said only on a page of whole years (the EU's members', union_basis: its line prints the page's year):
     /// a page of half years or months goes without it and is drawn as before (the flow's basis_of).
     #[serde(default)]
     pub whole_years_only: bool,
+}
+
+/// The last data year most tables share (the mode of their end years; the later one on a tie); None with no end year.
+fn usual_end(end_year: &HashMap<String, i32>) -> Option<i32> {
+    let mut count: HashMap<i32, usize> = HashMap::new();
+    for &y in end_year.values() {
+        *count.entry(y).or_insert(0) += 1;
+    }
+    count
+        .into_iter()
+        .max_by_key(|&(y, n)| (n, y))
+        .map(|(y, _)| y)
 }
 
 /// The code a group word stands for in the Chinese name list: this prefix and the group id.
@@ -866,6 +891,22 @@ fn measure_families() -> &'static [Family] {
             .expect("measure-families.json lists families")
             .families
     })
+}
+
+/// Whether `id` is a registered measure family.
+#[cfg(test)]
+pub fn family_exists(id: &str) -> bool {
+    measure_families().iter().any(|f| f.id == id)
+}
+
+/// Whether the table `table` (a World Bank id with or without "@2") holds the quantity of the measure family `family`
+/// (measure-families.json): its id starts with one of the family's table prefixes. False for a family the file lacks.
+pub fn family_holds(family: &str, table: &str) -> bool {
+    let table = table.split('@').next().unwrap_or(table);
+    measure_families()
+        .iter()
+        .find(|f| f.id == family)
+        .is_some_and(|f| f.tables.iter().any(|p| table.starts_with(p.as_str())))
 }
 
 /// measure-families.json's denominator words: a family word between an opening word (占) and the nearest closing word
@@ -1161,6 +1202,11 @@ pub struct ScopeRefusal {
     pub class: String,
     pub reason_zh: String,
     pub hit: String,
+    /// Some(year) when the one thing refused is a future year the legal-targets registry holds a target for (owner
+    /// 11-22 23:59, let target years through): the refusal is held, not lifted. The flow lets the question on to the page step and stops
+    /// with this same refusal unless the picked page runs against that year's target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_year: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -1327,7 +1373,20 @@ fn names_measure_after_place(left: &str, m: &str) -> bool {
 /// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
 /// forecasts, places below a country, two measures' relation, derived ratios, quarters and months, opinions); None for a
 /// question none of them takes. `this_year` is the program's clock year: a four-digit year after it is a forecast.
+#[cfg(test)]
 pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusal> {
+    scope_refused_targets_zh(question_zh, this_year, &[])
+}
+
+/// scope_refused_zh, where a future year that is one of `target_years` (the years the legal-targets registry holds a target
+/// for) is held instead of refused: every other class and word still refuses first, a second future year refuses, and
+/// the held refusal comes back with target_year set for the flow to settle at the page step.
+pub fn scope_refused_targets_zh(
+    question_zh: &str,
+    this_year: i32,
+    target_years: &[i32],
+) -> Option<ScopeRefusal> {
+    let mut held: Option<ScopeRefusal> = None;
     let plain: String = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
     for c in scope_classes() {
         let mut q = plain.clone();
@@ -1340,6 +1399,7 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                 class: c.id.clone(),
                 reason_zh: c.reason_zh.clone(),
                 hit,
+                target_year: None,
             })
         };
         // a word starting with 年 (年后) right after a four-digit year before this one asks from that past year on (2008年以后)
@@ -1442,12 +1502,23 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                     && bounded
                     && run.parse::<i32>().is_ok_and(|y| y > this_year)
                 {
-                    return refuse(format!("{run}年"));
+                    let year = run.parse::<i32>().ok();
+                    let target = year.filter(|y| target_years.contains(y));
+                    match (&held, target) {
+                        (None, Some(_)) => {
+                            held = refuse(format!("{run}年")).map(|r| ScopeRefusal {
+                                target_year: target,
+                                ..r
+                            });
+                        }
+                        (Some(h), Some(_)) if h.target_year == target => {}
+                        _ => return refuse(format!("{run}年")),
+                    }
                 }
             }
         }
     }
-    None
+    held
 }
 
 /// One quantity the Chinese question asks for, judged by the program from the question alone (never from the model).
@@ -2006,7 +2077,7 @@ impl Catalog {
             }
         }
 
-        // Europe = the World Bank's "Europe & Central Asia" plus every country of the NUTS 2024 table
+        // the countries of the World Bank list
         let countries: HashSet<String> = wb
             .iter()
             .map(|x| field(x, &["iso2Code"]).to_string())
@@ -2034,11 +2105,10 @@ impl Catalog {
                 wb_places.push((id.to_string(), id.to_string()));
             }
         }
-        let mut europe: HashSet<String> = wb
-            .iter()
-            .filter(|x| field(x, &["region", "value"]).trim() == "Europe & Central Asia")
-            .map(|x| field(x, &["iso2Code"]).to_string())
-            .collect();
+        // Europe is the NUTS 2024 table's countries, the ones Eurostat reports as a rule; the World Bank's "Europe &
+        // Central Asia" also holds Belarus, Russia and Central Asia, whose names a Eurostat table may list in its geo with
+        // no row of recent years (n39: demo_gind lists BY and RU and returned Poland only), so a question naming them is
+        // beyond Europe and a World Bank table answers it
         let nuts = raw.nuts.strip_prefix('\u{feff}').unwrap_or(&raw.nuts);
         let regional: HashSet<String> = nuts
             .lines()
@@ -2047,7 +2117,9 @@ impl Catalog {
                 estat_iso(line.trim_end_matches('\r').split(',').next().unwrap_or("")).to_string()
             })
             .collect();
-        europe.extend(regional.iter().cloned());
+        // the United Kingdom left the NUTS table in 2020 and Eurostat tables still hold its rows up to then (NUTS 2016)
+        let mut europe = regional.clone();
+        europe.insert("GB".to_string());
 
         let mut zh: Vec<(String, String)> = Vec::new();
         let mut put = |name: &str, code: &str| match zh.iter_mut().find(|(n, _)| n == name) {
@@ -2306,6 +2378,7 @@ impl Catalog {
             groups,
             metabase: raw.metabase.clone(),
             labels,
+            usual_end: usual_end(&end_year),
             end_year,
             wb_places,
             place_members,
@@ -2552,6 +2625,7 @@ impl Catalog {
             }
         };
         let mut lines = Vec::new();
+        let mut lines_drawn = Vec::new();
         // the page's own years, whether or not the question names any: a question asking 2015 to 2025 spans them too
         let changes = t0.is_some_and(|t0| {
             t0 < t1
@@ -2572,9 +2646,12 @@ impl Catalog {
                 .collect();
             let line = pick(&words.countries_only, &words.countries_only_drawn);
             lines.push(line.replace("{others}", &others.join(&words.others_join)));
+            let part = format!("{}{tail}", words.countries_only_drawn);
+            lines_drawn.push(part.replace("{others}", &others.join(&words.others_join)));
         } else {
             // every group page says the year of its member list (owner 11-16 08:4x item 1)
             lines.push(pick(&words.members_of_year, &words.members_of_year_drawn));
+            lines_drawn.push(format!("{}{tail}", words.members_of_year_drawn));
         }
         Some(GroupBasis {
             group: id.clone(),
@@ -2586,6 +2663,7 @@ impl Catalog {
             missing,
             unfetched,
             line: lines.pop(),
+            line_drawn: lines_drawn.pop(),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: false,
@@ -2688,6 +2766,7 @@ impl Catalog {
             missing,
             unfetched: Vec::new(),
             line: Some(words.union_missing.clone()),
+            line_drawn: None,
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: true,
@@ -3049,6 +3128,30 @@ impl Catalog {
         out
     }
 
+    /// `ranked` with each stale table (a Eurostat table whose data ends more than STALE_YEARS before `usual_end`) less
+    /// STALE_PENALTY, sorted again as rank_reaching sorts; a table with no end year (World Bank) is never stale.
+    fn fresh_first(&self, mut ranked: Vec<Candidate>) -> Vec<Candidate> {
+        let Some(usual) = self.usual_end else {
+            return ranked;
+        };
+        for c in &mut ranked {
+            if self
+                .end_year
+                .get(&c.id)
+                .is_some_and(|&end| end < usual - STALE_YEARS)
+            {
+                c.score -= STALE_PENALTY;
+            }
+        }
+        ranked.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then(b.s.total_cmp(&a.s))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        ranked
+    }
+
     /// The full order for a question: scope from the Chinese question, ranking from the English search texts. No
     /// ranking when the question is uncovered.
     pub fn rank(&self, question_zh: &str, texts: &[String]) -> Ranking {
@@ -3065,7 +3168,14 @@ impl Catalog {
         let candidates = if uncovered.is_some() || unread.is_some() {
             Vec::new()
         } else {
-            self.lift_asked(self.rank_reaching(texts, scope, &far), &asked, scope, &far)
+            let ranked = self.rank_reaching(texts, scope, &far);
+            // a question that names no year it ends at asks the latest
+            let ranked = if matches!(question_span(question_zh), None | Some((_, None))) {
+                self.fresh_first(ranked)
+            } else {
+                ranked
+            };
+            self.lift_asked(ranked, &asked, scope, &far)
         };
         Ranking {
             scope,
@@ -3787,7 +3897,9 @@ mod tests {
                 {"iso2Code": "IN", "name": "印度"}, {"iso2Code": "GU", "name": "关岛"}, {"iso2Code": "S1", "name": "小国"},
                 {"iso2Code": "JP", "name": "日本"}, {"iso2Code": "US", "name": "美国"}
             ]]),
-            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\n".into(),
+            nuts:
+                "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\nFR,FR1\r\nFI,FI1\r\n"
+                    .into(),
         }
     }
 
@@ -4280,6 +4392,8 @@ mod tests {
         let list = raw.wb_countries[1].as_array_mut().unwrap();
         for (c, id) in more {
             list.push(json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}));
+            let nuts = if c == "GR" { "EL" } else { c };
+            raw.nuts.push_str(&format!("{nuts},{nuts}0\r\n"));
         }
         raw.wb_countries_zh[1]
             .as_array_mut()
@@ -4906,6 +5020,28 @@ mod tests {
             Scope::Beyond,
             "aggregates are not places"
         );
+    }
+
+    /// n39: a country of the World Bank's "Europe & Central Asia" outside the NUTS table (Belarus, Kazakhstan) is beyond
+    /// Europe, so a Eurostat table that lists it in its geo with no recent rows no longer answers the question; a NUTS
+    /// country stays European whatever its World Bank region (France in it, Malta not).
+    #[test]
+    fn a_country_outside_the_nuts_table_is_beyond_europe() {
+        let mut raw = small_raw();
+        for (c, id, zh) in [("BY", "BLR", "白俄罗斯"), ("KZ", "KAZ", "哈萨克斯坦")] {
+            raw.wb_countries[1].as_array_mut().unwrap().push(
+                json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}),
+            );
+            raw.wb_countries_zh[1]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"iso2Code": c, "name": zh}));
+        }
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(c.scope("白俄罗斯和德国的人口变化").0, Scope::Beyond);
+        assert_eq!(c.scope("哈萨克斯坦人口").0, Scope::Beyond);
+        assert_eq!(c.scope("法国和德国的人口变化").0, Scope::Europe);
+        assert_eq!(c.scope("马耳他和法国人口").0, Scope::Europe);
     }
 
     /// The five questions of review seg3-l5geo-v1: a place name read across a word boundary must not decide the scope.
@@ -5596,6 +5732,10 @@ mod tests {
             // imports said alone are all goods and services, not energy (a page said the energy half went unanswered)
             ("香港、新加坡、韩国、日本、中国、泰国 2023 年进口占 GDP 的比重，前三是哪些？", vec![]),
             ("各国天然气进口来源", vec!["energy_imports"]),
+            // the household electricity price and the installed generating capacity (the I6 tables nrg_pc_204, nrg_inf_epcrw)
+            ("欧盟各国居民电价", vec!["electricity_price"]),
+            ("德国和法国的电价与碳排放", vec!["co2", "electricity_price"]),
+            ("欧盟各国风电装机容量", vec!["installed_capacity"]),
             ("今天天气如何", vec![]),
         ] {
             assert_eq!(ids(q), want, "{q}");
@@ -6326,6 +6466,65 @@ mod tests {
             serde_json::to_value(got).unwrap(),
             serde_json::to_value(all).unwrap()
         );
+    }
+
+    /// The I6 tables sit among their neighbours in a toy catalogue (the catalogue itself holds all six; the families file
+    /// names which hold what): a question asking for gas imports sees nrg_ti_gas among the top five, offered as the
+    /// energy-imports quantity's table, whatever else the energy folder lists.
+    #[test]
+    fn a_gas_import_question_sees_the_gas_import_table_in_its_top_five() {
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"    Energy\"\t\"nrg\"\t\"folder\"\n\
+                   \"        Natural gas imports - annual data\"\t\"nrg_ti_gas\"\t\"table\"\n\
+                   \"        Oil and petroleum products imports - annual data\"\t\"nrg_ti_oil\"\t\"table\"\n\
+                   \"        Natural gas exports - annual data\"\t\"nrg_te_gas\"\t\"table\"\n\
+                   \"        Energy imports dependency\"\t\"nrg_ind_id\"\t\"table\"\n\
+                   \"        Electricity prices for household consumers - bi-annual data\"\t\"nrg_pc_204\"\t\"table\"\n\
+                   \"        Renewables and wastes' electricity production capacities\"\t\"nrg_inf_epcrw\"\t\"table\"\n\
+                   \"        Net electricity generation by type of fuel - monthly data\"\t\"nrg_cb_pem\"\t\"table\"\n";
+        let geo: &[(&str, &[&str])] = &[("geo", &["EU27_2020", "DE"]), ("unit", &["MIO_M3"])];
+        let annual: &[(&str, &[&str])] = &[("time", &["2024", "1990"])];
+        let mut metabase = String::new();
+        for table in [
+            "nrg_ti_gas",
+            "nrg_ti_oil",
+            "nrg_te_gas",
+            "nrg_ind_id",
+            "nrg_pc_204",
+            "nrg_inf_epcrw",
+            "nrg_cb_pem",
+        ] {
+            for (dim, codes) in geo.iter().chain(annual) {
+                for code in *codes {
+                    metabase.push_str(&format!("{table}\t{dim}\t{code}\n"));
+                }
+            }
+        }
+        let geo_cl = "EU27_2020\tEuropean Union - 27 countries (from 2020)\r\nDE\tGermany\r\n";
+        let unit_cl = "MIO_M3\tMillion cubic metres\r\n";
+        let c = Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase,
+            cl: vec![
+                ("geo".into(), geo_cl.into()),
+                ("unit".into(), unit_cl.into()),
+            ],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, []]),
+            wb_countries_zh: json!([{}, []]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\n".into(),
+        });
+        let q = "欧盟各国天然气进口来源";
+        let t = texts(&["natural gas imports"]);
+        let got = c.top5(q, &t, false, None, None);
+        assert!(
+            ids(&got.candidates).contains(&"nrg_ti_gas"),
+            "{:?}",
+            ids(&got.candidates)
+        );
+        assert_eq!(got.asked.len(), 1);
+        assert_eq!(got.asked[0].id, "energy_imports");
+        assert!(got.asked[0].offered.iter().any(|id| id == "nrg_ti_gas"));
     }
 
     #[test]
@@ -7454,6 +7653,46 @@ mod tests {
         assert_eq!(at("个"), None);
     }
 
+    /// Dev r2 (rounds 17-19): a table whose data ends in 2019 outranked the live one for a question asking the latest. With
+    /// most tables ending in 2025, a table ending before 2020 loses STALE_PENALTY when the question names no year it ends
+    /// at, and keeps its score when it names one (the years it asks decide, not the catalogue's last year): of two titles
+    /// that match nearly alike, the shorter, stale one leads for past years and the live one for the latest.
+    #[test]
+    fn a_stale_table_loses_ground_only_when_the_question_asks_the_latest() {
+        let mut raw = small_raw();
+        let row = |title: &str, code: &str, end: &str| {
+            format!("\"        {title}\"\t\"{code}\"\t\"table\"\t\"\"\t\"\"\t\"2002\"\t\"{end}\"\n")
+        };
+        raw.toc = format!(
+            "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\"    Society\"\t\"isoc\"\t\"folder\"\n{}{}{}{}",
+            row("Households - internet access", "old_access", "2019"),
+            row("Households - level of internet access", "live_access", "2025"),
+            row("Enterprises - internet access", "firm_access", "2025"),
+            row("Individuals - devices used", "devices", "2025"),
+        );
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(c.usual_end, Some(2025));
+        let texts = ["households internet access".to_string()];
+        let score = |q: &str, id: &str| {
+            let r = c.rank(q, &texts);
+            let at = r.candidates.iter().position(|x| x.id == id).unwrap();
+            (at, r.candidates[at].score)
+        };
+        let latest = "欧盟各国家庭互联网普及率";
+        let past = "2010 年到 2015 年欧盟各国家庭互联网普及率";
+        let (old_latest, old_past) = (score(latest, "old_access"), score(past, "old_access"));
+        assert!((old_past.1 - old_latest.1 - STALE_PENALTY).abs() < 1e-9);
+        assert_eq!(score(latest, "live_access").1, score(past, "live_access").1);
+        assert_eq!(
+            old_past.0, 0,
+            "the closer title leads when the question asks past years"
+        );
+        assert!(
+            score(latest, "live_access").0 < old_latest.0,
+            "the live table leads when the question asks the latest"
+        );
+    }
+
     /// Dev-set search replay: each row of R2_CASES (qid, question, search texts joined by " | ", wanted ids joined by
     /// ",") ranked on the real catalogue; prints where the first wanted table lands in the five offered and in the
     /// whole order, and the count that reach the five.
@@ -7665,6 +7904,41 @@ mod tests {
         // the clock decides a forecast: 2027 is one in 2026, not in 2027
         assert!(scope_refused_zh("2027 年德国的人口是多少？", 2026).is_some());
         assert_eq!(scope_refused_zh("2027 年德国的人口是多少？", 2027), None);
+    }
+
+    /// Owner 11-22 23:59 (let target years through): a future year that is a registered target year is held, with the year, for the page
+    /// step to settle; every other future year, a second future year, and a forecast word still refuse outright.
+    #[test]
+    fn a_target_year_is_held_not_let_through() {
+        let held = |q: &str| scope_refused_targets_zh(q, 2026, &[2030, 2050]);
+        for (q, year) in [
+            (
+                "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远",
+                2030,
+            ),
+            ("欧盟温室气体排放离2050年的目标还差多少？", 2050),
+            ("2030年欧盟可再生能源目标完成了多少？2030年还差多少？", 2030),
+        ] {
+            let r = held(q).unwrap_or_else(|| panic!("{q} let through"));
+            assert_eq!(
+                (r.class.as_str(), r.target_year),
+                ("forecast", Some(year)),
+                "{q}"
+            );
+        }
+        for q in [
+            "欧盟可再生能源占比离 2035 年目标还有多远",
+            "2030年和2050年欧盟排放目标各差多少？",
+            "预计 2030 年欧盟可再生能源占比是多少？",
+            "2030年欧盟失业率和通胀率谁高？",
+        ] {
+            let r = held(q).unwrap_or_else(|| panic!("{q} let through"));
+            assert_eq!(r.target_year, None, "{q}: {r:?}");
+        }
+        // no registry, nothing held: the same question is refused as before
+        let q = "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远";
+        assert_eq!(scope_refused_zh(q, 2026).map(|r| r.target_year), Some(None));
+        assert_eq!(held("2024年欧盟可再生能源占比是多少？"), None);
     }
 
     /// User 11-08 item 1's merge condition, run by hand: SCOPE_DEVSET names a JSON list of {id, question, scope} (scope "in"

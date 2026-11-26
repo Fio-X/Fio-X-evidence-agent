@@ -979,10 +979,18 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
     free
 }
 
+/// The bind a node names the select it draws its items for by (a place each, node-bindings.json: binds.ranked): the places
+/// such a node draws count among the page's places (places_drawn). The flow's count of a fill (next_run places_drawn) reads
+/// the same bind where the fill keeps it, its leaf spec's hero data (FILL_DRAWS_ITEMS_FOR, a JSON pointer ending in it).
+pub const DRAWS_ITEMS_FOR: &str = "ranked";
+pub const FILL_DRAWS_ITEMS_FOR: &str = "/knobs/spec/hero/data/ranked";
+
 /// The number of distinct places a page draws: the codes of the place_dims of number-free-words.json across the rows of
-/// its record's drawn entries (each a row of `rows` by its src), as next_run counts them on the fill. None when no drawn
-/// row holds a place.
-fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
+/// its record's drawn entries (each a row of `rows` by its src), and the places a node draws its items for (its
+/// DRAWS_ITEMS_FOR select, as the core recomputed it in `got`: a change page's bars draw each place's change and print no
+/// row of their own, 11-22), each a place code of a row of `rows`; as next_run counts them on the fill. None when no
+/// place is drawn.
+fn places_drawn(page: &J, rows: &[J], got: &Got) -> Option<usize> {
     let srcs: BTreeSet<String> = page
         .g("record")
         .g("drawn")
@@ -991,15 +999,29 @@ fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
         .map(|d| st(d.g("src")))
         .collect();
     let dims: Vec<String> = free_words().g("place_dims").arr().iter().map(st).collect();
-    let codes: BTreeSet<String> = rows
+    let places = |r: &J| {
+        dims.iter()
+            .filter_map(|d| r.g("dims").g(d).s().map(str::to_string))
+            .collect::<Vec<_>>()
+    };
+    let mut codes: BTreeSet<String> = rows
         .iter()
         .filter(|r| srcs.contains(&st(r.g("src"))))
-        .flat_map(|r| {
-            dims.iter()
-                .filter_map(|d| r.g("dims").g(d).s().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
+        .flat_map(places)
         .collect();
+    let of_rows: BTreeSet<String> = rows.iter().flat_map(places).collect();
+    for (_, v) in walk(page.g("body"), "$") {
+        let Some(sid) = ref_id(v.g("binds").g(DRAWS_ITEMS_FOR)) else {
+            continue;
+        };
+        codes.extend(
+            got.get(&sid)
+                .map(|c| c.arr().iter().map(st).collect::<Vec<_>>())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|c| of_rows.contains(c)),
+        );
+    }
     (!codes.is_empty()).then_some(codes.len())
 }
 
@@ -1849,11 +1871,11 @@ fn cannot_take(s: &J) -> Option<String> {
     let at = s.g("at").s().unwrap_or("");
     if matches!(t.g("by").s(), Some("printed" | "value"))
         && t.g("outcome").s() == Some("silence")
-        && matches!(at, "first" | "last" | "second")
+        && matches!(at, "first" | "last" | "second" | "before_last")
     {
         return None;
     }
-    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second or last)", t.repr()))
+    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second, before_last or last)", t.repr()))
 }
 
 /// The value a take's code is ordered by: the root rank's key of it, as the rank computes it. Its rows under the rank's over
@@ -1932,7 +1954,12 @@ fn sum_rows<'a>(rows: impl IntoIterator<Item = &'a J>) -> Result<f64, String> {
 }
 
 fn py_fixed(x: f64, dec: usize) -> String {
-    format!("{x:.dec$}")
+    let s = format!("{x:.dec$}");
+    // a value that rounds to 0 prints without its minus, as next_facts::fixed prints it
+    match s.strip_prefix('-') {
+        Some(rest) if rest.bytes().all(|b| b == b'0' || b == b'.') => rest.to_string(),
+        _ => s,
+    }
 }
 
 /// A fixed-point number with its whole part grouped by thousands with commas, as Python's format spec `,.{dec}f` writes
@@ -2562,6 +2589,9 @@ pub(crate) fn reference_legend_gaps(
     if !reg.has("main_chart") {
         return Vec::new();
     }
+    if let Some(entry) = reg.g("leaf_recipes").get(recipe) {
+        return leaf_recipe_gaps(entry, recipe, html);
+    }
     let refs = match recipe_roles(reg, recipe) {
         Err(e) => return vec![format!("roles: {e}")],
         Ok((_, refs)) => refs,
@@ -2578,6 +2608,88 @@ pub(crate) fn reference_legend_gaps(
             units,
             drawn,
         ));
+    }
+    out
+}
+
+/// A recipe drawn by leaves alone, never through the page tree (the registry's leaf_recipes; owner 11-23 10:25, ask 11):
+/// its layers are the leaf registry's (next_leaf leaves().recipes), its main chart any layer of them the page draws that is
+/// neither a block of words (`not_main`) nor a reference, and the page must draw one; each reference the page draws (a layer
+/// that draws another quantity than the headline's, as the event chain draws its companions) prints its legend line: an
+/// element marked `data-word="<word>"` inside the legend marked `data-legend="<within>"`, whose text is the word table's
+/// word exactly (a leaf recipe's reference word holds no placeholder). A reference the page does not draw owes no line. A
+/// recipe the leaf registry does not hold, or a registry entry that cannot be read, is a gap.
+fn leaf_recipe_gaps(entry: &J, recipe: &str, html: &str) -> Vec<String> {
+    let Some(registered) = crate::next_leaf::leaves()
+        .recipes
+        .iter()
+        .find(|r| r.name == recipe)
+    else {
+        return vec![format!("roles: recipe {recipe} is listed as drawn by leaves alone, and the leaf registry holds no such recipe")];
+    };
+    let drawn = |layer: &str| html.contains(&format!("data-layer=\"{layer}\""));
+    let not_main: Vec<String> = entry.g("not_main").arr().iter().map(st).collect();
+    let refs = entry.g("references").obj();
+    let mut out = Vec::new();
+    let mains: Vec<&String> = registered
+        .layers
+        .iter()
+        .filter(|l| !not_main.contains(l) && !refs.iter().any(|(r, _)| r == *l))
+        .collect();
+    if !mains.iter().any(|l| drawn(l)) {
+        out.push(format!(
+            "roles: recipe {recipe}: the page draws none of its main charts {mains:?}"
+        ));
+    }
+    for (layer, legend) in refs {
+        if !registered.layers.contains(layer) {
+            out.push(format!(
+                "roles: recipe {recipe}: its reference {layer} is no layer of it"
+            ));
+            continue;
+        }
+        if !drawn(layer) {
+            continue;
+        }
+        let (word, within) = (st(legend.g("word")), st(legend.g("within")));
+        let Some(text) = crate::next_ledger::word_table()
+            .get(&word)
+            .and_then(serde_json::Value::as_str)
+        else {
+            out.push(format!("roles: recipe {recipe}: reference {layer}'s legend word {word} is not in the word table"));
+            continue;
+        };
+        if text.contains('{') || within.is_empty() {
+            out.push(format!("roles: recipe {recipe}: reference {layer}'s legend {word} in {within:?} is no fixed line in a named legend"));
+            continue;
+        }
+        let line = html
+            .match_indices(&format!("data-legend=\"{within}\""))
+            .find_map(|(at, _)| {
+                let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
+                let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
+                let (_, lb, lc) = element_at(html, html[..mark].rfind('<')?)?;
+                let mut text = String::new();
+                let mut inside = false;
+                for c in html[lb..lc].chars() {
+                    match c {
+                        '<' => inside = true,
+                        '>' => inside = false,
+                        c if !inside => text.push(c),
+                        _ => {}
+                    }
+                }
+                Some(
+                    text.replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">"),
+                )
+            });
+        match line {
+            Some(t) if t.trim() == text => {}
+            Some(t) => out.push(format!("roles: {layer} is drawn as a reference and its legend line {word} reads {t:?}, not the word")),
+            None => out.push(format!("roles: {layer} is drawn as a reference and its legend data-legend={within} prints no line data-word={word}")),
+        }
     }
     out
 }
@@ -2998,7 +3110,19 @@ fn recheck_one(
             let n = int_or_knob(s.g("n"))?;
             let from = st(s.g("from"));
             let src = got.get(&from).ok_or_else(|| format!("'{from}'"))?;
-            let have = J::Arr(src.arr().iter().take(n.max(0) as usize).cloned().collect());
+            // end "last": the last n, in the order the source holds them (the bottom n of a ranking, lowest last)
+            let all = src.arr();
+            let n = (n.max(0) as usize).min(all.len());
+            let skip = match s.g("end").s() {
+                None | Some("first") => 0,
+                Some("last") => all.len() - n,
+                Some(other) => {
+                    return Err(format!(
+                        "select {id} (top_n): end '{other}'; e.g. first|last"
+                    ))
+                }
+            };
+            let have = J::Arr(all.iter().skip(skip).take(n).cloned().collect());
             same(bad, format!("select {id} (top_n)"), s.g("result"), &have);
             got.insert(id.into(), have);
         }
@@ -3793,7 +3917,7 @@ fn digit_runs(s: &str) -> BTreeSet<String> {
 
 /// The page's own words (validate.words_lint): its title, dek, kicker and finding hold no worded number; a quote is a digit
 /// string of the request. A node's lines are said only here (C3 refuses them for the core's own words).
-fn words_lint(page: &J, errs: &mut Vec<String>) {
+fn words_lint(page: &J, got: &Got, errs: &mut Vec<String>) {
     let req = page.get("request");
     if let Some(req) = req {
         if sha256_hex(&st(req.g("text"))) != st(req.g("sha256")) {
@@ -3801,7 +3925,7 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
         }
     }
     // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
-    let places = places_drawn(page, page.g("facts").g("rows").arr());
+    let places = places_drawn(page, page.g("facts").g("rows").arr(), got);
     for (path, v) in walk(page, "$") {
         if v.g("kind").s() != Some("Text") {
             continue;
@@ -4217,7 +4341,7 @@ fn part_a(page: &J, inp: &J, reg: &J) -> (Vec<String>, Got, Option<J>) {
     }
     let (bad, got, rpage) = recheck(&page);
     let mut lerrs = lint(&page, &got, rpage.as_ref());
-    words_lint(&page, &mut lerrs);
+    words_lint(&page, &got, &mut lerrs);
     shared_lint(&page, &got, &mut lerrs);
     lerrs.extend(tree_colour_problems(&page, palettes()));
     if page.has("fragment") {
@@ -5571,7 +5695,7 @@ pub fn load_registry(overlay: &J) -> J {
         reg.set("picks", picks.clone());
     }
     // each recipe's layers and main chart, which the roles' checks read (recipe_roles)
-    for k in ["recipes", "main_chart"] {
+    for k in ["recipes", "main_chart", "leaf_recipes"] {
         if let Some(v) = overlay.get(k) {
             reg.set(k, v.clone());
         }
@@ -7905,6 +8029,8 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     };
     let (lw, vw) = (widest("left")?, widest("right")?);
     let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
+    // the room over the first row the frame's `above` panel takes (frame_knobs y0; none without it)
+    let y0 = n.g("knobs").get("y0").cloned().unwrap_or(J::Int(0));
     let num = |v: &J, what: &str| {
         v.num()
             .ok_or_else(|| format!("rows frame: {what} is no number"))
@@ -7912,7 +8038,7 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     let (w, x, top, row) = (
         num(fr.g("w"), "w")?,
         num(&x0, "x0")?,
-        num(fr.g("top"), "top")?,
+        num(fr.g("top"), "top")? + num(&y0, "y0")?,
         num(fr.g("row"), "row")?,
     );
     let count = n.g("items").arr().len() as f64;
@@ -7933,7 +8059,14 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
         ("lw", J::Num(lw)),
         ("vw", J::Num(vw)),
         ("bw", J::Num(whole)),
-        ("top", fr.g("top").clone()),
+        (
+            "top",
+            if y0.num() == Some(0.0) {
+                fr.g("top").clone()
+            } else {
+                J::Num(top)
+            },
+        ),
         ("row", fr.g("row").clone()),
         ("inset", fr.g("inset").clone()),
     ]);
@@ -8654,7 +8787,7 @@ pub fn content_problems(
         }
     }
     // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
-    let places = places_drawn(spec, inp.g("rows").arr());
+    let places = places_drawn(spec, inp.g("rows").arr(), &got);
     for (path, v) in walk(spec, "$") {
         let rs = if v.g("kind").s() == Some("Text") {
             v.g("runs")
@@ -10560,6 +10693,38 @@ mod tests {
         let off = run(&[("bars", "tps00191")], vec![asylum_tps, pop_offered]);
         assert_eq!(off, vec!["C6: the question asks for population but the page draws no row from SP.POP.TOTL, demo_pjan, demo_gind".to_string()]);
     }
+
+    /// C6 over the real measure-families.json (the catalogue's own asked record for an unemployment question, nothing
+    /// offered): the youth unemployment rate a stand-in picked (tipslm80, 11-25) and the long-listed une_rt_a are the family's
+    /// tables, so a page drawing either passes; the employment rate (tipslm100), the participation rate (tipslm60) and the
+    /// long-term unemployment rate (tipslm70) of the same group are not, and a page drawing only one of them is refused.
+    #[test]
+    fn c6_reads_the_unemployment_family_s_tables_from_the_real_file() {
+        let asked = crate::l5geo::asked_zh("欧盟各国青年失业率这些年怎么变？");
+        let unemployment = asked
+            .iter()
+            .find(|a| a.id == "unemployment")
+            .expect("the question asks for unemployment");
+        let tables: Vec<&str> = unemployment.tables.iter().map(String::as_str).collect();
+        let rec = asked_rec("unemployment", &tables, &[]);
+        let run = |table: &str| {
+            let (spec, inp) = asked_page(&[("bars", table)], Some(vec![rec.clone()]), Some(vec![]));
+            asked_problems(&spec, &inp)
+        };
+        for table in ["tipslm80", "une_rt_a", "tesem140"] {
+            assert_eq!(run(table), Vec::<String>::new(), "{table}");
+        }
+        for table in ["tipslm100", "tipslm60", "tipslm70"] {
+            let off = run(table);
+            assert!(
+                off.len() == 1
+                    && off[0].starts_with(
+                        "C6: the question asks for unemployment but the page draws no row from "
+                    ),
+                "{table}: {off:?}"
+            );
+        }
+    }
     use std::path::{Path, PathBuf};
 
     fn fixtures() -> PathBuf {
@@ -10570,6 +10735,54 @@ mod tests {
     /// the four the leaf's run.py MAIN names agree with it (column, change, flow, composition); scmp takes the map (the
     /// flowmap of the headline's year, the strip under it the month profile) and ring the ring (it wraps the page, the
     /// map inside it is the locator of each source's volume; owner 11-03 15:0x).
+    /// Owner 11-23 10:25 (ask 11): page_story alone is listed as drawn by leaves alone; its page passes the roles check when
+    /// it draws a main layer, and prints the event chain's legend line when it draws the chain; any other recipe the registry
+    /// lists no layers of still refuses.
+    #[test]
+    fn a_leaf_recipe_is_held_to_its_main_and_its_references_legend() {
+        let (reg, _) = registry_in_force();
+        let listed: Vec<&String> = reg.g("leaf_recipes").obj().iter().map(|(k, _)| k).collect();
+        assert_eq!(listed, ["page_story"]);
+        let word = crate::next_ledger::word_table()["story.legend.chain"]
+            .as_str()
+            .unwrap();
+        let legend = |line: &str| {
+            format!(
+                r#"<div class="legend" data-legend="story"><ul><li><span data-word="story.legend.chain">{line}</span></li></ul></div>"#
+            )
+        };
+        let rank = r#"<div data-layer="rankbar"></div>"#;
+        let chain = r#"<div data-layer="event_chain"></div>"#;
+        assert_eq!(
+            reference_legend_gaps(&reg, "page_story", rank, &[], None),
+            Vec::<String>::new()
+        );
+        let with_chain = format!("{rank}{chain}{}", legend(word));
+        assert_eq!(
+            reference_legend_gaps(&reg, "page_story", &with_chain, &[], None),
+            Vec::<String>::new()
+        );
+        let no_line = format!("{rank}{chain}");
+        assert!(
+            reference_legend_gaps(&reg, "page_story", &no_line, &[], None)[0]
+                .contains("prints no line")
+        );
+        let other = format!("{rank}{chain}{}", legend("别的话"));
+        assert!(
+            reference_legend_gaps(&reg, "page_story", &other, &[], None)[0]
+                .contains("not the word")
+        );
+        let only_words = r#"<div data-layer="thesis_claims"></div>"#;
+        assert!(
+            reference_legend_gaps(&reg, "page_story", only_words, &[], None)[0]
+                .contains("draws none of its main charts")
+        );
+        assert!(
+            reference_legend_gaps(&reg, "no_such_recipe", rank, &[], None)[0]
+                .contains("the registry lists no layers")
+        );
+    }
+
     #[test]
     fn every_recipe_names_its_main_chart_and_the_leafs_main_agrees() {
         let (reg, _) = registry_in_force();
@@ -11823,7 +12036,8 @@ mod tests {
             (112310.0, 0, "112,310"),
             (552658.77, 2, "552,658.77"),
             (-1234567.5, 1, "-1,234,567.5"),
-            (-0.04, 1, "-0.0"),
+            (-0.04, 1, "0.0"),
+            (-0.05, 1, "-0.1"),
         ] {
             assert_eq!(py_grouped(&py_fixed(x, dec)), py, "{x} at {dec}");
         }
@@ -12646,8 +12860,12 @@ mod tests {
         let reg = reg_of(&env);
         let inp = env.g("input");
         let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
+        let got = content_problems(inp.g("page_spec"), inp, &ext, &reg)
+            .1
+            .unwrap()
+            .got;
         assert_eq!(
-            places_drawn(inp.g("page_spec"), inp.g("rows").arr()),
+            places_drawn(inp.g("page_spec"), inp.g("rows").arr(), &got),
             Some(4)
         );
         let with_kicker = |w: &str| {
@@ -12704,9 +12922,14 @@ mod tests {
                 "{w} {places:?}"
             );
         }
+        // the flow reads the same bind of the fill (next_run places_drawn)
+        assert_eq!(
+            FILL_DRAWS_ITEMS_FOR.rsplit('/').next(),
+            Some(DRAWS_ITEMS_FOR)
+        );
         // a page with no drawn record knows no count
         let bare = J::obj_of(vec![("kind", J::str("Page"))]);
-        assert_eq!(places_drawn(&bare, inp.g("rows").arr()), None);
+        assert_eq!(places_drawn(&bare, inp.g("rows").arr(), &Got::new()), None);
     }
 
     /// q1 (pos-q1-b) through the core with `overlay`: the bars' SVG and record, or every failure line.
@@ -13726,6 +13949,19 @@ mod tests {
             [false, false],
             "a share, a rate"
         );
+        // a chain-linked level is read (owner decision 11-25) but its row says it does not add up: no share of its sum
+        assert_eq!(
+            [
+                adds(&[Some("CLV10_MEUR"), Some("CLV10_MEUR")]),
+                adds(&[Some("CLV20_EUR_HAB"), Some("CLV20_EUR_HAB")])
+            ],
+            [false, false],
+            "a chain-linked level"
+        );
+        assert_eq!(
+            (unit_additive("CLV10_MEUR"), unit_additive("CLV20_EUR_HAB")),
+            (Ok(false), Ok(false))
+        );
         assert_eq!(
             [
                 adds(&[None, None]),
@@ -13753,8 +13989,12 @@ mod tests {
 
     /// A page of selects over rows and formats, recomputed by the core: each select's result.
     fn selects_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> Got {
+        recheck(&page_over(rows, sels, fmts)).1
+    }
+
+    fn page_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> J {
         let items: Vec<J> = sels.iter().map(|s| parse(s).unwrap()).collect();
-        let page = J::obj_of(vec![
+        J::obj_of(vec![
             ("kind", J::str("Page")),
             (
                 "selects",
@@ -13774,8 +14014,7 @@ mod tests {
                 "checks",
                 J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))]),
             ),
-        ]);
-        recheck(&page).1
+        ])
     }
 
     fn a_row(code: &str, dim: Option<(&str, &str)>, t: &str, v: &str) -> J {
@@ -13792,6 +14031,62 @@ mod tests {
     /// A change rank: two places at one level and two changes (and two changes alike at two levels); a part_share rank: two
     /// places at one total and two shares (and two shares alike at two totals). The take's tie (printed, silence) decides on
     /// the key: the same level never silences two changes, the same change at two levels does; likewise totals and shares.
+    /// top_n takes the first n of an ordered select, or with end "last" the last n in the source's order (the bottom n of
+    /// a ranking, lowest last); an end it does not know refuses, and n past the source takes all of it.
+    #[test]
+    fn top_n_takes_the_first_or_the_last_n_in_order() {
+        let rows: Vec<J> = [("A", "40"), ("B", "30"), ("C", "20"), ("D", "10")]
+            .iter()
+            .map(|(c, v)| a_row(c, None, "2024", v))
+            .collect();
+        let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": "value", "order": "desc"}"#;
+        let codes = |got: &Got, id: &str| -> Vec<String> {
+            got[id]
+                .arr()
+                .iter()
+                .map(|c| c.s().unwrap_or("").to_string())
+                .collect()
+        };
+        for (sel, want) in [
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2}"#,
+                vec!["A", "B"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2, "end": "first"}"#,
+                vec!["A", "B"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 3, "end": "last"}"#,
+                vec!["B", "C", "D"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 9, "end": "last"}"#,
+                vec!["A", "B", "C", "D"],
+            ),
+        ] {
+            assert_eq!(
+                codes(&selects_over(rows.clone(), &[rank, sel], "{}"), "k"),
+                want,
+                "{sel}"
+            );
+        }
+        let odd = r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2, "end": "middle"}"#;
+        let (bad, _, _) = recheck(&page_over(rows.clone(), &[rank, odd], "{}"));
+        assert!(bad.iter().any(|b| b.contains("end 'middle'")), "{bad:?}");
+        // the one before last, silent when it prints as a place beside it does (C and D both 20), else that place
+        let before = r#"{"id": "k", "kind": "take", "from": "r", "at": "before_last", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
+        assert_eq!(
+            selects_over(rows.clone(), &[rank, before], "{}")["k"],
+            J::str("C")
+        );
+        let tied: Vec<J> = [("A", "40"), ("B", "30"), ("C", "20"), ("D", "20")]
+            .iter()
+            .map(|(c, v)| a_row(c, None, "2024", v))
+            .collect();
+        assert_eq!(selects_over(tied, &[rank, before], "{}")["k"], J::Null);
+    }
+
     #[test]
     fn take_value_is_the_root_rank_s_key_and_the_tie_reads_it() {
         // change: A and B both 50 at 2024, up 40 and 20; C and D both up 25, at 25 and 45

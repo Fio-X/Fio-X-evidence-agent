@@ -2238,6 +2238,68 @@ mod tests {
         }
     }
 
+    /// The interactive command's first round publishes a page through the visual call door (the new route runs inside it): the
+    /// real table lists interactive for visual_command, so its publication paths are let through. It opens nothing else:
+    /// another group's paths, the paths the row does not name, the knowledge call door (listed but not measured) and a command
+    /// the row does not list (ask, continue) are still refused.
+    #[test]
+    fn a_write_inside_the_visual_call_door_is_let_through_for_interactive() {
+        let rel = "visualizations/next_visual-probe.json";
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("publications/qa")).unwrap();
+            std::fs::create_dir_all(root.join("publications/plans")).unwrap();
+            let _setup = Setup::real(Some("interactive"));
+            as_visual_call(|| create_dir_all(root, &root.join("publications/column"))).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/column/index.html"), "x"))
+                .unwrap();
+            as_visual_call(|| write(root, &root.join("publications/plans/column.json"), "x"))
+                .unwrap();
+            assert!(root.join("publications/column/index.html").is_file());
+            for other in [
+                "answer.md",
+                "publications/index.html",
+                "publications/nope/index.html",
+            ] {
+                let text = refused(as_visual_call(|| write(root, &root.join(other), "refused")));
+                assert!(
+                    text.contains("may not ask visual_command") || text.contains("boundary"),
+                    "{other}: {text}"
+                );
+                assert!(!root.join(other).exists(), "{other}");
+            }
+            std::fs::create_dir_all(root.join("visualizations")).unwrap();
+            let text = refused(as_visual_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask visual_command"), "{text}");
+            assert!(!root.join(rel).exists());
+            // the knowledge call door lists interactive but has not measured it: still refused
+            std::fs::create_dir_all(root.join("shadow")).unwrap();
+            let text = refused(as_knowledge_call(|| {
+                write(root, &root.join("shadow/next_knowledge-probe.json"), "x")
+            }));
+            assert!(text.contains("may not ask knowledge_command"), "{text}");
+        }
+        // a command the visual row does not list stays refused on the same publication path
+        for command in ["ask", "continue"] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("publications/column")).unwrap();
+            let _setup = Setup::real(Some(command));
+            let text = refused(as_visual_call(|| {
+                write(root, &root.join("publications/column/index.html"), "x")
+            }));
+            assert!(
+                text.contains("may not ask visual_command"),
+                "{command}: {text}"
+            );
+            assert!(
+                !root.join("publications/column/index.html").exists(),
+                "{command}"
+            );
+        }
+    }
+
     #[test]
     fn off_is_the_plain_call() {
         let dir = tempfile::tempdir().unwrap();

@@ -243,30 +243,7 @@ pub enum Ask {
     /// wording there that differs from its draft and ranks (ranking_word) is refused; empty on any other page.
     /// `titles`: the page title's field (next_page Drafts::titles): a wording there that asks (question_word) is refused,
     /// a title being a label or a conclusion (TITLE_RULE); empty when the ask holds no title.
-    Text {
-        fields: BTreeMap<String, String>,
-        slots: Vec<String>,
-        numbers: Vec<String>,
-        periods: Vec<String>,
-        changes: Vec<String>,
-        levels: Vec<String>,
-        scoped: Vec<String>,
-        titles: Vec<String>,
-        /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
-        /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
-        /// refused. Empty on a page with no set.
-        mark: String,
-        /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
-        /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
-        places: Option<usize>,
-        /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
-        /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
-        /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a finding_words() word
-        /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
-        members: Vec<String>,
-        /// The `members` the question does not write.
-        unasked: Vec<String>,
-    },
+    Text(Box<TextAsk>),
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
     Vision,
@@ -275,6 +252,36 @@ pub enum Ask {
     /// with a shape, the question's quantities by number in the order its blocks take them (empty: the question's order).
     /// A 0 keeps the one-block flow; the blocks, their tables and years are the program's.
     Split { ask: crate::answer_plan::SplitAsk },
+}
+
+/// The text step's request (Ask::Text), boxed so that Ask stays small.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextAsk {
+    pub fields: BTreeMap<String, String>,
+    pub slots: Vec<String>,
+    pub numbers: Vec<String>,
+    pub periods: Vec<String>,
+    pub changes: Vec<String>,
+    pub levels: Vec<String>,
+    pub scoped: Vec<String>,
+    pub titles: Vec<String>,
+    /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
+    /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
+    /// refused. Empty on a page with no set.
+    pub mark: String,
+    /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
+    /// ("four countries", "two countries") is no typed number (place_count_free); None, none is.
+    pub places: Option<usize>,
+    /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
+    /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
+    /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a finding_words() word
+    /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
+    pub members: Vec<String>,
+    /// The `members` the question does not write.
+    pub unasked: Vec<String>,
+    /// The question's own terms with a numeral that name no number (Drafts::terms): the fields and the names may keep
+    /// them as written, and the ask says so (terms_rule); the checks are as for any other wording.
+    pub terms: Vec<String>,
 }
 
 /// The image review's yes/no questions, id -> the definition shown to the model, in the order asked and recorded. Whether
@@ -820,7 +827,7 @@ impl Ask {
             Ask::Search => "search",
             Ask::Table { .. } => "table",
             Ask::Claims { .. } => "claims",
-            Ask::Text { .. } => "text",
+            Ask::Text(_) => "text",
             Ask::Vision => "vision",
             Ask::Split { .. } => "split",
         }
@@ -874,27 +881,29 @@ impl Ask {
                 }
                 json!({"type": "object", "additionalProperties": false, "required": required, "properties": properties})
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                members,
-                unasked,
-                ..
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    members,
+                    unasked,
+                    terms,
+                    ..
+                } = &**text_ask;
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles), member_rule(unasked, titles, members))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles), member_rule(unasked, titles, members), terms_rule(terms))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
+                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}{}", terms_rule(terms))}}})
             }
             Ask::Vision => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "answers"],
@@ -939,8 +948,8 @@ impl Ask {
                 }
                 example
             }
-            Ask::Text { slots, .. } => json!({"step": "text", "text": {},
-                "names": slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
+            Ask::Text(text_ask) => json!({"step": "text", "text": {},
+                "names": text_ask.slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
             Ask::Vision => {
                 let mut answers: Map<String, Value> = VISION_QUESTIONS
                     .iter()
@@ -984,20 +993,21 @@ impl Ask {
                 }
                 allowed
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                places,
-                members,
-                unasked,
-                ..
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    places,
+                    members,
+                    unasked,
+                    ..
+                } = &**text_ask;
                 let mut allowed = json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
                 "name_max_chars": NAME_MAX_CHARS, "numbers": numbers});
@@ -1051,7 +1061,7 @@ impl Ask {
     /// the check runs on the decoded answer as on any other.
     pub fn decode(&self, args: &Value) -> (Value, Vec<String>) {
         let objects: &[&str] = match self {
-            Ask::Text { .. } => &["text", "names"],
+            Ask::Text(_) => &["text", "names"],
             Ask::Table { items, .. } if !items.is_empty() => &["params"],
             Ask::Vision => &["answers"],
             _ => &[],
@@ -1086,7 +1096,7 @@ impl Ask {
             Ask::Table { .. } => &["pick"],
             Ask::Claims { relations, .. } if *relations > 1 => &["pick", "relation"],
             Ask::Claims { .. } => &["pick"],
-            Ask::Text { .. } => &["text", "names"],
+            Ask::Text(_) => &["text", "names"],
             Ask::Vision => &["answers"],
             Ask::Split { .. } => &[SPLIT_KEY, QUANTITIES_KEY],
         };
@@ -1318,20 +1328,22 @@ impl Ask {
                 };
                 Ok(Choice::Claims { picks, relation })
             }
-            Ask::Text {
-                fields,
-                slots,
-                numbers,
-                periods,
-                changes,
-                levels,
-                scoped,
-                titles,
-                mark,
-                places,
-                members,
-                unasked,
-            } => {
+            Ask::Text(text_ask) => {
+                let TextAsk {
+                    fields,
+                    slots,
+                    numbers,
+                    periods,
+                    changes,
+                    levels,
+                    scoped,
+                    titles,
+                    mark,
+                    places,
+                    members,
+                    unasked,
+                    ..
+                } = &**text_ask;
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
                 for (id, revised) in &text {
@@ -2356,6 +2368,41 @@ pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
 }
 
 /// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
+/// The question's own terms that hold a numeral and name no number (Ask::Text terms), said so the model keeps them rather than
+/// drop them for the number rules (dev n15 "under five", e11 PM2.5, n10 "per hundred people": the names lost the term the question asked);
+/// empty when the question writes none.
+fn terms_rule(terms: &[String]) -> String {
+    if terms.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; the question's own terms {} name no number: keep them as written where they belong",
+        terms.join(", ")
+    )
+}
+
+/// The runs of `text` that number_free_text blanks (an age band, a rate's base, a coded name such as PM2.5), each once, in
+/// the order the text writes them: the terms with a numeral that name no number.
+pub fn number_free_terms(text: &str) -> Vec<String> {
+    let blank: Vec<char> = number_free_text(text).chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut run = String::new();
+    for (c, b) in text.chars().zip(blank) {
+        if b == ' ' && c != ' ' {
+            run.push(c);
+        } else if !run.is_empty() {
+            let t = std::mem::take(&mut run);
+            if !out.contains(&t) {
+                out.push(t);
+            }
+        }
+    }
+    if !run.is_empty() && !out.contains(&run) {
+        out.push(run);
+    }
+    out
+}
+
 fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> String {
     let mut rule = String::new();
     if !unasked.is_empty() {
@@ -3198,6 +3245,26 @@ pub trait Catalogue: Sync {
     fn asks_total(&self, _question_zh: &str) -> bool {
         false
     }
+    /// The first n at one end the Chinese question asks for, with whether it is the low end (the knowledge group's reading of
+    /// its words, through its door); None when this catalogue reads none.
+    fn asks_top(&self, _question_zh: &str) -> Option<(usize, bool)> {
+        None
+    }
+    /// The second place the Chinese question compares its end with, the top's (false) or the bottom's (true) (the
+    /// knowledge group's reading of its words, through its door); None when this catalogue reads none.
+    fn asks_second(&self, _question_zh: &str) -> Option<bool> {
+        None
+    }
+    /// Whether the Chinese question asks how its places fell (the knowledge group's reading of its words, through its
+    /// door); false when this catalogue reads none.
+    fn asks_fall(&self, _question_zh: &str) -> bool {
+        false
+    }
+    /// Whether the Chinese question asks where one place stands in its ranking (the knowledge group's reading of its
+    /// words, through its door); false when this catalogue reads none.
+    fn asks_position(&self, _question_zh: &str) -> bool {
+        false
+    }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(
@@ -3274,6 +3341,24 @@ pub trait Catalogue: Sync {
         _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
     ) -> (
         Vec<next_knowledge::Companion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
+        (Vec::new(), Vec::new())
+    }
+    /// The links of the main's event chain a story page fetches (the knowledge group's chain_links); none when this
+    /// catalogue reads no chain.
+    fn chain_links(&self, _main: &str) -> Vec<next_knowledge::ChainLink> {
+        Vec::new()
+    }
+    /// The chain links kept from the fetched rows of the main and of each fetched link, the page holding `on_page`, and
+    /// each link not kept with why (the knowledge group's chain_companions).
+    fn chain_companions(
+        &self,
+        _main: &str,
+        _on_page: &[&str],
+        _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> (
+        Vec<next_knowledge::ChainCompanion>,
         Vec<(String, next_knowledge::DropWhy)>,
     ) {
         (Vec::new(), Vec::new())
@@ -3418,6 +3503,11 @@ pub trait Catalogue: Sync {
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
         place_points_call(&Mutex::new(Vec::new()), codes)
     }
+    /// The codes grouped by M49 sub-region (the knowledge group's M49Groups, through its door): {"groups", "moved",
+    /// "missing"}, as data for a page that compares named groups.
+    fn place_groups(&self, codes: &[String]) -> Result<Value, String> {
+        place_groups_call(&Mutex::new(Vec::new()), codes)
+    }
     /// The iso3 code of each iso2 code by the knowledge group's name table (Iso3Of, through its door); a code it has none
     /// for is left out.
     fn iso3_of(&self, codes: &[String]) -> Result<BTreeMap<String, String>, String> {
@@ -3440,6 +3530,12 @@ pub trait Catalogue: Sync {
     /// none, or this catalogue opens no reference lists.
     fn members(&self, _aggregate: &str) -> Result<Vec<String>, String> {
         Err("this catalogue opens no reference lists".into())
+    }
+    /// The target rows the knowledge group's targets registry holds for a main table (each {src "target:<id>", main, table,
+    /// dims, time, value}, read back like any row): what a story page runs against (has_target). None for a catalogue that
+    /// opens no targets registry.
+    fn targets(&self, _main: &str) -> Vec<Value> {
+        Vec::new()
     }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
@@ -3580,6 +3676,19 @@ fn place_points_call(
         next_visual::Request::PlacePoints { iso3: &iso3 },
     );
     place_points_reply(codes, &iso3_of, reply)
+}
+
+/// Catalogue::place_groups through the knowledge group's command, kept in `calls`.
+fn place_groups_call(calls: &Mutex<Vec<Value>>, codes: &[String]) -> Result<Value, String> {
+    match knowledge_call(
+        calls,
+        "m49_groups",
+        json!({"codes": codes}),
+        next_knowledge::Request::M49Groups { codes },
+    )? {
+        next_knowledge::Reply::M49Groups(groups) => Ok(groups),
+        _ => unreachable!("the knowledge group answered m49_groups with another reply"),
+    }
 }
 
 /// The words a refusal of the map points starts with when the table has no point for a code (an aggregate), the only
@@ -3746,6 +3855,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Names(names)) => json!(names),
         Ok(Reply::Members(members)) => json!({"members": members}),
         Ok(Reply::Countries(countries)) => json!({"countries": countries}),
+        Ok(Reply::Targets(rows)) => json!({"targets": rows}),
         Ok(Reply::Table(meta)) => json!(meta.as_ref().map(
             |m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
             "end_year": m.end_year, "places": m.places})
@@ -3765,9 +3875,18 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::TableZh(name)) => json!({"zh": name}),
         Ok(Reply::AskedIds(ids)) => json!({"asked": ids}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
+        Ok(Reply::M49Groups(groups)) => groups.clone(),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::AsksLowest(low)) => json!({"asks_lowest": low}),
         Ok(Reply::AsksTotal(total)) => json!({"asks_total": total}),
+        Ok(Reply::AsksTop(top)) => {
+            json!({"asks_top": top.map(|(n, low)| json!({"n": n, "low": low}))})
+        }
+        Ok(Reply::AsksSecond(second)) => {
+            json!({"asks_second": second.map(|low| json!({"low": low}))})
+        }
+        Ok(Reply::AsksFall(fall)) => json!({"asks_fall": fall}),
+        Ok(Reply::AsksPosition(position)) => json!({"asks_position": position}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
         Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
@@ -3788,6 +3907,11 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Companions(found, dropped)) => json!({"kept": format!("{found:?}"),
             "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
         Ok(Reply::HubOrigin(found)) => json!(format!("{found:?}")),
+        Ok(Reply::ChainLinks(links)) => json!(links.iter().map(|l| &l.table).collect::<Vec<_>>()),
+        Ok(Reply::ChainCompanions(found, dropped)) => {
+            json!({"kept": found.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()})
+        }
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -3858,6 +3982,17 @@ pub(crate) fn visual_call<'a>(
             width,
             runtime,
         } => format!("{kind} {tables:?} {width} {}", runtime.display()),
+        Request::IllusHero {
+            tables,
+            lead,
+            subject,
+            width,
+            runtime,
+        } => format!(
+            "{kind} {tables:?} {lead:?} {subject:?} {width} {}",
+            runtime.display()
+        ),
+        Request::Story { request, runtime } => format!("{kind} {request} {}", runtime.display()),
         Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
         Request::NodeDraw {
             fill,
@@ -3912,16 +4047,28 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Strip { strip, note }) => {
             format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str()))
         }
+        Ok(Reply::Opening {
+            drawn,
+            instead,
+            note,
+        }) => format!(
+            "{} {} {note}",
+            drawn.as_ref().map_or("", |s| s.svg.as_str()),
+            instead.as_ref().map_or("", |s| s.svg.as_str())
+        ),
         Ok(Reply::NodeDeclared(declared)) => format!("{declared:?}"),
         Ok(Reply::NodesDrawn(drawn)) => format!("{drawn:?}"),
+        Ok(Reply::Story(reply)) => reply.to_string(),
     };
     let mut event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
     // the strip is the page's only piece that may be left off: what was drawn, or why none, is kept in its own words
     match &reply {
-        Ok(Reply::Strip { note, .. }) => event["note"] = json!(note),
-        Err(why) if kind == "illus_strip" => event["note"] = json!(why),
+        Ok(Reply::Strip { note, .. }) | Ok(Reply::Opening { note, .. }) => {
+            event["note"] = json!(note)
+        }
+        Err(why) if kind == "illus_strip" || kind == "illus_hero" => event["note"] = json!(why),
         _ => {}
     }
     // an external node's call: which node, the child's and the core's milliseconds, and how many failure lines stopped it
@@ -4228,6 +4375,20 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn targets(&self, main: &str) -> Vec<Value> {
+        // A registry that fails its checks offers no target: the page then runs without one (its test names the entry).
+        match knowledge_call(
+            &self.calls,
+            "targets",
+            json!({"main": main}),
+            next_knowledge::Request::Targets { main },
+        ) {
+            Ok(next_knowledge::Reply::Targets(rows)) => rows,
+            Ok(_) => unreachable!("the knowledge group answered targets with another reply"),
+            Err(_) => Vec::new(),
+        }
+    }
+
     fn hub_origin(
         &self,
         dims: &BTreeMap<String, BTreeSet<String>>,
@@ -4254,6 +4415,43 @@ impl Catalogue for GroupCatalogue {
         match self.call("companions", json!({"main": main, "rows": counts}), request) {
             next_knowledge::Reply::Companions(found, dropped) => (found, dropped),
             _ => unreachable!("the knowledge group answered companions with another reply"),
+        }
+    }
+
+    fn chain_links(&self, main: &str) -> Vec<next_knowledge::ChainLink> {
+        let request = next_knowledge::Request::ChainLinks {
+            catalogue: &self.opened,
+            main,
+        };
+        match self.call("chain_links", json!({"main": main}), request) {
+            next_knowledge::Reply::ChainLinks(links) => links,
+            _ => unreachable!("the knowledge group answered chain_links with another reply"),
+        }
+    }
+
+    fn chain_companions(
+        &self,
+        main: &str,
+        on_page: &[&str],
+        rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> (
+        Vec<next_knowledge::ChainCompanion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
+        let request = next_knowledge::Request::ChainCompanions {
+            catalogue: &self.opened,
+            main,
+            on_page,
+            rows,
+        };
+        let counts: BTreeMap<&String, usize> = rows.iter().map(|(id, r)| (id, r.len())).collect();
+        match self.call(
+            "chain_companions",
+            json!({"main": main, "on_page": on_page, "rows": counts}),
+            request,
+        ) {
+            next_knowledge::Reply::ChainCompanions(found, dropped) => (found, dropped),
+            _ => unreachable!("the knowledge group answered chain_companions with another reply"),
         }
     }
 
@@ -4428,6 +4626,46 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn asks_top(&self, question_zh: &str) -> Option<(usize, bool)> {
+        let request = next_knowledge::Request::AsksTop {
+            question: question_zh,
+        };
+        match self.call("asks_top", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksTop(top) => top,
+            _ => unreachable!("the knowledge group answered asks_top with another reply"),
+        }
+    }
+
+    fn asks_second(&self, question_zh: &str) -> Option<bool> {
+        let request = next_knowledge::Request::AsksSecond {
+            question: question_zh,
+        };
+        match self.call("asks_second", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksSecond(second) => second,
+            _ => unreachable!("the knowledge group answered asks_second with another reply"),
+        }
+    }
+
+    fn asks_fall(&self, question_zh: &str) -> bool {
+        let request = next_knowledge::Request::AsksFall {
+            question: question_zh,
+        };
+        match self.call("asks_fall", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksFall(fall) => fall,
+            _ => unreachable!("the knowledge group answered asks_fall with another reply"),
+        }
+    }
+
+    fn asks_position(&self, question_zh: &str) -> bool {
+        let request = next_knowledge::Request::AsksPosition {
+            question: question_zh,
+        };
+        match self.call("asks_position", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksPosition(position) => position,
+            _ => unreachable!("the knowledge group answered asks_position with another reply"),
+        }
+    }
+
     fn group_basis(
         &self,
         question_zh: &str,
@@ -4559,6 +4797,10 @@ impl Catalogue for GroupCatalogue {
         place_points_call(&self.calls, codes)
     }
 
+    fn place_groups(&self, codes: &[String]) -> Result<Value, String> {
+        place_groups_call(&self.calls, codes)
+    }
+
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
         matched_reply(visual_call(
             &self.calls,
@@ -4618,6 +4860,15 @@ impl Catalogue for GroupCatalogue {
 }
 
 /// Records the group calls the catalogue made since the last time, each as a program event under the current step.
+/// The stop of a question refused for its whole class (scope_refused): the same words at the search step and, for a
+/// refusal held for a target year, at the page step.
+pub fn scope_stop(r: &crate::l5geo::ScopeRefusal) -> Stop {
+    Stop::NoTable(format!(
+        "the question is out of scope ({}, \"{}\"): {}",
+        r.class, r.hit, r.reason_zh
+    ))
+}
+
 pub fn record_group_calls(
     recorder: &mut Recorder<'_>,
     catalogue: &dyn Catalogue,
@@ -4696,6 +4947,17 @@ pub struct Prepared {
     /// The data relation the table step kept for the main table (table_relation): on the main table only, None on every
     /// other and when the answer gave none or it was dropped. The page step passes over a recipe that answers another.
     pub relation: Option<Relation>,
+    /// The links of the main's event chain fetched and kept (chain_tables), in the chain's order: on the main table only,
+    /// empty on every other and when no chain holds the main. Only a story page reads them.
+    pub chain: Vec<ChainFetched>,
+}
+
+/// One event-chain link a story page may read (chain_tables): the knowledge group's link as kept and its fetched file
+/// under the run folder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChainFetched {
+    pub link: next_knowledge::ChainCompanion,
+    pub file: String,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -4777,6 +5039,11 @@ fn reason(called: &Called) -> String {
 /// The waits before the second and the third fetch of one request when the source did not answer (source_unreachable); with the
 /// first fetch that is the source circuit's own limit of 3 (evidence_gate.mjs createSourceAccessCircuit), which stays as it is.
 pub const FETCH_RETRY_WAITS_MS: [u64; 2] = [2_000, 4_000];
+/// The waits when the source answered with a server error (HTTP 500 to 599, read from "returned HTTP <code>"): Eurostat's short
+/// outages (11-22 23:38: three 500s in 9 s, the same request answered minutes later; 8 of 3087 stand-in runs, always in windows of
+/// minutes) outlast the default waits. A connection error, a timeout, a 429 and the rest keep FETCH_RETRY_WAITS_MS. The source
+/// circuit's limit of 3 fetches is the same either way.
+pub const SERVER_ERROR_WAITS_MS: [u64; 2] = [10_000, 20_000];
 /// The event of one more fetch of the same request: the try it starts, the dataset, the last failure (addresses removed) and the wait.
 pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
 /// The event of a fetch that held no row in the years asked and was moved back by newsroom_data_prepare (its details.years_back): the
@@ -4976,6 +5243,32 @@ pub const COMPANION_FETCH_LIMIT: Duration = Duration::from_secs(10);
 /// The whole companion stage may take this long: a candidate it has no time left for is not fetched.
 pub const COMPANION_STAGE_LIMIT: Duration = Duration::from_secs(20);
 
+/// The HTTP status a failure text names ("returned HTTP 503 (1/3)"), none when it names no status (a timeout, a connection error).
+fn http_status_of(text: &str) -> Option<u16> {
+    text.split("returned HTTP ")
+        .nth(1)
+        .and_then(|rest| rest.get(..3))
+        .and_then(|code| code.parse::<u16>().ok())
+}
+
+/// The wait before fetch number `tries + 1` after `called` failed, and what it was read from: the server-error waits for a
+/// SOURCE_ACCESS_FAILED that names an HTTP 5xx status, the default waits for any other failure. None when the table has no
+/// wait left for that try (the circuit's third fetch was the last).
+fn retry_wait(called: &Called, tries: usize) -> Option<(u64, Option<u16>)> {
+    let text = words_of(called);
+    let server = text
+        .contains("SOURCE_ACCESS_FAILED")
+        .then(|| http_status_of(&text))
+        .flatten()
+        .filter(|code| (500..600).contains(code));
+    let waits = if server.is_some() {
+        &SERVER_ERROR_WAITS_MS
+    } else {
+        &FETCH_RETRY_WAITS_MS
+    };
+    waits.get(tries - 1).map(|&wait| (wait, server))
+}
+
 /// Whether a failed fetch is the source not answering, and whether one more fetch may help. The words are the source circuit's
 /// (evidence_gate.mjs; shared vocabulary): a timeout, a connection that failed, HTTP 429 or 5xx may pass; any other HTTP status is the
 /// source's answer, and a host the circuit blocked or marked unreachable is not tried again in this run.
@@ -4990,12 +5283,7 @@ fn source_unreachable(called: &Called) -> Option<bool> {
     if !text.contains("SOURCE_ACCESS_FAILED") {
         return None;
     }
-    let status = text
-        .split("returned HTTP ")
-        .nth(1)
-        .and_then(|rest| rest.get(..3))
-        .and_then(|code| code.parse::<u16>().ok());
-    match status {
+    match http_status_of(&text) {
         Some(code) if code != 429 && code < 500 => None,
         _ => Some(!text.contains("This host will not be tried again in this run.")),
     }
@@ -5036,8 +5324,7 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         } else {
             break;
         };
-        let Some(&wait) = FETCH_RETRY_WAITS_MS
-            .get(tries - 1)
+        let Some((wait, server_status)) = retry_wait(&called, tries)
             .filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed))
         else {
             return Err(Stop::SourceUnreachable {
@@ -5049,7 +5336,9 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         tries += 1;
         recorder.program_event(
             FETCH_RETRY_EVENT,
-            json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait}),
+            // `server_status` is the 5xx the longer wait was read from; null for a wait of FETCH_RETRY_WAITS_MS
+            json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait,
+                "server_status": server_status}),
         )?;
         tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         called = recorder
@@ -5460,6 +5749,167 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
             })
         })
         .collect())
+}
+
+/// The event of the chain stage (chain_tables): the main, each link fetched with its outcome and seconds, the links kept and
+/// the ones dropped with why.
+pub const CHAIN_EVENT: &str = "next_chain";
+
+/// The links of the main's event chain (the knowledge group's chain_links), fetched at the main's places and years and the
+/// link's own slice, one after another inside COMPANION_STAGE_LIMIT, each inside COMPANION_FETCH_LIMIT; the knowledge
+/// group keeps the ones whose rows share enough places and years with the main's (chain_companions). A link that is not
+/// fetched, or not kept, is left off with why in CHAIN_EVENT; the page goes on without it. Empty when no chain holds the
+/// main.
+#[allow(clippy::too_many_arguments)]
+async fn chain_tables<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    catalogue: &dyn Catalogue,
+    main: &str,
+    main_args: &Map<String, Value>,
+    main_file: &str,
+    on_page: &[&str],
+    cancel: &AtomicBool,
+) -> Result<Vec<ChainFetched>, Stop> {
+    let links = catalogue.chain_links(main);
+    record_group_calls(recorder, catalogue)?;
+    if links.is_empty() {
+        return Ok(Vec::new());
+    }
+    let began = Instant::now();
+    let run_dir = recorder.run_dir.clone();
+    let read_rows = |id: &str, file: &str| -> Result<Vec<next_knowledge::CompanionRow>, String> {
+        let table = catalogue
+            .table(id)
+            .ok_or_else(|| "not in the catalogue".to_string())?;
+        let csv = std::fs::read_to_string(run_dir.join(file))
+            .map_err(|e| format!("the fetched file cannot be read: {e}"))?;
+        catalogue.companion_rows(&table, &csv)
+    };
+    let mut rows = BTreeMap::new();
+    let mut files = BTreeMap::new();
+    let mut entries = Vec::new();
+    match read_rows(main, main_file) {
+        Ok(found) => {
+            rows.insert(main.to_string(), found);
+        }
+        Err(why) => {
+            entries.push(json!({"table": main, "outcome": format!("main rows unread: {why}")}))
+        }
+    }
+    record_group_calls(recorder, catalogue)?;
+    let links = if rows.contains_key(main) {
+        links
+    } else {
+        Vec::new()
+    };
+    for link in &links {
+        let started = Instant::now();
+        let limit =
+            COMPANION_FETCH_LIMIT.min(COMPANION_STAGE_LIMIT.saturating_sub(began.elapsed()));
+        let outcome: Result<(), String> = match catalogue.table(&link.table) {
+            _ if limit.is_zero() => Err("the chain stage is out of time".into()),
+            None => Err("not in the catalogue".into()),
+            Some(meta) => match chain_args(main_args, &meta, &link.slice) {
+                None => Err("cannot be fixed to the main's places".into()),
+                Some(args) => {
+                    let (called, stopped) = timed_prepare(
+                        recorder,
+                        tools,
+                        catalogue,
+                        Value::Object(args),
+                        cancel,
+                        limit,
+                    )
+                    .await?;
+                    record_group_calls(recorder, catalogue)?;
+                    let file = called
+                        .details
+                        .as_ref()
+                        .and_then(|d| d["filePath"].as_str())
+                        .map(String::from);
+                    match (stopped, mode_of(&called).as_str(), file) {
+                        (true, _, _) => Err(format!("stopped at {} s", limit.as_secs_f64())),
+                        (false, "candidates", Some(file)) => {
+                            let found = read_rows(&link.table, &file);
+                            record_group_calls(recorder, catalogue)?;
+                            found.map(|found| {
+                                rows.insert(link.table.clone(), found);
+                                files.insert(link.table.clone(), file);
+                            })
+                        }
+                        (false, mode, _) => Err(format!("mode {mode}: {}", reason(&called))),
+                    }
+                }
+            },
+        };
+        entries.push(
+            json!({"table": link.table, "seconds": started.elapsed().as_secs_f64(),
+            "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}),
+        );
+    }
+    let (kept, dropped) = catalogue.chain_companions(main, on_page, &rows);
+    record_group_calls(recorder, catalogue)?;
+    recorder.program_event(
+        CHAIN_EVENT,
+        json!({"main": main, "tables": entries,
+            "kept": kept.iter().map(|c| json!({"table": c.id, "overlap": {"places": c.overlap.places,
+                "years": c.overlap.years, "first": c.overlap.first, "last": c.overlap.last}})).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>(),
+            "seconds": began.elapsed().as_secs_f64()}),
+    )?;
+    Ok(kept
+        .into_iter()
+        .filter_map(|link| {
+            let file = files.remove(&link.id)?;
+            Some(ChainFetched { link, file })
+        })
+        .collect())
+}
+
+/// The fetch of one chain link: its table at the main's places (the main's place filter, each code the table holds) and
+/// years, and every dimension of the link's slice at its codes. None when the table holds none of the main's places.
+fn chain_args(
+    main: &Map<String, Value>,
+    table: &TableMeta,
+    slice: &BTreeMap<String, Vec<String>>,
+) -> Option<Map<String, Value>> {
+    let mut args = Map::new();
+    args.insert("dataset".into(), json!(table.id));
+    let place = main
+        .get("filters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|f| f["dimension"] == next_params::GEO_DIM)?;
+    let (_, codes) = table.dims.iter().find(|(d, _)| d == next_params::GEO_DIM)?;
+    let mut places: Vec<String> = Vec::new();
+    for code in place["values"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if let Some(own) =
+            own_code(next_params::GEO_DIM, code, codes).filter(|c| !places.contains(c))
+        {
+            places.push(own);
+        }
+    }
+    if places.is_empty() {
+        return None;
+    }
+    let mut filters = vec![json!({"dimension": next_params::GEO_DIM, "values": places})];
+    filters.extend(
+        slice
+            .iter()
+            .map(|(dim, codes)| json!({"dimension": dim, "values": codes})),
+    );
+    args.insert("filters".into(), Value::Array(filters));
+    if let Some(years) = main.get("years") {
+        args.insert("years".into(), years.clone());
+    }
+    Some(args)
 }
 
 /// The mode newsroom_data_prepare returned, or "error" for an error result.
@@ -5979,15 +6429,16 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     // a whole class the new route cannot answer, read by the knowledge group from the question's words (user 11-08 item 1):
     // stopped before the catalogue is searched, nothing searched or fetched; the group's call is recorded under the search
     // answer, as every group call follows a model answer (the program never calls on its own, Stop::NoModelParent)
+    let mut held_for = None;
     if steps.is_empty() {
         let refused =
             catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
         record_group_calls(recorder, catalogue)?;
-        if let Some(r) = refused {
-            return Err(Stop::NoTable(format!(
-                "the question is out of scope ({}, \"{}\"): {}",
-                r.class, r.hit, r.reason_zh
-            )));
+        held_for = refused.as_ref().and_then(|r| r.target_year);
+        // a refusal held for a target year goes on to the page step, which stops with it unless the page runs against
+        // that year's target (crate::next_run::page_of_block, owner 11-22 23:59)
+        if let Some(r) = refused.filter(|r| r.target_year.is_none()) {
+            return Err(scope_stop(&r));
         }
     }
     let plan = if steps.is_empty() {
@@ -6140,6 +6591,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         if let Some(d) = d.as_mut() {
             d.window = ring_window(d, i + 1, &places, this_year, catalogue);
             d.named_years = next_params::question_years(question, this_year);
+            d.with_whole = held_for.is_some();
             d.ranked = rank_asked.clone();
         }
     }
@@ -6569,6 +7021,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     }
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
+    let mut chain_files = Vec::new();
     if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
         let room = PAGE_TABLES_MAX.saturating_sub(tables.len());
         let found = companion_tables(
@@ -6589,6 +7042,16 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             companion_titles.insert(kept.id.clone(), (kept.title, kept.role));
             companion_files.push((kept.id.clone(), kept.file));
             tables.push((kept.id, kept.args, kept.sheet, kept.candidates));
+        }
+        // the main's event chain, for a story page: read by the page step only, never offered as claims; fetched only for a
+        // question held for a target year, the one a story page answers (review 11-23: any other question would pay its
+        // fetches and never read them)
+        if held_for.is_some() {
+            let on_page: Vec<&str> = tables.iter().map(|(id, _, _, _)| id.as_str()).collect();
+            chain_files = chain_tables(
+                recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel,
+            )
+            .await?;
         }
     }
     let mut lines = vec![format!("Question: {question}")];
@@ -6698,6 +7161,11 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             },
             companions: if prepared.is_empty() {
                 std::mem::take(&mut companion_files)
+            } else {
+                Vec::new()
+            },
+            chain: if prepared.is_empty() {
+                std::mem::take(&mut chain_files)
             } else {
                 Vec::new()
             },
@@ -7232,7 +7700,7 @@ mod tests {
     }
 
     fn text_ask() -> Ask {
-        Ask::Text {
+        Ask::Text(Box::new(TextAsk {
             fields: BTreeMap::from([
                 ("1".to_string(), "{max.v.geo}最多（{max.v}）".to_string()),
                 ("2".to_string(), "各国发电量".to_string()),
@@ -7248,7 +7716,8 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
-        }
+            terms: Vec::new(),
+        }))
     }
 
     #[test]
@@ -8052,19 +8521,22 @@ mod tests {
             "1".to_string(),
             "{first.name}在{first.year}最高".to_string(),
         )]);
-        let ask = |periods: &[&str]| Ask::Text {
-            fields: fields.clone(),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: periods.iter().map(|p| p.to_string()).collect(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |periods: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: fields.clone(),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: periods.iter().map(|p| p.to_string()).collect(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -8109,22 +8581,25 @@ mod tests {
         ] {
             assert_eq!(level_question(change), None, "{change}");
         }
-        let ask = |changes: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "变化多大".to_string()),
-                ("2".to_string(), "各自变了多少".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: changes.iter().map(|c| c.to_string()).collect(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |changes: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "变化多大".to_string()),
+                    ("2".to_string(), "各自变了多少".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: changes.iter().map(|c| c.to_string()).collect(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -8185,19 +8660,22 @@ mod tests {
     /// as the example; a wording with none passes, and so does every field of a page with no level title.
     #[test]
     fn a_change_word_is_refused_in_a_level_title() {
-        let ask = |levels: &[&str]| Ask::Text {
-            fields: BTreeMap::from([("1".to_string(), "各国温室气体排放量".to_string())]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: levels.iter().map(|c| c.to_string()).collect(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |levels: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "各国温室气体排放量".to_string())]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: levels.iter().map(|c| c.to_string()).collect(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         for (title, word) in [
@@ -8285,22 +8763,25 @@ mod tests {
     /// drafted, and every field of a page not scoped, pass as before.
     #[test]
     fn a_ranking_word_is_refused_only_in_a_reworded_field_of_a_scoped_page() {
-        let ask = |scoped: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "变化多大".to_string()),
-                ("2".to_string(), "{max.v.geo}最多".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: vec!["1".to_string()],
-            levels: Vec::new(),
-            scoped: scoped.iter().map(|s| s.to_string()).collect(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |scoped: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "变化多大".to_string()),
+                    ("2".to_string(), "{max.v.geo}最多".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: vec!["1".to_string()],
+                levels: Vec::new(),
+                scoped: scoped.iter().map(|s| s.to_string()).collect(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -8357,22 +8838,25 @@ mod tests {
     /// passes the title check on a change page that is scoped, so on every page kind.
     #[test]
     fn a_question_in_the_title_field_is_refused_and_a_label_or_a_conclusion_passes() {
-        let ask = |titles: &[&str], changes: &[&str], scoped: &[&str]| Ask::Text {
-            fields: BTreeMap::from([
-                ("1".to_string(), "各方的变化".to_string()),
-                ("2".to_string(), "各自变化的方向和幅度".to_string()),
-            ]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: changes.iter().map(|c| c.to_string()).collect(),
-            levels: Vec::new(),
-            scoped: scoped.iter().map(|s| s.to_string()).collect(),
-            titles: titles.iter().map(|t| t.to_string()).collect(),
-            mark: String::new(),
-            places: None,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |titles: &[&str], changes: &[&str], scoped: &[&str]| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([
+                    ("1".to_string(), "各方的变化".to_string()),
+                    ("2".to_string(), "各自变化的方向和幅度".to_string()),
+                ]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: changes.iter().map(|c| c.to_string()).collect(),
+                levels: Vec::new(),
+                scoped: scoped.iter().map(|s| s.to_string()).collect(),
+                titles: titles.iter().map(|t| t.to_string()).collect(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -8669,24 +9153,83 @@ mod tests {
         }
     }
 
+    /// Dev n15 ("under five"), e11 (PM2.5) and n10 ("per hundred people"), rounds 17-19: the stand-ins left the term the question asked out of the
+    /// chart names, reading "no number" as barring it. The question's own number-free terms are named on the text ask (the
+    /// fields' and the names' descriptions), and a name that keeps one passes the checks as before; a question with none
+    /// adds nothing.
+    #[test]
+    fn the_text_ask_names_the_question_s_own_number_free_terms() {
+        assert_eq!(
+            number_free_terms("2023 年各国五岁以下儿童死亡率排名"),
+            vec!["五岁以下".to_string()]
+        );
+        assert_eq!(
+            number_free_terms("2010 年以来，中国、印度、印尼、泰国的 PM2.5 年均浓度各降了多少？"),
+            vec!["PM2.5".to_string()]
+        );
+        assert_eq!(
+            number_free_terms("二十国集团里，2023 年每百人移动电话签约数最高的五个是谁？"),
+            vec!["每百人".to_string()]
+        );
+        assert!(number_free_terms("欧盟各国失业率最新排名").is_empty());
+        let ask = |terms: Vec<String>| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+                slots: vec!["s1".to_string()],
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places: None,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms,
+            }))
+        };
+        let with = ask(vec!["五岁以下".to_string()]);
+        let schema = with.schema();
+        for key in ["text", "names"] {
+            let said = schema["properties"][key]["description"].as_str().unwrap();
+            assert!(
+                said.contains("the question's own terms 五岁以下 name no number"),
+                "{key}: {said}"
+            );
+        }
+        let without = ask(Vec::new()).schema();
+        assert!(!without["properties"]["names"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("own terms"));
+        // the checks are as before: the term passes in a name, a bare age does not
+        let named = |n: &str| json!({"step": "text", "text": {}, "names": {"s1": n}});
+        assert!(with.check(&named("五岁以下儿童死亡率")).is_ok());
+        assert!(with.check(&named("五岁儿童死亡率")).is_err());
+    }
+
     /// User 11-07: a count of places (三国, 两国, 四个经济体, 5个国家) is a number, allowed on the text step only when it is the
     /// number of places the page draws; at any other count, or an unknown one, it is refused as before, and a numeral that
     /// counts no place stays a number.
     #[test]
     fn a_count_of_places_passes_only_when_the_page_draws_that_many() {
-        let ask = |places: Option<usize>| Ask::Text {
-            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: Vec::new(),
-            mark: String::new(),
-            places,
-            members: Vec::new(),
-            unasked: Vec::new(),
+        let ask = |places: Option<usize>| {
+            Ask::Text(Box::new(TextAsk {
+                fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: Vec::new(),
+                mark: String::new(),
+                places,
+                members: Vec::new(),
+                unasked: Vec::new(),
+                terms: Vec::new(),
+            }))
         };
         let said = |text: &str| json!({"step": "text", "text": {"1": text}, "names": {}});
         for (text, n) in [
@@ -8745,7 +9288,7 @@ mod tests {
     /// checked as usual; any other string, and every other key, is left as sent.
     #[test]
     fn a_stringified_object_is_decoded_once_and_only_where_an_object_is_due() {
-        let text = Ask::Text {
+        let text = Ask::Text(Box::new(TextAsk {
             fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
             slots: vec!["s1".into()],
             numbers: Vec::new(),
@@ -8758,7 +9301,8 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
-        };
+            terms: Vec::new(),
+        }));
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
         assert!(text.check(&good).is_ok());
@@ -9748,7 +10292,7 @@ mod tests {
         assert!(of_type(&drove.events, YEARS_BACK_EVENT).is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_source_that_does_not_answer_is_fetched_again_twice_then_stops_as_unreachable() {
         let _command = crate::group_guard::command_for_test("investigate");
         let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
@@ -9888,6 +10432,110 @@ mod tests {
             );
             assert_eq!(drove.tools.args.len(), fetches);
         }
+    }
+
+    /// I17: a server error (HTTP 5xx) waits 10 s then 20 s before the next fetch, any other failure 2 s then 4 s, and the
+    /// circuit's three fetches are the same either way. The clock is paused, so the time is read off it, never slept.
+    #[tokio::test(start_paused = true)]
+    async fn a_server_error_waits_longer_than_other_failures_and_the_event_says_why() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
+        let fetch = |details: Vec<Value>| {
+            drive(
+                &[],
+                vec![
+                    search_reply(),
+                    call("toolu_r", json!({"step": "table", "pick": [4]})),
+                ],
+                details,
+                offers(),
+            )
+        };
+        let waits = |drove: &Drove| {
+            of_type(&drove.events, FETCH_RETRY_EVENT)
+                .iter()
+                .map(|e| (e["waited_ms"].clone(), e["server_status"].clone()))
+                .collect::<Vec<_>>()
+        };
+        let timed = |details: Vec<Value>| async {
+            let began = tokio::time::Instant::now();
+            let drove = fetch(details).await;
+            (drove, began.elapsed())
+        };
+        let secs = std::time::Duration::from_secs;
+        // 1. a 500 and then the source answers: one retry after 10 s, the status in the event
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 500 (1/3)"),
+            json!({"mode": "no_candidates"}),
+        ])
+        .await;
+        assert!(
+            matches!(drove.result, Err(Stop::TooFewClaims { .. })),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(drove.tools.args.len(), 2);
+        assert_eq!(waits(&drove), [(json!(10_000), json!(500))]);
+        assert_eq!(took, secs(10));
+        // 2. a server error on every fetch: three fetches (the circuit's limit), waits 10 s and 20 s, then the stop
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 500 (1/3)"),
+            failed("returned HTTP 502 (2/3)"),
+            failed("returned HTTP 503 (3/3)"),
+        ])
+        .await;
+        assert!(
+            matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(drove.tools.args.len(), 3);
+        assert_eq!(
+            waits(&drove),
+            [(json!(10_000), json!(500)), (json!(20_000), json!(502))]
+        );
+        assert_eq!(took, secs(30));
+        // 3. a connection error, a timeout and a 429 keep 2 s and 4 s, with no server status in the event
+        for first in [
+            "could not connect to the source",
+            "timed out or was cancelled (1/3)",
+            "returned HTTP 429 (1/3)",
+        ] {
+            let (drove, took) = timed(vec![
+                failed(first),
+                failed("timed out or was cancelled (2/3)"),
+                failed("timed out or was cancelled (3/3)"),
+            ])
+            .await;
+            assert!(
+                matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })),
+                "{first}: {:?}",
+                drove.result
+            );
+            assert_eq!(
+                waits(&drove),
+                [(json!(2_000), Value::Null), (json!(4_000), Value::Null)]
+            );
+            assert_eq!(took, secs(6), "{first}");
+        }
+        // 4. each wait follows the failure before it: a 503, then a timeout, then the source answers
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 503 (1/3)"),
+            failed("timed out or was cancelled (2/3)"),
+            json!({"mode": "no_candidates"}),
+        ])
+        .await;
+        assert_eq!(drove.tools.args.len(), 3);
+        assert_eq!(
+            waits(&drove),
+            [(json!(10_000), json!(503)), (json!(4_000), Value::Null)]
+        );
+        assert_eq!(took, secs(14));
+        // 5. an answer that is not a server error (404) is not retried at all, and a 4xx is not read as one
+        let (drove, took) = timed(vec![failed("returned HTTP 404 (1/3)")]).await;
+        assert!(waits(&drove).is_empty() && took == secs(0));
+        assert_eq!(http_status_of("returned HTTP 404 (1/3)"), Some(404));
+        assert_eq!(http_status_of("timed out or was cancelled (1/3)"), None);
     }
 
     struct Drove {
@@ -10695,6 +11343,7 @@ mod tests {
                     class: "cause".into(),
                     reason_zh: "原因".into(),
                     hit: "为什么".into(),
+                    target_year: None,
                 })
             }
         }
@@ -13431,6 +14080,7 @@ mod tests {
             refs: &[],
             facts: (&spec, &[], &[]),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         publish_leaf_page(
@@ -14355,27 +15005,30 @@ mod tests {
     #[test]
     fn a_reworded_field_types_no_drawn_name_the_question_does_not_write_and_a_title_says_no_standing(
     ) {
-        let ask = |drafts: &[&str], members: &[&str], question: &str| Ask::Text {
-            fields: drafts
-                .iter()
-                .enumerate()
-                .map(|(i, d)| ((i + 1).to_string(), d.to_string()))
-                .collect(),
-            slots: Vec::new(),
-            numbers: Vec::new(),
-            periods: Vec::new(),
-            changes: Vec::new(),
-            levels: Vec::new(),
-            scoped: Vec::new(),
-            titles: vec!["1".to_string()],
-            mark: String::new(),
-            places: None,
-            members: members.iter().map(|m| m.to_string()).collect(),
-            unasked: members
-                .iter()
-                .filter(|m| !question.contains(**m))
-                .map(|m| m.to_string())
-                .collect(),
+        let ask = |drafts: &[&str], members: &[&str], question: &str| {
+            Ask::Text(Box::new(TextAsk {
+                fields: drafts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| ((i + 1).to_string(), d.to_string()))
+                    .collect(),
+                slots: Vec::new(),
+                numbers: Vec::new(),
+                periods: Vec::new(),
+                changes: Vec::new(),
+                levels: Vec::new(),
+                scoped: Vec::new(),
+                titles: vec!["1".to_string()],
+                mark: String::new(),
+                places: None,
+                members: members.iter().map(|m| m.to_string()).collect(),
+                unasked: members
+                    .iter()
+                    .filter(|m| !question.contains(**m))
+                    .map(|m| m.to_string())
+                    .collect(),
+                terms: Vec::new(),
+            }))
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         // the composition (q3): parts and places, none of them written by the question

@@ -565,6 +565,10 @@ pub struct Draft {
     /// Set by the flow before the pick: the years the question names (question_years), which an annual table's fetch takes
     /// before the program's own last ten years.
     pub named_years: Option<NamedYears>,
+    /// Set by the flow before the pick for a question held for a target year (the scope check's target_year, owner 11-22
+    /// 23:59): the target is set for the region as a whole, so a region's members are fetched with the region's own
+    /// aggregate (EU_AGGREGATE) when the table holds it. False for every other question.
+    pub with_whole: bool,
     /// Set by the flow before the pick: the ranking the question asks for in place of named places (the knowledge group's
     /// rank_asked). With `places_open` and a wb-rank-by.json option ranked by its reference, the program keeps that option's
     /// economies and the count the question writes (ranked_option): "t<n>.places" is not asked.
@@ -621,6 +625,11 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     }
     years.dedup();
     let last = last_years(&chars);
+    // years all after this one (a target's year, as in "how far from the 2030 target") name no years a table holds: no window of the
+    // question's, the program's own (owner 11-22 23:59: only a target year gets this far, the scope check refuses others)
+    if years.iter().all(|y| y.0 > this_year) {
+        years.clear();
+    }
     if let (Some(a), Some(b)) = (
         years.iter().map(|y| y.0).min(),
         years.iter().map(|y| y.0).max(),
@@ -1082,6 +1091,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         named_open,
         window: None,
         named_years: None,
+        with_whole: false,
         ranked: None,
         kept: Vec::new(),
     }
@@ -1484,7 +1494,12 @@ pub fn fill(
                 // A table of the EU as a whole (geo EU27_2020 only, the trade tables): the region is that one code.
                 vec![EU_AGGREGATE.to_string()]
             } else if region {
-                keep(&mut EU27.iter().copied())
+                let whole = [EU_AGGREGATE]
+                    .into_iter()
+                    .filter(|c| draft.with_whole && held(c));
+                let mut members = keep(&mut EU27.iter().copied());
+                members.extend(whole.map(str::to_string));
+                members
             } else if breakdown.is_some() {
                 geo.iter()
                     .map(|(c, _)| c)
@@ -1593,12 +1608,24 @@ pub fn fill(
         // The count the question writes, kept to the registry's cap and the chart's rows over the years; the page prints the
         // count the narrow record keeps, and the event keeps the count asked.
         let asked = fixed.and(draft.ranked.as_ref());
-        let kept_n = asked
-            .and_then(|r| r.n)
-            .unwrap_or(*cap)
-            .min(*cap)
-            .min(MAX_CHART_ROWS / years)
-            .max(1);
+        // A count the question writes is kept whole up to the chart's rows, not to the registry's cap (that is the count
+        // for a ranking with none written). The program's own default years (the last ten) shorten to fit it, never below
+        // the years the rank year is read from; years the question names or a window it asks stay as they are, and the
+        // count is then held to the rows they leave.
+        let years = match asked.and_then(|r| r.n) {
+            Some(want) if rule == "annual" && want.max(1) * years > MAX_CHART_ROWS => {
+                let reach = (end - latest + 1).max(1) as usize;
+                let fit = (MAX_CHART_ROWS / want.max(1)).max(reach).min(years);
+                start = end - fit as i32 + 1;
+                fit
+            }
+            _ => years,
+        };
+        let kept_n = match asked.and_then(|r| r.n) {
+            Some(want) => want.min(MAX_CHART_ROWS / years),
+            None => (*cap).min(MAX_CHART_ROWS / years),
+        }
+        .max(1);
         let from = if asked.is_some() { "question" } else { "pick" };
         let asked = asked.map(|r| json!({"phrase": r.phrase, "by": r.by, "n": r.n}));
         narrow = json!({"dimension": WB_PLACE_DIM, "rule": rank.rule, "by": rank.by, "n": kept_n,
@@ -3046,6 +3073,47 @@ mod tests {
             (&json!("annual"), &json!(ANNUAL_YEARS))
         );
         assert_eq!(filled.event["open"], Value::Null);
+        // owner 11-22 23:59: a question held for a target year (set for the EU as a whole) fetches the members and the
+        // aggregate, at the program's own years: the target's year names no window
+        let whole = Draft {
+            with_whole: true,
+            named_years: question_years(
+                "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远",
+                2026,
+            ),
+            ..draft.clone()
+        };
+        assert_eq!(whole.named_years, None);
+        let filled = fill(
+            &whole,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 1)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
+        assert_eq!(
+            filter(&filled, "geo").unwrap(),
+            ["BE", "DE", "EL", "EU27_2020"]
+        );
+        assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
+    }
+
+    /// Owner 11-22 23:59: years after this one alone name no window (a target's year); beside a past year they still end a
+    /// span, which the fill keeps to the table's last year.
+    #[test]
+    fn a_future_year_alone_names_no_years() {
+        for q in ["离 2030 年目标还有多远", "2030年和2050年的目标"] {
+            assert_eq!(question_years(q, 2026), None, "{q}");
+        }
+        assert_eq!(
+            question_years("近十年的变化，离 2030 年目标还有多远", 2026),
+            Some(NamedYears::Last(10))
+        );
+        assert_eq!(
+            question_years("2015 年以来离 2030 年目标还差多少", 2026),
+            Some(NamedYears::Span(2015, 2030))
+        );
     }
 
     #[test]
@@ -3471,10 +3539,31 @@ mod tests {
                 narrow(&five, &[("t1.places", 1)]).args["narrow"],
                 filled.args["narrow"]
             );
-            // asked ten: the registry's cap keeps eight, the event keeps the ten asked
+            // asked ten: all ten are kept, the registry's cap of eight is for a count not written; the program's ten
+            // years shorten to the eight the rows allow, one named year stays one
             let ten = narrow(&ranked("SP.POP.TOTL", Some(10), years), &[]);
-            assert_eq!(ten.args["narrow"]["n"], 8);
+            assert_eq!(ten.args["narrow"]["n"], 10, "{years:?}");
             assert_eq!(ten.event["narrow"]["asked"]["n"], 10);
+            let span = |f: &Filled| {
+                f.args["years"]["end"].as_i64().unwrap()
+                    - f.args["years"]["start"].as_i64().unwrap()
+                    + 1
+            };
+            let default_years = narrow(&five, &[]);
+            assert_eq!(span(&default_years), if years.is_none() { 10 } else { 1 });
+            assert_eq!(span(&ten), if years.is_none() { 8 } else { 1 }, "{years:?}");
+            // the rows hold what is kept times the years
+            assert!(
+                ten.args["narrow"]["n"].as_u64().unwrap() * span(&ten) as u64
+                    <= MAX_CHART_ROWS as u64
+            );
+            // a count past the chart's rows is held to them
+            let huge = narrow(&ranked("SP.POP.TOTL", Some(500), years), &[]);
+            assert!(
+                huge.args["narrow"]["n"].as_u64().unwrap() * span(&huge) as u64
+                    <= MAX_CHART_ROWS as u64
+            );
+            assert_eq!(huge.event["narrow"]["asked"]["n"], 500);
             // no count written (q4): the cap
             let some = narrow(&ranked("SP.POP.TOTL", None, years), &[]);
             assert_eq!(some.args["narrow"]["n"], 8);
@@ -3487,7 +3576,25 @@ mod tests {
             );
             let shape = predicted_shape(&five, 1, &picks(&[]), &[], 2026, &|_| None).unwrap();
             assert_eq!(shape.dims[0].members, 5);
+            let ten_draft = ranked("SP.POP.TOTL", Some(10), years);
+            let shape = predicted_shape(&ten_draft, 1, &picks(&[]), &[], 2026, &|_| None).unwrap();
+            assert_eq!(shape.dims[0].members, 10, "{years:?}");
+            assert!(shape.dims.iter().map(|d| d.members).product::<usize>() <= MAX_CHART_ROWS);
         }
+    }
+
+    /// Years the question names stay as they are: ten asked over a named ten-year span keeps the eight its rows allow.
+    #[test]
+    fn a_named_span_is_not_shortened_for_the_count_asked() {
+        let d = Draft {
+            ranked: asked("SP.POP.TOTL", Some(10)),
+            named_years: Some(NamedYears::Span(2015, 2024)),
+            ..draft(world_bank(217), &[], &[])
+        };
+        let filled = fill(&d, 1, &picks(&[]), &[], 2026).unwrap();
+        assert_eq!(filled.args["narrow"]["n"], 8);
+        assert_eq!(filled.args["years"]["start"], 2015);
+        assert_eq!(filled.args["years"]["end"], 2024);
     }
 
     /// Must fail: a ranking by a reference wb-rank-by.json does not register is not the program's (the item is asked as

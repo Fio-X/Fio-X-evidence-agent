@@ -35,6 +35,26 @@ def digit(text):
     """Whether a text holds a digit (any numeric character, as layer 1 counts one) outside its {key} placeholders."""
     return any(unicodedata.category(ch) in ("Nd", "Nl", "No") for ch in re.sub(r"\{[A-Za-z_][\w.]*\}", "", text))
 
+def long_unit(u):
+    """Whether a number's unit is words (a unit name), not nothing or the percent sign that is the number's own mark."""
+    return u.strip() not in ("", "%")
+
+
+def unit_runs(spec, F, text):
+    """For each number placeholder {key} of text in order (no part: {key.n} and {key.t} are no such number): True when its unit is left
+    off. In a run of numbers of one unit that is words (two or more in a sentence, nothing between them but words, names, years and
+    numbers with no unit), the unit follows only the last; a number of another unit (a ratio, a percent) or a sentence's end ends a run."""
+    flags, prev = [], None
+    for mo in re.finditer(r"\{([a-z0-9_.]+)\}|[" + re.escape(word("sentence.end")) + "]", text):   # the marks that end a sentence
+        if mo.group(1) is None: prev = None; continue
+        k, _, part = mo.group(1).partition(".")
+        if part: continue
+        u = unit(spec, F[k]).strip() if k in F else ""
+        if prev is not None and prev[1] == u and long_unit(u): flags[prev[0]] = True
+        flags.append(False); prev = (len(flags) - 1, u)
+    return flags
+
+
 def worded(spec, F, which, wording):
     """A drafted wording (which: "dek", "unit" or "notes.<i>", the hero's i-th note) filled like any text. With a ledger it prints from layer 1's segments:
     {"w": words} filled, {"src": entry} the date entry marked; segments that do not spell the wording, or leave a digit
@@ -48,7 +68,8 @@ def worded(spec, F, which, wording):
     if "".join(s["w"] if "w" in s else text(s["src"]) for s in segs) != wording:
         raise Refused(f"{which}: the request's segments do not spell {wording!r}")
     if any(digit(s["w"]) for s in segs if "w" in s): raise Refused(f"{which}: a segment's words hold a digit")
-    return "".join(fill(spec, F, s["w"]) if "w" in s else entry(s["src"], "span", None) for s in segs)
+    flags = iter(unit_runs(spec, F, wording))   # the runs of one unit over the whole wording, whichever segment each number is in
+    return "".join(fill(spec, F, s["w"], flags) if "w" in s else entry(s["src"], "span", None) for s in segs)
 
 def members():
     """The aggregate's member codes the request gives; a query that leaves the members out refuses without them."""
@@ -68,7 +89,9 @@ def records(path):
     return list(csv.DictReader(open(os.path.join(D, path), encoding="utf-8")))
 
 def load(spec):
-    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"]}
+    # a spec table the request holds no row of is a reference only (a law's clause the footer names): nothing to load; a fact
+    # that reads it still stops, at T[q["table"]]
+    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"] if name in TABLES}
     T = {}
     for name, t in spec["tables"].items():
         rows = [r for r in csv.DictReader(open(os.path.join(D, t["csv"]))) if r.get("OBS_VALUE") not in ("", None)]
@@ -103,14 +126,38 @@ def ordered(facts):
     return out
 
 
+# Operators the program's layer 1 alone works out (next_facts): a leaf page's request carries each one's text in its ledger
+# (fact:<k>, its bare number fact:<k>.n and, where it has a period, fact:<k>.t.y), and this child reads them from there. With no
+# ledger (a page made from files) the child has no way to work them out and refuses, naming the operator.
+PROGRAM_OPS = ("per_year", "cagr", "line_at", "reach_year", "step_max", "first_above", "spread", "group_change")
+
+
+def from_ledger(key, q):
+    """A fact of an operator the program alone works out, as the ledger holds it: its format, its bare number as a float
+    (the printed one, rounded as printed) and its period; a ledger without its number refuses."""
+    if LEDGER is None:
+        raise Refused(f"fact {key}: the operator {q.get('op')} is worked out by the program, and this request has no ledger to read it from")
+    n = text(f"fact:{key}.n")
+    try:
+        v = float(n.replace(",", ""))
+    except ValueError:
+        raise Refused(f"fact {key}: the ledger's number {n!r} is no number")
+    out = {"v": v, "fmt": q.get("fmt", "pct"), "src": f"ledger({key})"}
+    if f"fact:{key}.t.y" in LEDGER: out["t"] = text(f"fact:{key}.t.y")
+    return out
+
+
 def compute(spec, T):
     F = {}
     for key in ordered(spec["facts"]):
         q = spec["facts"][key]
         op = q.get("op", "value")
+        if op in PROGRAM_OPS:
+            F[key] = from_ledger(key, q); continue
         if op in DERIVED:
             a, b = F[q["a"]]["v"], F[q["b"]]["v"]
-            v = {"share": a / b, "change": a / b - 1, "times": a / b, "minus": a - b, "plus": a + b}[op]
+            # only the fact's own op is worked out: a difference whose second number is 0 divides nothing
+            v = {"share": lambda: a / b, "change": lambda: a / b - 1, "times": lambda: a / b, "minus": lambda: a - b, "plus": lambda: a + b}[op]()
             F[key] = {"v": v, "fmt": q.get("fmt", "pct"), "src": f'{op}({q["a"]},{q["b"]})'}; continue
         rows = _rows(T, q) if "table" in q else []
         if op == "mean":  # average over the periods that start with a prefix, e.g. the 12 months of one year
@@ -123,10 +170,16 @@ def compute(spec, T):
             if q.get("to"): ser = {t: v for t, v in ser.items() if t <= q["to"]}
             t = max(ser, key=ser.get) if op == "peak" else min(ser, key=ser.get) if op == "low" else max(ser)
             F[key] = {"v": ser[t], "t": t, "fmt": q["fmt"], "src": q}; continue
-        if op == "count":  # members whose a-share of b is above a threshold, at one time
-            num = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["a"]), q["time"])}
-            den = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
-            hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
+        if op == "count":  # members whose a-share of b is above a threshold, or (below, no b) whose own value is under a line, at one time
+            by = q.get("by") or "geo"
+            num = {r[by]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["a"]), q["time"])}
+            if "below" in q and "b" not in q:
+                gone = [g for g in members() if g not in num]
+                if gone: raise Refused(f"{key}: count has no row of a at {q['time']} for {', '.join(gone)}")
+                hit = sorted(g for g in members() if num[g] < q["below"])
+            else:
+                den = {r[by]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
+                hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
             F[key] = {"v": len(hit), "fmt": "n", "who": hit, "src": q}; continue
         if op == "n":  # how many codes of `by` the rows hold at one time (the places a chart draws)
             F[key] = {"v": len({r[q["by"]] for r in _sel(rows, q["time"])}), "fmt": q["fmt"], "src": q}; continue
@@ -149,13 +202,17 @@ def compute(spec, T):
         F[key] = {"v": v, "fmt": q["fmt"], "src": q}
     return F
 
+def unsigned_zero(s):
+    """A number that rounded to 0 prints without its minus ("-0.0" is "0.0"), as next_facts::fixed prints it."""
+    return s[1:] if s.startswith("-") and not any(c in "123456789" for c in s) else s
+
 def fmt(spec, f, bare=False):
     """bare: the number without its unit suffix, for layouts that state the unit once."""
     m = spec["fmts"].get(f["fmt"], {})
     if f["fmt"] == "pct": return f'{abs(f["v"]) * 100:.0f}' + ("" if bare else "%")
-    if f["fmt"] == "n": return f'{f["v"]:.0f}'
-    if f["fmt"] == "x": return f'{f["v"]:.1f}'
-    s = f'{f["v"] * m.get("scale", 1):,.{m.get("dec", 0)}f}'
+    if f["fmt"] == "n": return unsigned_zero(f'{f["v"]:.0f}')
+    if f["fmt"] == "x": return unsigned_zero(f'{f["v"]:.1f}')
+    s = unsigned_zero(f'{f["v"] * m.get("scale", 1):,.{m.get("dec", 0)}f}')
     return s if bare else s + m.get("suffix", "")
 
 def unit(spec, f):
@@ -179,10 +236,13 @@ def period_words(stem):
         return word("date.half", y=y, h=entry(f"{stem}.h", "span", None))
     return word("date.y", y=y)
 
-def fill(spec, F, text):
+def fill(spec, F, text, flags=None):
     """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit. With a ledger
-    only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts."""
+    only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts.
+    In a run of numbers of one unit that is words, only the run's last {key} writes its unit (unit_runs; `flags`, an iterator
+    over a whole wording's, when text is one segment of it)."""
     import re
+    if flags is None: flags = iter(unit_runs(spec, F, text))
     def name(mo):
         # {name.<code>}: a place's (or a part's) name as layer 1 names it (next_run NAME_PLACEHOLDER), marked with its name row
         # so the page checks read which place the words name: with a ledger the one name row of the code (a src ending
@@ -199,12 +259,13 @@ def fill(spec, F, text):
     text = re.sub(r"\{name\.([A-Za-z0-9_]+)\}", name, text)
     def sub(mo):
         k, _, part = mo.group(1).partition(".")
+        off = not part and next(flags, False)   # a number before the last of its run of one unit: the number alone
         if LEDGER is not None:
             if part == "t": return period(spec, k)
             if part == "n": return entry(f"fact:{k}.n")
-            return f'<b class="n">{entry(f"fact:{k}.n", "span", None)}{html.escape(unit(spec, F[k]), quote=False)}</b>'
+            return f'<b class="n">{entry(f"fact:{k}.n", "span", None)}{"" if off else html.escape(unit(spec, F[k]), quote=False)}</b>'
         if part == "t": return spec["fmts"]["time"].get("prefix", "") + tlabel(F[k]["t"])
-        return f'<b class="n">{fmt(spec, F[k], bare=part == "n")}</b>'
+        return f'<b class="n">{fmt(spec, F[k], bare=part == "n" or off)}</b>'
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
 
 def placed(text):

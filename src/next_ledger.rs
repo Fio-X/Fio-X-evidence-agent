@@ -1976,6 +1976,10 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "facts::member_fmt",
             "facts::printed_value",
             "facts::minus_family",
+            "facts::year_of",
+            "facts::of_facts_over_years",
+            "facts::period_totals",
+            "facts::over_periods",
             "facts::select",
             "facts::word",
             "facts::members",
@@ -2003,6 +2007,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "facts::read_entry",
             "facts::reads_back",
             "facts::leaf_ledger",
+            "facts::value_year",
             "facts::who",
             "facts::text",
             "facts::scaled",
@@ -2110,6 +2115,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "tree_gen::no_word",
             "tree_gen::codes_in",
             "tree_gen::filter_codes",
+            "tree_gen::reads_absent",
+            "tree_gen::present_candidates",
+            "tree_gen::path_held",
         ],
     ),
     (
@@ -2177,6 +2185,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
         &[
             "tree::recipe_roles",
             "tree::reference_legend_gaps",
+            "tree::leaf_recipe_gaps",
             "tree::reference_legend",
             "tree::element_at",
             "tree::pieces",
@@ -2579,6 +2588,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ),
     // an illustration strip is line art in the page's colours only, as wide as asked
     ("leaf.strip", "", &["leaf::strip_faults", "leaf::strip"]),
+    ("leaf.hero", "", &["leaf::hero_faults", "leaf::hero"]),
+    // the story findings child answers in time and does not refuse; what it declares is checked as any fact (next_facts)
+    ("leaf.story", "", &["leaf::story"]),
     // the bake changes no text and no mark of the page
     ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
     // the whole page as written: no placeholder left, no month read from two periods, the ready script Rust's alone
@@ -2600,8 +2612,13 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
         &["leaf::places_answered", "leaf::entry_places"],
     ),
     // a page for a country group says the member basis its request keeps (knowledge group words), year and count from its
-    // entries, the count at that year and over the members only
-    ("leaf.member_basis", "", &["leaf::basis_said"]),
+    // entries, the count at that year and over the members only; a member left out for asking the first or the last n held
+    // to a value no better than any drawn (cut_said)
+    (
+        "leaf.member_basis",
+        "",
+        &["leaf::basis_said", "leaf::cut_said"],
+    ),
     // the group command (next_visual.rs): each external layer prints the geometry the core placed
     (
         "visual.drawn_check",
@@ -2626,6 +2643,11 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ),
     // the strip's piece set in the page palette's colours
     ("visual.strip_palette", "", &["visual::illus_strip"]),
+    (
+        "visual.hero_pieces",
+        "",
+        &["visual::illus_hero", "visual::pick_set"],
+    ),
     // the map label points the binary embeds: each on the globe, else the table is refused
     ("visual.label_points", "", &["visual::label_points"]),
     // a fill of a registered recipe: no stray knob, every named row a name row with a text, every map point a table's
@@ -2681,7 +2703,10 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 /// declarations and expansions the checks then hold, child processes, and the chart matcher's ranking.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
+    "visual::measure_family",
     "tree_gen::page_scale",
+    "tree_gen::code_ok",
+    "tree_gen::tree_tables",
     "ledger::name_src",
     "ledger::point_entry",
     "ledger::dropped_entry",
@@ -2749,6 +2774,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "leaf::sampled",
     "leaf::node",
     "leaf::python",
+    "leaf::drawn_as", // the scene names of the pieces the page was given, passed on as the child said them: no check
     "leaf::leaves",
     "leaf::word",
     "leaf::words",

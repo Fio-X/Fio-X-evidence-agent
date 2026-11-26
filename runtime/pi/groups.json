@@ -407,6 +407,11 @@
    "note": "Second-layer JS nodes (fill and draw), started by the visual group's entry only (next_visual::call -> next_leaf runner). Ownership only; what they may touch is cross_calls.node_rule."
   },
   {
+   "prefix": "runtime/illus_hero/",
+   "group": "visual",
+   "note": "The opening illustration child (next_leaf::hero, started by the visual group's entry only): its registry, Blender scene, painting, parts and the paper and brush textures (CC0 scans, cropped). Ownership only; no cross-group call is allowed by this rule."
+  },
+  {
    "prefix": "runtime/leaves_py/",
    "suffix": ".py",
    "group": "visual",
@@ -901,6 +906,10 @@
    "group": "knowledge",
    "note": "New route: the quantities a Chinese question can ask for, each with its Chinese words, page name, English search words and table id prefixes. Catalogue data read by l5geo.rs (include_str), which lists the asked quantities in its ranking and keeps one offered table per asked quantity when a question asks for two or more; a question no word matches ranks as without the file. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/topic-chains.json": {
+   "group": "knowledge",
+   "note": "New route: the event chains of a long story page, each a main quantity (a family of measure-families.json) with the ordered links that follow it (Eurostat table, default slice, tag, position in the chain). Catalogue data read by next_companion.rs (include_str) for chain_companions, which keeps a link only when its rows share places and years with the main table; the same-topic companion rules do not read it. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/wb-rank-by.json": {
    "group": "agent",
    "note": "New route: the registered options for narrowing a World Bank table with every country open (n, the rank-year share, each option's rule, reference indicator and wording). Read by next_params.rs, next_run.rs and newsroom.ts, all agent group. Ownership only; no cross-group call is allowed by this row."
@@ -1107,6 +1116,30 @@
    "group": "knowledge",
    "note": "New route, data side: the companion tables a page adds to its main table (same catalogue folder or indicator family, kept only when the fetched rows overlap at country level). Pure; reads the catalogue's original files through l5geo's Raw. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_targets.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the legal targets a story page runs against (EU acts' numbers for the Union as a whole), read from targets.json and checked against the stored excerpt of the act before any row is given out; the rows come out in the flow group's target-row format. Pure; the registry and excerpts are compiled in. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/targets.json": {
+   "group": "knowledge",
+   "note": "New route: the legal targets (id, the Eurostat slices that measure them, geo, year, value as the act prints it, type, and the source with its quoted sentence and hashes). Catalogue data read by next_targets.rs (include_str); an entry the act's excerpt does not back stops the registry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/target-sources/32023L2413.txt": {
+   "group": "knowledge",
+   "note": "New route: the stored excerpt of Directive (EU) 2023/2413 (Article 3(1) of Directive 2018/2001 as replaced), the text targets.json's 2030 renewable share is checked against; its hash is in the entry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/target-sources/32023L1791.txt": {
+   "group": "knowledge",
+   "note": "New route: the stored excerpt of Directive (EU) 2023/1791 (Article 4(1) and its primary-energy sentence), the text targets.json's 2030 final energy consumption ceiling is checked against; its hash is in the entry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/m49-regions.json": {
+   "group": "knowledge",
+   "note": "New route: the UN M49 standard as data (each country or area with an ISO code, its M49 region, sub-region and intermediate region, and the English and Chinese names of those groups as the UN prints them), for the knowledge group's grouping of countries (EU members by European sub-region, World Bank economies by their continent's sub-region). Read from the two UN CSVs it names (kept outside the repository; only their names and sha256 are recorded), checked row by row in scripts/test_m49_regions.py when the originals are given and for self-consistency always. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/m49-overrides.json": {
+   "group": "knowledge",
+   "note": "New route: the knowledge group's decisions over m49-regions.json (a country placed in another M49 sub-region than the UN's when it would otherwise stand alone in its own, with the reason), read with it by next_knowledge.rs M49Groups. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/classify.rs": {
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -1192,6 +1225,14 @@
   "runtime/leaves_js/pieces-energy.json": {
    "group": "visual",
    "note": "New route: the energy piece set's description (its pieces, cell widths and the tables it fits), read by next_visual.rs (include_str) to pick a set for the page; the set names its module for illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/pieces-people.json": {
+   "group": "visual",
+   "note": "New route: the people piece set's description (the tables it fits and the hero block that sends them to the people renderer), read by next_visual.rs (include_str) to pick a set for the page; its strip falls back to the energy module. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/pieces-economy.json": {
+   "group": "visual",
+   "note": "New route: the economy piece set's description (the tables it fits and the hero block that sends them to the scene renderer), read by next_visual.rs (include_str) to pick a set for the page; its strip draws the trade pieces of the energy module. Ownership only; no cross-group call is allowed by this row."
   },
   "runtime/leaves_js/roughjs-4.6.6.cjs.js": {
    "group": "visual",
@@ -1324,6 +1365,46 @@
     "kind": "run_record",
     "exact": "runtime/leaves_js/",
     "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the new route's illustration strip child: a folder of the run bundle, no content of its own. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the opening illustration child: a folder of the run bundle, no content of its own. Listed first so the folder rule is read before the files'."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/assets/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the child's textures: a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/line/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the hand-drawn line drawing the opening illustration child imports: a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/people/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the people drawing the opening illustration child imports: a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/scene/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the scene renderer the opening illustration child starts (scripts/embed_illus_scene.mjs): a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/scene/people_lib/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the scene renderer the opening illustration child starts (scripts/embed_illus_scene.mjs): a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/scene/people_lib/skins/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the scene renderer the opening illustration child starts (scripts/embed_illus_scene.mjs): a folder of the run bundle, no content of its own."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/collage/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the collage drawing the opening illustration child loads (its code, its pack index and its pack of engraving cut-outs): a folder of the run bundle, no content of its own."
    },
    {
     "kind": "materialized_runtime",
@@ -1942,6 +2023,226 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/assets",
+    "note": "The textures folder of the opening illustration child (each file in it has its own exact row). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/node.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/run_hero.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene_node.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/hero_node.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/hero_base.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/brush.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/mesh.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/parts.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/world.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/assets/brush.jpg",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/assets/crumple.jpg",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/assets/tooth.jpg",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/assets/wash.jpg",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/line",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/frame.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/one_accent.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/line/draw.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its hand-drawn line drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/line/pen.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its hand-drawn line drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/line/units.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its hand-drawn line drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/line/line.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its hand-drawn line drawing's registry. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people/draw.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people/people.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing's registry, with the baked figure shapes. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child's scene renderer (each file in it has its own exact row; scripts/embed_illus_scene.mjs). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child's scene renderer (each file in it has its own exact row; scripts/embed_illus_scene.mjs). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/skins",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child's scene renderer (each file in it has its own exact row; scripts/embed_illus_scene.mjs). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/normalize.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/bodies.data.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/hair.data.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/lib.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/outfits.data.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/poses.data.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/scenes.data.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/skins/common.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/skins/geo.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/skins/ink.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/people_lib/skins/iso.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/scene/scene.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/scene/, listed by scripts/embed_illus_scene.mjs): the opening illustration child's scene renderer, its node or its people library copy. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage",
+    "note": "The folder runtime.rs materialize_extension creates for the opening illustration child's collage drawing (each file in it has its own exact row). Listed as a fixed name, not a folder rule."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/draw.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/pack.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing's pack index (scripts/build_collage_pack.py). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/collage/pack.bin",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/collage/): the opening illustration child, its collage drawing's pack of engraving cut-outs (one file; scripts/build_collage_pack.py). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/leaves_py/bake.py",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -2083,6 +2384,91 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/leaves_py/stacked_area.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/gap_axis.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/winners_losers.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/event_chain.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/target_path.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/pair_bars.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/thesis_claims.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/risk_notes.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/story.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/findings.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/small_multiples.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/member_map.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/change_dots.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/rank_slope.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/tile_map.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/unit_grid.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/glyph_row.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/dot_strip.py",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -2711,10 +3097,12 @@
     "writer": "knowledge_command",
     "group": "knowledge",
     "commands": [
-     "investigate"
+     "investigate",
+     "interactive"
     ],
     "not_measured": [
-     "investigate"
+     "investigate",
+     "interactive"
     ],
     "why": "the new route's flow group (next_flow.rs GroupCatalogue) calls the knowledge group's command next_knowledge::call inside this door, so a write the command ever makes is judged as the knowledge group's. Its requests write nothing today (they open and read the catalogue), so nothing was observed and the row stays not measured: a write inside is refused.",
     "remove_when": "when the knowledge group's command runs as a command of its own"
@@ -2724,7 +3112,8 @@
     "writer": "visual_command",
     "group": "visual",
     "commands": [
-     "investigate"
+     "investigate",
+     "interactive"
     ],
     "paths": [
      "publications/{recipe}/",
@@ -2734,7 +3123,7 @@
      "publications/qa/{recipe}-b{block}/",
      "publications/plans/{recipe}-b{block}.json"
     ],
-    "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Since 10-29 (owner's nod on the leaf plan, A) it also writes the page's plan publications/plans/{recipe}.json with the manifest, where verify reads a publication's plan: that one file per recipe and the plans folder it sits in, no other name there (group_guard.rs door_path_holds). Held to the page folder, the report folder and that plan by paths, {recipe} standing for each page recipe of the leaf registry (runtime/leaves_py/knobs.json recipes, plain lowercase names; group_guard.rs recipe_names): any other write inside, a visual path or an unregistered name included, is refused. A new recipe's first run is observed the same way.",
+    "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Since 10-29 (owner's nod on the leaf plan, A) it also writes the page's plan publications/plans/{recipe}.json with the manifest, where verify reads a publication's plan: that one file per recipe and the plans folder it sits in, no other name there (group_guard.rs door_path_holds). Held to the page folder, the report folder and that plan by paths, {recipe} standing for each page recipe of the leaf registry (runtime/leaves_py/knobs.json recipes, plain lowercase names; group_guard.rs recipe_names): any other write inside, a visual path or an unregistered name included, is refused. A new recipe's first run is observed the same way. interactive (added 11-21 with the owner's approval): the interactive command's first round publishes the same pages through this door when the new route is on; proven by the unit test a_write_inside_the_visual_call_door_is_let_through_for_interactive, not yet by an observed run. Its later rounds still stop at the completion rerun (next_serve.rs), which this row does not change.",
     "block_paths": "owner 11-14 20:5x: a later block of a many-block page is published beside its first under <recipe>-b<n> (next_gate::block_dir); {block} stands for 2 to 9 only, with {recipe} each registered recipe name, the same three paths and no other",
     "remove_when": "when the visual group's command runs as a command of its own"
    }

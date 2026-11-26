@@ -22,7 +22,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 36] = [
+const PAGE_IN_PATHS: [&str; 43] = [
     "shape.scale",
     "shape.main",
     "shape.source",
@@ -40,6 +40,8 @@ const PAGE_IN_PATHS: [&str; 36] = [
     "picks.t1",
     "picks.top",
     "picks.focus",
+    "picks.asked_first_n",
+    "picks.asked_last_n",
     "fill.accent",
     "fmt.change",
     "shape.members",
@@ -59,7 +61,57 @@ const PAGE_IN_PATHS: [&str; 36] = [
     "block.by",
     "block.year",
     "block.src",
+    "shape.whole",
+    "shape.prev",
+    "shape.target.table",
+    "shape.target.time",
+    "shape.target.place",
 ];
+
+/// The page input's coordinates only some pages have (next_run external_coords: the whole, the year before, the registered
+/// target): a first_holding candidate that reads one the page input lacks is left out of the list, never refused; any other
+/// path the page input lacks still refuses (sub).
+const OPTIONAL_PATHS: [&str; 5] = [
+    "shape.whole",
+    "shape.prev",
+    "shape.target.table",
+    "shape.target.time",
+    "shape.target.place",
+];
+
+/// Whether a template reads an optional page input path (OPTIONAL_PATHS) the page input lacks, as a string or a key.
+fn reads_absent(v: &J, page_in: &J) -> bool {
+    let absent = |s: &str| {
+        s.strip_prefix('$').is_some_and(|p| {
+            OPTIONAL_PATHS.contains(&p) && p.split('.').try_fold(page_in, |x, k| x.get(k)).is_none()
+        })
+    };
+    match v {
+        J::Str(s) => absent(s),
+        J::Arr(a) => a.iter().any(|x| reads_absent(x, page_in)),
+        J::Obj(m) => m.iter().any(|(k, x)| absent(k) || reads_absent(x, page_in)),
+        _ => false,
+    }
+}
+
+/// A first_holding candidate list (a list, or lists by key) less each candidate that reads an optional path the page input
+/// lacks (reads_absent).
+fn present_candidates(c: &J, page_in: &J) -> J {
+    match c {
+        J::Arr(a) => J::Arr(
+            a.iter()
+                .filter(|x| !reads_absent(x, page_in))
+                .cloned()
+                .collect(),
+        ),
+        J::Obj(m) => J::Obj(
+            m.iter()
+                .map(|(k, x)| (k.clone(), present_candidates(x, page_in)))
+                .collect(),
+        ),
+        x => x.clone(),
+    }
+}
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
 fn sub(v: &J, page_in: &J) -> Result<J, String> {
@@ -102,6 +154,15 @@ fn sub(v: &J, page_in: &J) -> Result<J, String> {
         ),
         v => v.clone(),
     })
+}
+
+/// Whether a page input path (`$shape.whole`) is there and not empty: a path the page input lacks, or one that is no `$path`,
+/// is not held.
+fn path_held(path: &J, page_in: &J) -> bool {
+    st(path)
+        .strip_prefix('$')
+        .and_then(|p| p.split('.').try_fold(page_in, |x, k| x.get(k)))
+        .is_some_and(J::truthy)
 }
 
 /// The page's selects: the shape's countries and each pick rule the recipe names, as the registry's select declaration
@@ -285,10 +346,8 @@ fn node_of(
     let has_items = entry.has("items");
     // a first_holding field's candidates are the declaration's, over the page input, each chosen code a literal code
     if let Some(c) = d.get("candidates") {
-        let c = codes_in(
-            &sub(c, facts.and_then(|f| f.get("in")).unwrap_or(page_in))?,
-            got,
-        );
+        let view = facts.and_then(|f| f.get("in")).unwrap_or(page_in);
+        let c = codes_in(&sub(&present_candidates(c, view), view)?, got);
         let with = |fd: &J| {
             let mut fd = fd.clone();
             if fd.g("kind").s() == Some("first_holding") {
@@ -1724,7 +1783,7 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
 
 /// The mean a note compares with ("图中平均", the leader notes' mean_n, or mean_n0 and mean_n1 at a change's two ends: a
 /// count of the places averaged) is over exactly the places the page draws, at each end: the places its averaged rows hold at their time are as many as the page's drawn
-/// count (its `drawn` fact, a plain count over the rows the page keeps), else the page stops. A page with no such mean
+/// count (its `drawn` fact, a count over the rows the page keeps, of the places it names when it has a filter), else the page stops. A page with no such mean
 /// passes.
 fn mean_recheck(fill: &J) -> Result<(), String> {
     let facts = fill.g("knobs").g("spec").g("facts");
@@ -1758,11 +1817,10 @@ fn mean_recheck(fill: &J) -> Result<(), String> {
     let drawn = facts.g("drawn");
     let shown = places(drawn).len();
     for (key, q) in counts {
-        if drawn.g("op").s() != Some("n")
-            || drawn.get("filter").is_some()
-            || q.g("op").s() != Some("n")
-        {
-            return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be plain counts"));
+        // the drawn count may name the places it counts (a page drawing the first n of a ranking counts select:ranked's
+        // codes, not every row it keeps); the mean is still held to exactly as many places as it counts
+        if drawn.g("op").s() != Some("n") || q.g("op").s() != Some("n") {
+            return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be counts"));
         }
         let averaged = places(q).len();
         if averaged != shown {
@@ -1912,6 +1970,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     // the layer's own selects (declares.selects), each only where its conditions hold over the page's selects
     let mut own = Vec::new();
     for s in d.g("selects").arr() {
+        // a select made only when a page input value is there and not empty (when_held: its path, as the finding's selects
+        // read it); the path is read before anything of the select is, so a page without it never reads it
+        if s.get("when_held").is_some_and(|p| !path_held(p, page_in)) {
+            continue;
+        }
         if core::conditions_hold(s.g("when"), &plain_holding(&got, page_in))? {
             // a given select's result is the flow's pick, as a pick rule's (selects_of)
             if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
@@ -1921,7 +1984,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
                 &J::Obj(
                     s.obj()
                         .iter()
-                        .filter(|(k, _)| k != "when" && k != "given")
+                        .filter(|(k, _)| k != "when" && k != "given" && k != "when_held")
                         .cloned()
                         .collect(),
                 ),
@@ -2070,7 +2133,10 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         ("in", facts_in.clone()),
     ]);
     let n = node_of(layer, page_in, reg, (&got, &sels), None, None, Some(&held))?;
-    // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses
+    // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses; the
+    // input rows each reads are kept as read rows (a note against the whole, the year before or the target reads rows no
+    // select draws), so the page holds every row its facts read
+    let mut chosen_reads: Vec<J> = Vec::new();
     for it in n.g("items").arr() {
         for (_, v) in it.obj() {
             for (k, q) in v.g("facts").obj() {
@@ -2078,6 +2144,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
                     return Err(format!("{layer}: fact {k} is declared two ways"));
                 }
                 facts.set(k, q.clone());
+                for r in core::fact_rows(&core::resolved(q, &got)?, page_in.g("rows").arr()) {
+                    if !chosen_reads.contains(r) {
+                        chosen_reads.push(r.clone());
+                    }
+                }
             }
         }
     }
@@ -2177,10 +2248,21 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         let codes = got.get(&sid).cloned().unwrap_or(J::Arr(vec![]));
         let by = st(over.g("by"));
         // the rows of the select at its time (rows_of_select), or at its time and the time its change runs from
+        // rows_of_root: the rows of the root rank's codes at its time (a page drawing the first n of a ranking reads every
+        // ranked place's row, which the members it leaves out are held against); the select's own on a page that cuts none
+        let all = got
+            .get(&st(root.g("id")))
+            .cloned()
+            .unwrap_or(J::Arr(vec![]));
         let rows_by = |rule: &J| -> Result<Vec<J>, String> {
+            let codes = if rule.s() == Some("rows_of_root") {
+                &all
+            } else {
+                &codes
+            };
             let times: Vec<&J> = match rule.s() {
                 None => return Ok(vec![]),
-                Some("rows_of_select") => vec![over.g("time")],
+                Some("rows_of_select" | "rows_of_root") => vec![over.g("time")],
                 Some("rows_of_select_both_ends") => {
                     vec![over.g("time"), core::change_from(root).unwrap_or(&J::Null)]
                 }
@@ -2206,6 +2288,12 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     } else {
         (Vec::new(), Vec::new())
     };
+    let mut reads = reads;
+    for r in chosen_reads {
+        if !drawn.contains(&r) && !reads.contains(&r) {
+            reads.push(r);
+        }
+    }
     let mut data = J::Obj(vec![]);
     for (k, v) in n.g("binds").obj() {
         let x = match v {
@@ -3919,30 +4007,35 @@ fn checks_of(page_in: &J, reg: &J, body: &[J], external: &[String], unit: &J) ->
 }
 
 /// The knobs a node laid out in a rows frame carries: where the frame starts across the page, after a panel the registry
-/// says stands beside it when the fill draws that panel (frames.<f>.beside: the leaves it is, its width and the gap).
+/// says stands beside it when the fill draws that panel (frames.<f>.beside: the leaves it is, its width and the gap); and,
+/// when the fill draws the leaves the registry says stand above it and not those of its `unless` (frames.<f>.above: the
+/// column page's notes at the bars, with no map beside them), the room over its first row (y0, its h).
 fn frame_knobs(layer: &str, reg: &J, fill: &J) -> Option<J> {
     let fr = reg.g("frames").g(&st(reg.g("nodes").g(layer).g("frame")));
     if fr.g("kind").s() != Some("rows") {
         return None;
     }
+    let leaves = fill.g("knobs").g("spec").g("hero").g("leaves");
+    let has = |p: &J, k: &str| p.g(k).s().is_some_and(|l| leaves.has(l));
     let beside = fr.g("beside");
-    let drawn = beside
-        .g("leaves")
-        .s()
-        .is_some_and(|l| fill.g("knobs").g("spec").g("hero").g("leaves").has(l));
-    let x0 = if drawn {
+    let x0 = if has(beside, "leaves") {
         beside.g("w").num().unwrap_or(0.0) + beside.g("gap").num().unwrap_or(0.0)
     } else {
         0.0
     };
-    Some(J::obj_of(vec![(
-        "x0",
-        if x0.fract() == 0.0 {
-            J::Int(x0 as i64)
+    let px = |v: f64| {
+        if v.fract() == 0.0 {
+            J::Int(v as i64)
         } else {
-            J::Num(x0)
-        },
-    )]))
+            J::Num(v)
+        }
+    };
+    let mut knobs = vec![("x0", px(x0))];
+    let above = fr.g("above");
+    if has(above, "leaves") && !has(above, "unless") {
+        knobs.push(("y0", px(above.g("h").num().unwrap_or(0.0))));
+    }
+    Some(J::obj_of(knobs))
 }
 
 /// The fill's rows in the order the page input holds them (R10 holds the tree's rows to it): the fill keeps each layer's
@@ -3958,6 +4051,32 @@ fn in_input_order(rows: &[J], input: &[J]) -> Vec<J> {
     let mut out = rows.to_vec();
     out.sort_by_key(at);
     out
+}
+
+/// A data code as the page tree schema takes it (Code): letters, digits and . _ @ : > - only, and not a select reference.
+fn code_ok(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with("select:")
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._@:>-".contains(c))
+}
+
+/// The page's tables as the tree's facts hold them: a table whose id is no data code (a law's clause, which the footer marks
+/// as a reference by its words and digits) is named by its key there, which is the table's id; the request keeps the clause.
+fn tree_tables(tables: &J) -> J {
+    J::Obj(
+        tables
+            .obj()
+            .iter()
+            .map(|(k, t)| {
+                let id = st(t.g("id"));
+                match code_ok(&id) {
+                    true => (k.clone(), t.clone()),
+                    false => (k.clone(), J::obj_of(vec![("id", J::str(k))])),
+                }
+            })
+            .collect(),
+    )
 }
 
 /// The page tree the core checks and asks the external layers over, from the page input and the finished fill.
@@ -4121,7 +4240,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
             J::obj_of(
                 vec![
                     ("kind", J::str("Facts")),
-                    ("tables", spec.g("tables").clone()),
+                    ("tables", tree_tables(spec.g("tables"))),
                     ("facts", facts),
                     ("fmts", fmts),
                     (
@@ -4813,6 +4932,129 @@ mod tests {
         }
     }
 
+    /// A change page's change in a unit that counts (the unit table's count and persons rules: passengers carried, n20 and
+    /// t3) prints as a whole number, its bars' and its notes' alike, though the data's values hold decimals; any other
+    /// unit's change keeps the decimals its rows hold (at most COLUMN_DEC), a percentage's in percentage points as before.
+    #[test]
+    fn next_tree_gen_change_prints_a_count_change_whole() {
+        let mut pi = read("q1-gen.json").g("page_in").clone();
+        let ranked: Vec<String> = pi.g("picks").g("ranked").arr().iter().map(st).collect();
+        let mut rows = Vec::new();
+        for (k, c) in ranked.iter().enumerate() {
+            for y in ["2021", "2025"] {
+                let up = 1.0e7 * (4 - k) as f64 + 0.37;
+                let v = format!("{:.2}", 1.0e8 + if y == "2025" { up } else { 0.8 });
+                rows.push(J::from_value(&serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                    "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y, "value": v})));
+            }
+        }
+        pi.set("rows", J::Arr(rows));
+        pi.set("recipe", J::str("change"));
+        assert!(pi.set_path(&["picks", "t0"].map(String::from), J::str("2021")));
+        assert!(pi.set_path(&["shape", "t0"].map(String::from), J::str("2021")));
+        let reg = core::load_registry(&core::bindings());
+        for (rule, short, suffix, key, dec) in [
+            (Some("count"), "数量", "", "chg", 0.0),
+            (Some("persons"), "人", "人", "chg", 0.0),
+            (Some("amount"), "美元", " 美元", "chg", 2.0),
+            (Some("pct_family"), "%", "%", "pp", 1.0),
+        ] {
+            let mut p = pi.clone();
+            p.set("short", J::str(short));
+            assert!(p.set_path(&["shape", "suffix"].map(String::from), J::str(suffix)));
+            if let Some(r) = rule {
+                assert!(p.set_path(&["shape", "rule"].map(String::from), J::str(r)));
+            }
+            for layer in ["bars", "leader_notes"] {
+                let out = declared_j(layer, &p, &reg).unwrap();
+                let f = out.g("fmts").g(key);
+                assert_eq!(
+                    f.g("dec").num(),
+                    Some(dec),
+                    "{rule:?} {layer}: {}",
+                    out.g("fmts").repr()
+                );
+            }
+        }
+    }
+
+    /// A question asking how its places fell (picks.asked_fall, the knowledge group's reading of "how much did each fall"; dev e11, rounds
+    /// 17-19) on a change page: the title leads with the largest fall whenever a fall is drawn, though the rises tie or
+    /// outnumber the falls (as without the pick, which leads with the largest rise then); with no fall drawn it leads with the
+    /// rise as before. Two data shapes: two rises and two falls, three rises and one fall.
+    #[test]
+    fn next_tree_gen_a_question_asking_the_falls_leads_with_the_largest_fall() {
+        let base = read("q1-gen.json").g("page_in").clone();
+        let codes: Vec<String> = base
+            .g("picks")
+            .g("ranked")
+            .arr()
+            .iter()
+            .take(4)
+            .map(st)
+            .collect();
+        let reg = core::load_registry(&core::bindings());
+        let d = declares(
+            &reg,
+            FINDING,
+            &J::from_value(&serde_json::json!({"recipe": "change"})),
+        )
+        .unwrap()
+        .clone();
+        for (changes, asked, want) in [
+            ([30.0, 10.0, -5.0, -40.0], false, 0),
+            ([30.0, 10.0, -5.0, -40.0], true, 3),
+            ([30.0, 20.0, 10.0, -40.0], true, 3),
+            ([30.0, 20.0, 10.0, 5.0], true, 0),
+        ] {
+            let mut rows = Vec::new();
+            for (c, ch) in codes.iter().zip(changes) {
+                for (y, v) in [("2021", 100.0), ("2025", 100.0 + ch)] {
+                    rows.push(serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                        "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y, "value": format!("{v:.1}")}));
+                }
+            }
+            let mut pi = base.clone();
+            pi.set("rows", J::from_value(&serde_json::json!(rows)));
+            pi.set("recipe", J::str("change"));
+            pi.set("short", J::str("数量"));
+            for (path, v) in [
+                (&["picks", "ranked"][..], serde_json::json!(codes)),
+                (
+                    &["picks", "rules"][..],
+                    serde_json::json!(["changed", "claim_marks"]),
+                ),
+                (&["picks", "t0"][..], serde_json::json!("2021")),
+                (&["shape", "t0"][..], serde_json::json!("2021")),
+            ] {
+                assert!(pi.set_path(
+                    &path.iter().map(|k| k.to_string()).collect::<Vec<_>>(),
+                    J::from_value(&v)
+                ));
+            }
+            pi.set(
+                "fill",
+                J::from_value(&serde_json::json!({"facts": ["chg", "drawn"], "named": codes})),
+            );
+            if asked {
+                assert!(pi.set_path(&["picks", "asked_fall"].map(String::from), J::Bool(true)));
+            }
+            let said = finding_declared(&d, &pi, &reg).unwrap().to_value();
+            let at = format!("{changes:?} asked_fall {asked}");
+            assert_eq!(said["subject"], codes[want].as_str(), "{at}: {said}");
+            let word = if changes[want] < 0.0 {
+                "降幅最大"
+            } else {
+                "增幅最大"
+            };
+            assert_eq!(
+                said["finding"]["headline"]["title"],
+                format!("{{name.{}}}{word}", codes[want]),
+                "{at}"
+            );
+        }
+    }
+
     /// The rank lines over a many-block page's blocks (block_ranks): each ranked place's position among the ranked places in
     /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
     /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.
@@ -5211,15 +5453,22 @@ mod tests {
                 .filter(|l| leaf_stops(l, &page_in, &fill, &reg).is_none())
                 .cloned()
                 .collect();
-            // the column recipe has had no map since v5 item 2 (11-13): the circles the prototype asked on its pages are not asked
-            let mapless = st(c.g("recipe")) == "column";
-            let want: Vec<String> = c
+            // the column recipe has had no map since v5 item 2 (11-13), the change recipe none since 11-22: the circles the
+            // prototype asked on their pages are not asked
+            let mapless = matches!(st(c.g("recipe")).as_str(), "column" | "change");
+            let mut want: Vec<String> = c
                 .g("asked")
                 .arr()
                 .iter()
                 .map(st)
                 .filter(|l| !(mapless && l == "bubbles"))
                 .collect();
+            // 11-22: the change recipe has no map, so its bars keep no stop of the map's (one_ext, view_ext) and are asked on
+            // the map's two stops as change_bars' and the column page's are (P8, P9: the column cases ask the bars); the leaf
+            // still stops at its panel there, before the bars are drawn
+            if st(c.g("recipe")) == "change" && matches!(st(c.g("id")).as_str(), "P8" | "P9") {
+                want = vec!["bars".to_string()];
+            }
             if asked != want {
                 off.push(format!(
                     "{} {}: asked {asked:?}, the prototype {want:?}",
@@ -5228,13 +5477,11 @@ mod tests {
                 ));
             }
         }
-        // P6 and B2 take one entry out of the ledger, which the flow prints from the facts it declares (unreachable, design
-        // 11.2): the generator sees the declared family, so it asks; the leaf still stops on the missing entry as before, at
-        // its panel (P6) or in the circles' input half, which runs before their placed geometry is read (B2)
-        let ledger_only = [
-            "P6 change: asked [\"bubbles\", \"bars\"], the prototype []",
-            "B2 change: asked [\"bubbles\", \"bars\"], the prototype [\"bars\"]",
-        ];
+        // P6 takes one entry out of the ledger, which the flow prints from the facts it declares (unreachable, design 11.2):
+        // the generator sees the declared family, so it asks; the leaf still stops on the missing entry as before, at its
+        // panel. (B2's stop stood in the circles' input half; the change page draws no circles since 11-22, so its bars are
+        // asked as the prototype asked them.)
+        let ledger_only = ["P6 change: asked [\"bars\"], the prototype []"];
         assert_eq!(off, ledger_only, "{off:#?}");
         // a panel stop: draw asks nothing, not even the ground, and leaves each layer to its leaf rule
         let p3 = fx
@@ -5742,7 +5989,7 @@ mod tests {
                 let plain = said(true, last, unit, false);
                 assert_eq!(plain["subject"], "KHM", "{recipe} {last} {unit}");
                 assert_eq!(
-                    plain["finding"]["headline"]["title"], "{name.KHM}最低",
+                    plain["finding"]["headline"]["title"], "{name.KHM}垫底，为{lo}",
                     "{recipe} {last} {unit}"
                 );
             }
@@ -5825,6 +6072,179 @@ mod tests {
         }
     }
 
+    /// A question asking for the first or the last n (picks.asked_first_n or asked_last_n, set by the flow only when it cuts
+    /// the page to those n): the column and ranked bars rank the whole set (ranked_all) and draw its first or last n (the
+    /// core's top_n), and the finding says the end the question asks for against its neighbour inside the n (the second,
+    /// or the one before last), never against the other end of a ranking it no longer draws. Two data shapes: a World Bank
+    /// count over iso3 countries, a Eurostat percentage over geo.
+    #[test]
+    fn next_tree_gen_a_question_naming_the_second_place_says_the_gap_to_it() {
+        // a question that compares its end with the second place (picks.asked_second, asked_second_low) on a page the
+        // program did not cut: every place drawn, the dek says the end against its neighbour (90 - 70, 30 - 10), never
+        // against the other end, in the words the first-n page says it with
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            let codes = ["USA", "DEU", "FRA", "ITA", "CAN"];
+            let vals = ["90", "70", "50", "30", "10"];
+            let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:t/{p}:2024:OBS_VALUE"), "table": "t", "dims": {"country": p}, "time": "2024", "value": v});
+            let rows: Vec<serde_json::Value> =
+                codes.iter().zip(vals).map(|(c, v)| row(c, v)).collect();
+            let mut sorted = codes.to_vec();
+            sorted.sort();
+            let pi = |key: &str| {
+                let mut v = serde_json::json!({"recipe": recipe,
+                    "shape": {"main": "t", "place": "country", "year": "2024", "unit": "PC", "fmt": "pc", "countries": sorted},
+                    "picks": {"rules": ["ranked"], "ranked": codes, "marks": [], "t0": "", "t1": ""},
+                    "rows": rows, "short": "%",
+                    "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {"pc": {"dec": 0}}, "named": sorted}});
+                if !key.is_empty() {
+                    v["picks"][key] = serde_json::json!(true);
+                }
+                J::from_value(&v)
+            };
+            let at = recipe;
+            let top = finding_declared(&d, &pi("asked_second"), &reg)
+                .unwrap()
+                .to_value();
+            assert_eq!(top["subject"], "USA", "{at}");
+            assert_eq!(
+                top["finding"]["dek"],
+                "{lead1.t}，{name.USA}最高，为{lead1}，比第二位的{name.DEU}高{next_gap}",
+                "{at}"
+            );
+            let low = finding_declared(&d, &pi("asked_second_low"), &reg)
+                .unwrap()
+                .to_value();
+            assert_eq!(low["subject"], "CAN", "{at}");
+            assert_eq!(
+                low["finding"]["dek"],
+                "{lead1.t}，{name.CAN}最低，为{lead1}，比倒数第二的{name.ITA}低{next_gap}",
+                "{at}"
+            );
+            let r: Vec<J> = rows.iter().map(J::from_value).collect();
+            for said in [&top, &low] {
+                assert!(
+                    said["facts"].get("pool").is_none(),
+                    "{at}: an uncut page reads no pool"
+                );
+                let facts = J::from_value(&said["facts"]);
+                assert_eq!(
+                    core::fact_value(&facts, &r, "next_gap").unwrap(),
+                    20.0,
+                    "{at}"
+                );
+            }
+            // with neither pick the page says its top against its bottom, as before
+            let plain = finding_declared(&d, &pi(""), &reg).unwrap().to_value();
+            assert!(
+                plain["finding"]["dek"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("比最低的{name.CAN}")),
+                "{at}: {}",
+                plain["finding"]["dek"]
+            );
+        }
+    }
+
+    #[test]
+    fn next_tree_gen_a_question_asking_the_first_n_says_its_end_against_its_neighbour() {
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            for (unit, fmt, place, codes) in [
+                ("NR", "nr", "country", ["USA", "DEU", "FRA", "ITA", "CAN"]),
+                ("PC", "pc", "geo", ["ES", "GR", "IT", "FR", "DE"]),
+            ] {
+                let vals = ["90", "70", "50", "30", "10"];
+                let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:t/{p}:2024:OBS_VALUE"), "table": "t", "dims": {place: p}, "time": "2024", "value": v});
+                let rows: Vec<serde_json::Value> =
+                    codes.iter().zip(vals).map(|(c, v)| row(c, v)).collect();
+                let mut sorted = codes.to_vec();
+                sorted.sort();
+                let pi = |low: bool| {
+                    let (rule, key, kept) = if low {
+                        ("ranked_bottom", "asked_last_n", &codes[2..])
+                    } else {
+                        ("ranked_top", "asked_first_n", &codes[..3])
+                    };
+                    let mut v = serde_json::json!({"recipe": recipe,
+                        "shape": {"main": "t", "place": place, "year": "2024", "unit": unit, "fmt": fmt, "countries": sorted},
+                        "picks": {"rules": ["ranked_all", rule], "ranked": kept, "marks": [], "t0": "", "t1": ""},
+                        "rows": rows, "short": "数量",
+                        "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {fmt: {"dec": 0}}, "named": sorted}});
+                    v["picks"][key] = serde_json::json!(3);
+                    J::from_value(&v)
+                };
+                let top = finding_declared(&d, &pi(false), &reg).unwrap().to_value();
+                let at = format!("{recipe} {unit}");
+                assert_eq!(top["subject"], codes[0], "{at}");
+                assert_eq!(
+                    top["finding"]["dek"],
+                    format!("{{lead1.t}}，{{name.{}}}最高，为{{lead1}}，比第二位的{{name.{}}}高{{next_gap}}", codes[0], codes[1]),
+                    "{at}"
+                );
+                assert_eq!(
+                    top["finding"]["headline"]["title"],
+                    format!(
+                        "{{name.{}}}居首，是第二位{{name.{}}}的{{next_times}}",
+                        codes[0], codes[1]
+                    ),
+                    "{at}"
+                );
+                let low = finding_declared(&d, &pi(true), &reg).unwrap().to_value();
+                assert_eq!(low["subject"], codes[4], "{at}");
+                assert_eq!(
+                    low["finding"]["dek"],
+                    format!("{{lead1.t}}，{{name.{}}}最低，为{{lead1}}，比倒数第二的{{name.{}}}低{{next_gap}}", codes[4], codes[3]),
+                    "{at}"
+                );
+                assert_eq!(
+                    low["finding"]["headline"]["title"],
+                    format!(
+                        "{{name.{}}}垫底，倒数第二的{{name.{}}}是它的{{next_times}}",
+                        codes[4], codes[3]
+                    ),
+                    "{at}"
+                );
+                // the finding reads every ranked place's row at the year (pool, over ranked_all), so the request keeps the
+                // rows of the places the page leaves out, which the whole-page check holds the cut against (cut_said)
+                for said in [&top, &low] {
+                    let mut pooled: Vec<String> = said["facts"]["pool"]["filter"][place]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{at}: no pool filter in {}", said["facts"]))
+                        .iter()
+                        .map(|c| c.as_str().unwrap().to_string())
+                        .collect();
+                    pooled.sort();
+                    assert_eq!(pooled, sorted, "{at}");
+                }
+                // the neighbour's gap is recomputed from the rows: 90 - 70 at the top, 30 - 10 at the bottom
+                let r: Vec<J> = rows.iter().map(J::from_value).collect();
+                for (said, want) in [(&top, 20.0), (&low, 20.0)] {
+                    let facts = J::from_value(&said["facts"]);
+                    assert_eq!(
+                        core::fact_value(&facts, &r, "next_gap").unwrap(),
+                        want,
+                        "{at}"
+                    );
+                }
+            }
+        }
+    }
+
     /// A level headline whose times print as 1.0 (e8, n45: "1.0 times the lowest, South Korea") says the finding without them, from the
     /// highest and from the lowest, in two data shapes (dollars, percentages), plain and narrowed; times that print above
     /// 1.0 stay. The decimals are the registry's (formats.times.dec).
@@ -5896,12 +6316,12 @@ mod tests {
             // 90 over 88 prints 1.0: the plain headline, from the highest and from the lowest
             assert_eq!(
                 title(&said(false, vals[2], false)),
-                "{name.SGP}最高",
+                "{name.SGP}居首，为{hi}",
                 "{unit}"
             );
             assert_eq!(
                 title(&said(true, vals[2], false)),
-                "{name.KHM}最低",
+                "{name.KHM}垫底，为{lo}",
                 "{unit}"
             );
             // 90 over 85 prints 1.1: the times stay
@@ -6136,6 +6556,56 @@ mod tests {
         assert_eq!(
             runs_of("5岁以下儿童").arr()[0].dump(),
             J::obj_of(vec![("term", J::str("5岁以下"))]).dump()
+        );
+    }
+
+    /// A select with a when_held path is made only when the page input holds that path and it is not empty; a page without it
+    /// never reads the path (the whole's select on a page with no whole).
+    #[test]
+    fn a_path_is_held_only_when_the_page_input_has_it_and_it_is_not_empty() {
+        let p = |t: &str| core::parse(t).unwrap();
+        let page = p(r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": ""}}"#);
+        assert!(path_held(&J::str("$shape.whole"), &page));
+        assert!(
+            !path_held(&J::str("$shape.prev"), &page),
+            "an empty value is not held"
+        );
+        assert!(
+            !path_held(&J::str("$shape.target.place"), &page),
+            "an absent path is not held"
+        );
+        assert!(
+            !path_held(&J::str("shape.whole"), &page),
+            "a text that is no $path is not held"
+        );
+    }
+
+    /// A first_holding candidate that reads an optional coordinate the page input lacks (shape.whole, a key or a value) is
+    /// left out of its list, by key or alone; one whose coordinate is there stays, and an absent path that is not optional
+    /// still refuses the template.
+    #[test]
+    fn a_candidate_reading_an_absent_coordinate_is_left_out_and_any_other_absent_path_refuses() {
+        let p = |t: &str| core::parse(t).unwrap();
+        let cands = p(
+            r#"{"hi": [{"text": [{"name": "$shape.whole"}]}, {"facts": {"x": {"filter": {"$shape.place": "{code}"}, "time": "$shape.prev"}}}, {"text": []}],
+            "lo": [{"when": [{"table": "$shape.target.table"}]}, {"text": []}]}"#,
+        );
+        let bare = p(r#"{"shape": {"place": "geo"}}"#);
+        let kept = present_candidates(&cands, &bare);
+        assert_eq!(kept.g("hi").arr().len(), 1);
+        assert_eq!(kept.g("lo").arr().len(), 1);
+        let full = p(
+            r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": "2023", "target": {"table": "t", "time": "2030", "place": "EU27_2020"}}}"#,
+        );
+        assert_eq!(present_candidates(&cands, &full), cands);
+        assert!(sub(&p(r#"{"a": "$shape.whole"}"#), &full).is_ok());
+        let e = sub(&p(r#"{"a": "$shape.hub"}"#), &bare).unwrap_err();
+        assert!(e.contains("the page input has no hub"), "{e}");
+        assert!(
+            present_candidates(&p(r#"[{"a": "$shape.hub"}]"#), &bare)
+                .arr()
+                .len()
+                == 1
         );
     }
 }

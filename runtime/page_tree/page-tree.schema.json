@@ -1476,7 +1476,14 @@
       }
      },
      "additionalProperties": false
-    }
+    },
+     {"title": "per_year / cagr: a rate a year between two facts, the years from their own times (owner 11-22)", "type": "object", "required": ["op", "a", "b", "fmt"], "properties": {"op": {"enum": ["per_year", "cagr"]}, "a": {"$ref": "#/$defs/FactKey"}, "b": {"$ref": "#/$defs/FactKey"}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false},
+     {"title": "line_at: a start carried at a rate a year to the year `at`, a straight line (a scenario)", "type": "object", "required": ["op", "start", "rate", "at", "fmt"], "properties": {"op": {"const": "line_at"}, "start": {"$ref": "#/$defs/FactKey"}, "rate": {"$ref": "#/$defs/FactKey"}, "at": {"$ref": "#/$defs/Code"}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false},
+     {"title": "reach_year: the first whole year a start carried at a rate a year is at or above a target", "type": "object", "required": ["op", "start", "rate", "target", "fmt"], "properties": {"op": {"const": "reach_year"}, "start": {"$ref": "#/$defs/FactKey"}, "rate": {"$ref": "#/$defs/FactKey"}, "target": {"$ref": "#/$defs/FactKey"}, "fmt": {"const": "n"}}, "additionalProperties": false},
+     {"title": "step_max: the largest rise from one period to the next (years one apart)", "type": "object", "required": ["op", "table", "fmt"], "properties": {"op": {"const": "step_max"}, "table": {"$ref": "#/$defs/Code"}, "filter": {"$ref": "#/$defs/Filter"}, "from": {"$ref": "#/$defs/Code"}, "to": {"$ref": "#/$defs/Code"}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false},
+     {"title": "first_above: the first period the rows of `a` total more than those of `b`", "type": "object", "required": ["op", "a", "b", "fmt"], "properties": {"op": {"const": "first_above"}, "a": {"type": "object", "required": ["table"], "properties": {"table": {"$ref": "#/$defs/Code"}, "filter": {"$ref": "#/$defs/Filter"}}, "additionalProperties": false}, "b": {"type": "object", "required": ["table"], "properties": {"table": {"$ref": "#/$defs/Code"}, "filter": {"$ref": "#/$defs/Filter"}}, "additionalProperties": false}, "from": {"$ref": "#/$defs/Code"}, "to": {"$ref": "#/$defs/Code"}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false},
+     {"title": "spread: the members' population standard deviation at `time`", "type": "object", "required": ["op", "table", "by", "time", "fmt"], "properties": {"op": {"const": "spread"}, "table": {"$ref": "#/$defs/Code"}, "filter": {"$ref": "#/$defs/Filter"}, "by": {"$ref": "#/$defs/Code"}, "time": {"$ref": "#/$defs/Code"}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false},
+     {"title": "group_change: the mean change from `from` to `to` of the top or bottom `k` members by their value at `from`", "type": "object", "required": ["op", "table", "by", "from", "to", "part", "k", "fmt"], "properties": {"op": {"const": "group_change"}, "table": {"$ref": "#/$defs/Code"}, "filter": {"$ref": "#/$defs/Filter"}, "by": {"$ref": "#/$defs/Code"}, "from": {"$ref": "#/$defs/Code"}, "to": {"$ref": "#/$defs/Code"}, "part": {"enum": ["top", "bottom"]}, "k": {"type": "integer", "minimum": 1}, "fmt": {"$ref": "#/$defs/Code"}}, "additionalProperties": false}
    ]
   },
   "Selects": {
@@ -1635,6 +1642,13 @@
         {
          "$ref": "#/$defs/Knob"
         }
+       ]
+      },
+      "end": {
+       "description": "Which end of the source the n are taken from: first (the default) or last, kept in the source's order.",
+       "enum": [
+        "first",
+        "last"
        ]
       },
       "result": {

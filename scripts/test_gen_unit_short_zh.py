@@ -80,8 +80,8 @@ check(gen.is_change("Chain linked volumes, percentage change on previous period"
 check(gen.read_label("Chain linked volumes, index 2020=100") == ("指数(2020=100)", "index_base", "no", ""),
       "a chain-linked volume index keeps its base year")
 check(gen.read_label("Chain linked volumes, index 2005=100")[0] == "指数(2005=100)", "another base year")
-# must-fail: an annualized change or a chain-linked level (no sum, its own reference year) is not read, nor an index
-# whose base is not one year
+# must-fail: an annualized change or a chain-linked level (no sum, its own reference year) is not read by a rule, nor an
+# index whose base is not one year; the chain-linked levels are reviewed rows, marked not additive (owner decision 11-25)
 for label in [
     "Chain linked volumes, annualized percentage change on previous period",
     "Chain linked volumes (2010), million euro",
@@ -104,7 +104,8 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
                 "CLV_PCH_SM\tChain linked volumes, percentage change compared to same period in previous year\n"
                 "CLV_PCH_ANN\tChain linked volumes, annualized percentage change on previous period\n"
                 "CLV_AVG\tChain linked volumes, annual average rate of change\n"
-                "CP_PPS_EU27_2020_HAB\tCurrent prices, purchasing power standard (PPS, EU27 from 2020) per capita\n")
+                "CP_PPS_EU27_2020_HAB\tCurrent prices, purchasing power standard (PPS, EU27 from 2020) per capita\n"
+                "CLV20_EUR_HAB\tChain linked volumes (2020), euro per capita\n")
     wb = os.path.join(tmp, "wb-units.tsv")
     with open(wb, "w", encoding="utf-8") as f:
         f.write("indicator\tname\tunit_code\tunit_label\tmeasure_kind\trule\n"
@@ -113,6 +114,12 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     table = os.path.join(tmp, "unit-short-zh.tsv")
     with open(table, "w", encoding="utf-8") as f:
         f.write("\t".join(gen.HEADER) + "\n")
+        # a reviewed rate of change whose label no rule reads keeps the line form it was reviewed with
+        f.write("PD_PCH_PRE_EUR\t%\tpct_change\tno\t%\treviewed\tPrice index (implicit deflator), percentage change on "
+                "previous period, euro\t%（较上期）\n")
+        # a reviewed chain-linked level: no rule reads its label, so only the reviewed row holds it, and a rerun keeps it
+        f.write("CLV20_EUR_HAB\t欧元/人（2020年不变价）\tper_capita\tno\t欧元/人\treviewed\t"
+                "Chain linked volumes (2020), euro per capita\t\n")
     out = os.path.join(tmp, "out")
     gen.TABLE, gen.WB = table, wb
     argv = sys.argv
@@ -131,7 +138,11 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     check(rows.get("CLV_PCH_SM", {}).get("line_zh") == "%（同比）", "CLV_PCH_SM prints its basis")
     pps = rows.get("CP_PPS_EU27_2020_HAB", {})
     check((pps.get("short_zh"), pps.get("additive"), pps.get("line_zh")) == ("购买力标准/人", "no", ""), f"PPS per capita row: {pps}")
+    check(rows.get("PD_PCH_PRE_EUR", {}).get("line_zh") == "%（较上期）", "a reviewed line form is kept")
     check("CLV_PCH_ANN" not in rows and "CLV_AVG" not in rows, "an annualized or averaged chain-linked change gets no row")
+    clv = rows.get("CLV20_EUR_HAB", {})
+    check((clv.get("short_zh"), clv.get("additive"), clv.get("suffix_zh"), clv.get("source")) == ("欧元/人（2020年不变价）", "no", "欧元/人", "reviewed"),
+          f"a reviewed chain-linked level is kept on a rerun: {clv}")
     with open(os.path.join(out, "unread.tsv"), encoding="utf-8") as f:
         unread = {line.split("\t")[0] for line in f}
     check({"PCH_NOBASIS", "RCH_A_AVG", "CLV_PCH_ANN", "CLV_AVG"} <= unread, f"the no-basis changes are on the unread list: {sorted(unread)}")
@@ -164,6 +175,21 @@ for code, row in committed.items():
     if row["rule"] == "pct_change" or gen.is_change(row["label_en"]):
         check(row["line_zh"].startswith(row["short_zh"]) and len(row["line_zh"]) > len(row["short_zh"]), f"{code}: no basis on its line")
 check("RCH_A_AVG" not in committed and "CLV_PCH_ANN" not in committed, "no row for a change whose basis no rule reads")
+# a generated row is made again from its label on every run and dropped when no rule reads it: each committed one must be
+# one the script makes again as it stands (a hand-made row is source reviewed), so a rerun loses none
+for code, row in committed.items():
+    if row["source"] != "generated":
+        continue
+    read = gen.read_label(row["label_en"])
+    check(read is not None and (row["short_zh"], row["rule"], row["additive"], row["suffix_zh"]) == read
+          and (read[1] != "pct_change" or gen.basis_of(row["label_en"]) is not None),
+          f"{code}: a generated row the script does not make again from its label (mark it reviewed)")
+# the chain-linked levels (owner decision 11-25): read, as reviewed rows, and not additive (a level of a chain-linked volume
+# is not the sum of its parts), so no sum or share of a sum is taken over them
+for code in [f"CLV{y}_{u}" for y in ("05", "10", "15", "20") for u in ("MEUR", "MNAC")] + ["CLV10_EUR_HAB", "CLV15_EUR_HAB", "CLV20_EUR_HAB"]:
+    row = committed.get(code, {})
+    check((row.get("source"), row.get("additive")) == ("reviewed", "no") and row.get("short_zh", "").endswith("年不变价）"),
+          f"{code}: a chain-linked level is a reviewed row, not additive: {row}")
 check(committed.get("CLV_PCH_SM", {}).get("line_zh") == "%（同比）", "n02's unit prints its basis")
 check(committed.get("CP_PPS_EU27_2020_HAB", {}).get("short_zh") == "购买力标准/人", "s4a's PPS unit")
 # growth rates whose unit text states no basis the registry reads stay codeless

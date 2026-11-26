@@ -1,0 +1,98 @@
+{
+ "schema_version": 1,
+ "note": "Event chains of the knowledge group, as data: for a main quantity (a family of measure-families.json) the ordered list of other quantities that follow it on a long story page, each a Eurostat table with its default slice, a semantic tag and the place it takes in the chain (English). Read by next_companion.rs (chain_companions) only; the main table's own companions (same topic, D8) are not here. A link stays on a page only when its fetched rows share places and years with the main table's; the order is the chain's order, so the first links that pass are the ones kept. unit: the unit-short-zh.tsv code the link's numbers print in (its short form is the page's unit word). kind: flow (a quantity over a period, drawn as bars) or stock (a level or a rate at a point in time, price kinds included, drawn as a line). measure_zh: the short Chinese name of what the link measures, partner and basis said, with no number in it (new page wording, owner-reviewed before it is printed). filter: the dimensions fixed to one code, each also in slice, so a link is one series (partner TOTAL, one price band); a dimension left with several codes in slice (the two renewable fuels, the fuels of the generation mix) is the link's own series. slice = the dimension codes the sample fetches (works/sample-1122/data/chain/fetch.sh for the energy chain); time and geo come from the page.",
+ "chains": [
+  {
+   "id": "energy",
+   "main_family": "renewable_share",
+   "links": [
+    {
+     "table": "nrg_ti_gas",
+     "tag": "gas",
+     "kind": "flow",
+     "measure_zh": "从所有伙伴进口的天然气",
+     "unit": "MIO_M3",
+     "slice": {"siec": ["G3000"], "unit": ["MIO_M3"], "partner": ["TOTAL"]},
+     "filter": {"siec": "G3000", "unit": "MIO_M3", "partner": "TOTAL"},
+     "position": "Where the gas the grid leans on comes from: natural gas imports, so the share of renewables is read against the fuel it replaces."
+    },
+    {
+     "table": "nrg_inf_epcrw",
+     "tag": "solar",
+     "kind": "stock",
+     "measure_zh": "光伏发电装机容量",
+     "unit": "MW",
+     "slice": {"unit": ["MW"], "siec": ["RA420"], "plant_tec": ["CAP_NET_ELC"]},
+     "filter": {"unit": "MW", "siec": "RA420", "plant_tec": "CAP_NET_ELC"},
+     "position": "The capacity that carries the shift: installed solar photovoltaic power."
+    },
+    {
+     "table": "nrg_bal_peh",
+     "tag": "generation",
+     "kind": "flow",
+     "measure_zh": "光伏发电量",
+     "unit": "GWH",
+     "slice": {"nrg_bal": ["GEP"], "siec": ["RA420"], "unit": ["GWH"]},
+     "filter": {"nrg_bal": "GEP", "siec": "RA420", "unit": "GWH"},
+     "position": "What the installed capacity puts into the grid: gross electricity generated from solar photovoltaics in a year."
+    },
+    {
+     "table": "env_air_gge",
+     "tag": "emissions",
+     "kind": "flow",
+     "measure_zh": "公共电力和热力生产排放的温室气体",
+     "unit": "MIO_T",
+     "slice": {"airpol": ["GHG"], "unit": ["MIO_T"], "src_crf": ["CRF1A1A"]},
+     "filter": {"airpol": "GHG", "unit": "MIO_T", "src_crf": "CRF1A1A"},
+     "position": "The end of the chain: greenhouse gas emissions of public electricity and heat production."
+    },
+    {
+     "table": "nrg_pc_204",
+     "tag": "price",
+     "kind": "stock",
+     "measure_zh": "居民用电的含税价格（中等年用电量档）",
+     "unit": "EUR_KWH",
+     "slice": {"nrg_cons": ["KWH2500-4999"], "unit": ["KWH"], "tax": ["I_TAX"], "currency": ["EUR"], "siec": ["E7000"]},
+     "filter": {"nrg_cons": "KWH2500-4999", "unit": "KWH", "tax": "I_TAX", "currency": "EUR", "siec": "E7000"},
+     "position": "What a household pays for electricity once gas and renewables meet in the grid: the price of a typical annual consumption band, taxes included."
+    }
+   ]
+  },
+  {
+   "id": "labour",
+   "main_family": "unemployment",
+   "links": [
+    {
+     "table": "lfsi_emp_a",
+     "tag": "employment",
+     "kind": "stock",
+     "measure_zh": "劳动年龄人口的就业率",
+     "unit": "PC_POP",
+     "slice": {"indic_em": ["EMP_LFS"], "age": ["Y20-64"], "sex": ["T"], "unit": ["PC_POP"]},
+     "filter": {"indic_em": "EMP_LFS", "age": "Y20-64", "sex": "T", "unit": "PC_POP"},
+     "position": "The other side of the same labour force: the employment rate of people aged 20-64."
+    },
+    {
+     "table": "nama_10_gdp",
+     "tag": "output",
+     "kind": "stock",
+     "measure_zh": "实际国内生产总值较上年的增速",
+     "unit": "CLV_PCH_PRE",
+     "slice": {"na_item": ["B1GQ"], "unit": ["CLV_PCH_PRE"]},
+     "filter": {"na_item": "B1GQ", "unit": "CLV_PCH_PRE"},
+     "position": "What moves jobs: real GDP growth on the previous year."
+    },
+    {
+     "table": "ilc_peps01n",
+     "tag": "poverty",
+     "kind": "stock",
+     "measure_zh": "面临贫困或社会排斥风险的人口占比",
+     "unit": "PC",
+     "slice": {"age": ["TOTAL"], "sex": ["T"], "unit": ["PC"]},
+     "filter": {"age": "TOTAL", "sex": "T", "unit": "PC"},
+     "position": "Where it lands in households: the share of people at risk of poverty or social exclusion."
+    }
+   ]
+  }
+ ]
+}

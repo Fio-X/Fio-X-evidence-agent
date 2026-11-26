@@ -1,0 +1,3279 @@
+{
+ "node": "illustration_hero",
+ "version": 1,
+ "doc": "Registry of the illustration node. Everything the runner needs about parts, layout and knobs is here as data; run_node.py only interprets it. Positions are scene units (world.py frame), x mirrored when reading_order is right_to_left.",
+ "parts": [
+  {
+   "id": "terrain",
+   "fn": "terrain",
+   "file": "parts.py",
+   "tags": [],
+   "group": "terrain",
+   "knobs": {
+    "relief": {
+     "default": 1.0,
+     "min": 0.3,
+     "max": 1.5,
+     "where": "composition"
+    }
+   },
+   "note": "heightfield from world.py (ridge, mountains, valley, levelled solar field); always present"
+  },
+  {
+   "id": "wind_turbine",
+   "fn": "wind_turbine",
+   "file": "parts.py",
+   "tags": [
+    "wind"
+   ],
+   "group": "wind",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 20,
+     "max": 60
+    },
+    "blade_len": {
+     "default": 16.5,
+     "min": 8,
+     "max": 36
+    },
+    "rotor_deg": {
+     "default": 0,
+     "min": 0,
+     "max": 119
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "hero_turbine",
+   "fn": "hero_turbine",
+   "file": "parts.py",
+   "tags": [
+    "wind"
+   ],
+   "group": "hero_body+hero_blade",
+   "role": "hero",
+   "knobs": {
+    "height": {
+     "default": 46,
+     "min": 30,
+     "max": 70
+    },
+    "blade_len": {
+     "default": 41,
+     "min": 20,
+     "max": 60
+    },
+    "rotor_deg": {
+     "default": 40,
+     "min": 0,
+     "max": 119
+    },
+    "yaw": {
+     "default": -12,
+     "min": -45,
+     "max": 45
+    },
+    "chord_k": {
+     "default": 3.0,
+     "min": 1.5,
+     "max": 4.5
+    }
+   }
+  },
+  {
+   "id": "arch_dam",
+   "fn": "arch_dam",
+   "file": "parts.py",
+   "tags": [
+    "hydro"
+   ],
+   "group": "hydro+spill",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 15,
+     "max": 45
+    },
+    "width": {
+     "default": 76,
+     "min": 40,
+     "max": 110
+    },
+    "arc_deg": {
+     "default": 70,
+     "min": 30,
+     "max": 110
+    }
+   }
+  },
+  {
+   "id": "reservoir",
+   "fn": "reservoir",
+   "file": "parts.py",
+   "tags": [
+    "hydro"
+   ],
+   "group": "water",
+   "role": "background",
+   "knobs": {
+    "level": {
+     "default": 46,
+     "min": 20,
+     "max": 70
+    }
+   }
+  },
+  {
+   "id": "solar_array",
+   "fn": "solar_array",
+   "file": "parts.py",
+   "tags": [
+    "solar"
+   ],
+   "group": "solar+shadow",
+   "role": "background",
+   "knobs": {
+    "rows": {
+     "default": 4,
+     "min": 1,
+     "max": 8
+    },
+    "cols": {
+     "default": 9,
+     "min": 2,
+     "max": 16
+    },
+    "tilt": {
+     "default": 28,
+     "min": 10,
+     "max": 45
+    },
+    "scale": {
+     "default": 3.0,
+     "min": 1.0,
+     "max": 4.0
+    }
+   }
+  },
+  {
+   "id": "pylon",
+   "fn": "pylon",
+   "file": "parts.py",
+   "tags": [
+    "grid"
+   ],
+   "group": "pylon",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 34,
+     "min": 20,
+     "max": 50
+    },
+    "yaw": {
+     "default": 10,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "wires",
+   "fn": "wires",
+   "file": "parts.py",
+   "tags": [
+    "grid"
+   ],
+   "group": "pylon",
+   "role": "background",
+   "knobs": {
+    "sag": {
+     "default": 2.2,
+     "min": 0.5,
+     "max": 5
+    }
+   }
+  },
+  {
+   "id": "coal_plant",
+   "fn": "coal_plant",
+   "file": "parts.py",
+   "tags": [
+    "coal"
+   ],
+   "group": "coal",
+   "role": "background",
+   "knobs": {
+    "towers": {
+     "default": 2,
+     "min": 1,
+     "max": 4
+    },
+    "chimney_h": {
+     "default": 44,
+     "min": 25,
+     "max": 70
+    },
+    "scale": {
+     "default": 0.85,
+     "min": 0.5,
+     "max": 1.4
+    },
+    "yaw": {
+     "default": -8,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "gas_pipe",
+   "fn": "gas_pipe",
+   "file": "parts.py",
+   "tags": [
+    "gas"
+   ],
+   "group": "coal",
+   "role": "background",
+   "knobs": {
+    "x0": {
+     "default": -146,
+     "min": -190,
+     "max": 190
+    },
+    "x1": {
+     "default": -62,
+     "min": -190,
+     "max": 190
+    },
+    "supports": {
+     "default": 12,
+     "min": 4,
+     "max": 30
+    },
+    "valves": {
+     "default": [
+      0.42
+     ],
+     "note": "fractions along the pipe"
+    }
+   }
+  },
+  {
+   "id": "gas_valve_hero",
+   "fn": "gas_valve_hero",
+   "file": "parts.py",
+   "tags": [
+    "gas"
+   ],
+   "group": "hero_body+hero_blade",
+   "role": "hero",
+   "knobs": {
+    "length": {
+     "default": 100,
+     "min": 60,
+     "max": 180
+    },
+    "r": {
+     "default": 3.2,
+     "min": 2,
+     "max": 12
+    },
+    "lift": {
+     "default": 4.0,
+     "min": 2,
+     "max": 16
+    },
+    "valve_at": {
+     "default": 0.55,
+     "min": 0.2,
+     "max": 0.8
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    },
+    "tilt": {
+     "default": 58,
+     "min": 20,
+     "max": 85
+    }
+   }
+  },
+  {
+   "id": "target_flag",
+   "fn": "target_flag",
+   "file": "parts.py",
+   "tags": [],
+   "group": "pylon | hero_body+hero_blade",
+   "role": "hero or background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 15,
+     "max": 90
+    },
+    "cloth": {
+     "default": 12,
+     "min": 5,
+     "max": 40
+    },
+    "wave": {
+     "default": 0.18,
+     "min": 0.0,
+     "max": 0.4
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   },
+   "note": "a surveyor's target marker (mast, cairn, pennant): the end of a path, the level a story runs to; it belongs to no topic (no tag), so only a scene places it"
+  },
+  {
+   "id": "track",
+   "fn": "track",
+   "file": "parts.py",
+   "tags": [],
+   "group": "track",
+   "role": "background",
+   "knobs": {
+    "width": {
+     "default": 5.0,
+     "min": 2.0,
+     "max": 12.0
+    }
+   },
+   "note": "a dirt track laid on the terrain through its points (a scene's list); belongs to no topic, so only a scene places it"
+  },
+  {
+   "id": "plinth",
+   "fn": "plinth",
+   "file": "parts.py",
+   "tags": [],
+   "group": "track",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 10,
+     "min": 2,
+     "max": 40
+    },
+    "width": {
+     "default": 24,
+     "min": 8,
+     "max": 40
+    },
+    "depth": {
+     "default": 16,
+     "min": 8,
+     "max": 30
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   },
+   "note": "a stone step; a row of them, each taller, is the stair of the steps scene (the climb a target needs); belongs to no topic, so only a scene places it"
+  }
+ ],
+ "heroes": {
+  "wind": {
+   "part": "hero_turbine",
+   "needs_tag": "wind",
+   "at": [
+    14,
+    -30
+   ],
+   "dz": -0.3,
+   "scale_args": [
+    "height",
+    "blade_len"
+   ],
+   "yaw_arg": "yaw",
+   "focus_local": [
+    "0",
+    "-4.1",
+    "height+0.6"
+   ],
+   "focus_note": "hub; expressions over the hero's final arguments; the radial dry-brush strokes of the accent part start here",
+   "camera": {
+    "loc": [
+     6,
+     -112,
+     50
+    ],
+    "target": [
+     -4,
+     150,
+     18
+    ],
+    "lens": 30
+   }
+  },
+  "gas": {
+   "part": "gas_valve_hero",
+   "needs_tag": "gas",
+   "at": [
+    14,
+    -30
+   ],
+   "dz": 0.0,
+   "scale_args": [
+    "length",
+    "r",
+    "lift"
+   ],
+   "yaw_arg": "yaw",
+   "focus_local": [
+    "(valve_at-0.5)*length",
+    "0",
+    "lift+4.8*r"
+   ],
+   "args": {
+    "length": 118,
+    "r": 3.8,
+    "lift": 4.5,
+    "valve_at": 0.5,
+    "yaw": -6,
+    "tilt": 58
+   },
+   "camera": {
+    "loc": [
+     6,
+     -104,
+     22
+    ],
+    "target": [
+     -4,
+     150,
+     14
+    ],
+    "lens": 30
+   },
+   "focus_note": "centre of the valve wheel"
+  },
+  "flag": {
+   "part": "target_flag",
+   "needs_tag": null,
+   "at": [
+    20,
+    110
+   ],
+   "dz": -0.3,
+   "scale_args": [
+    "height",
+    "cloth"
+   ],
+   "yaw_arg": "yaw",
+   "args": {
+    "split": "hero"
+   },
+   "focus_local": [
+    "0.4*cloth",
+    "0",
+    "0.96*height-0.2*cloth"
+   ],
+   "focus_note": "middle of the pennant",
+   "camera": {
+    "loc": [
+     6,
+     -112,
+     50
+    ],
+    "target": [
+     -4,
+     150,
+     18
+    ],
+    "lens": 30
+   }
+  }
+ },
+ "slots": {
+  "hydro": [
+   {
+    "part": "reservoir",
+    "kind": "reservoir",
+    "args": {
+     "level": 46,
+     "x0": -190,
+     "x1": 120,
+     "y0": 203,
+     "y1": 336
+    }
+   },
+   {
+    "part": "arch_dam",
+    "kind": "dam",
+    "args": {
+     "height": 30,
+     "width": 76
+    }
+   }
+  ],
+  "solar": [
+   {
+    "part": "solar_array",
+    "kind": "at_ground",
+    "fn": "solar_array",
+    "at": [
+     -78,
+     16
+    ],
+    "dz": 0.0,
+    "args": {
+     "rows": 4,
+     "cols": 9,
+     "tilt": 28,
+     "scale": 3.0
+    }
+   }
+  ],
+  "wind": [
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     -34,
+     100
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 30,
+     "blade_len": 16.5,
+     "rotor_deg": 0,
+     "yaw": 14
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     -12,
+     112
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 28,
+     "blade_len": 15.4,
+     "rotor_deg": 40,
+     "yaw": 6
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     10,
+     98
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 32,
+     "blade_len": 17.6,
+     "rotor_deg": 80,
+     "yaw": -4
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     32,
+     118
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 27,
+     "blade_len": 14.85,
+     "rotor_deg": 20,
+     "yaw": 8
+    }
+   }
+  ],
+  "coal": [
+   {
+    "part": "coal_plant",
+    "kind": "coal",
+    "fn": "coal_plant",
+    "args": {
+     "cx": -90,
+     "cy": 134,
+     "towers": 2,
+     "chimney_h": 44,
+     "yaw": -8,
+     "scale": 0.85
+    }
+   }
+  ],
+  "gas": [
+   {
+    "part": "gas_pipe",
+    "kind": "gas_pipe",
+    "args": {
+     "x0": -146,
+     "y0": 118,
+     "x1": -62,
+     "y1": 112
+    }
+   }
+  ],
+  "grid": [
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -74,
+     126
+    ],
+    "args": {
+     "height": 30,
+     "yaw": 12
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -46,
+     150
+    ],
+    "args": {
+     "height": 32,
+     "yaw": 14
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -6,
+     170
+    ],
+    "args": {
+     "height": 32,
+     "yaw": 10
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     46,
+     128
+    ],
+    "args": {
+     "height": 36,
+     "yaw": 12
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     104,
+     84
+    ],
+    "args": {
+     "height": 40,
+     "yaw": 10
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     152,
+     40
+    ],
+    "args": {
+     "height": 44,
+     "yaw": 8
+    }
+   }
+  ]
+ },
+ "palettes": {
+  "warm": {
+   "dark": [
+    86,
+    48,
+    38
+   ],
+   "mid": [
+    132,
+    80,
+    60
+   ],
+   "light": [
+    168,
+    110,
+    84
+   ],
+   "line": [
+    48,
+    26,
+    20
+   ]
+  },
+  "cool": {
+   "dark": [
+    36,
+    54,
+    68
+   ],
+   "mid": [
+    62,
+    88,
+    104
+   ],
+   "light": [
+    98,
+    126,
+    140
+   ],
+   "line": [
+    14,
+    26,
+    36
+   ]
+  }
+ },
+ "composition_knobs": {
+  "hero": {
+   "values": [
+    "wind",
+    "gas"
+   ],
+   "default": "wind",
+   "note": "hero subject; must be one of the input tags"
+  },
+  "focus_scale": {
+   "default": 1.0,
+   "min": 0.7,
+   "max": 1.3,
+   "note": "multiplies the hero's size arguments (scale_args); the measured result is hero_bbox_area_pct"
+  },
+  "reading_order": {
+   "values": [
+    "left_to_right",
+    "right_to_left"
+   ],
+   "default": "left_to_right",
+   "note": "right_to_left mirrors the world: old plant on the right, the line of sight runs leftwards"
+  },
+  "relief": {
+   "default": 1.0,
+   "min": 0.3,
+   "max": 1.5,
+   "note": "terrain height multiplier (flatter for a pipeline story)"
+  },
+  "ground": {
+   "values": [
+    "warm",
+    "cool",
+    "<{dark,mid,light,line} as [r,g,b]>"
+   ],
+   "default": "warm",
+   "note": "named family or given colours; under a story scene the named family takes its arc's tone (stories.arc_grounds)"
+  },
+  "accent": {
+   "default": "#1a9a6c",
+   "note": "any hex; the accent part (blades / valve wheel) is painted in a 5-step ramp generated from it. By convention green is kept for renewable equipment"
+  },
+  "smoke": {
+   "default": true,
+   "note": "one pale grey wisp from the first coal chimney, the only grey block"
+  },
+  "seed": {
+   "default": 21
+  },
+  "style": {
+   "values": [
+    "ink",
+    "iso",
+    "geo"
+   ],
+   "default": null,
+   "renderers": [
+    "scene"
+   ],
+   "note": "the scene renderer's look (topics.scene_renderer): ink = hand-drawn ink lines, iso = isometric, geo = flat geometric; the default (null) is the topic's topics.scenes.<topic>.style. Only the scene renderer has it: a request giving it to another renderer is refused"
+  },
+  "scene": {
+   "values": [
+    "queue",
+    "grid",
+    "door"
+   ],
+   "default": null,
+   "renderers": [
+    "scene"
+   ],
+   "note": "the scene the scene renderer stages the figures in (queue: people in line; grid: classroom desks; door: a doorway the few walk through); the default (null) is the first rule of topics.scene_renderer.scene_choice the data matches. A scene given here must be able to draw the data (scene_renderer.draws), or it is refused. Only the scene renderer has it"
+  }
+,
+  "hero_h": {
+   "default": 0.58,
+   "min": 0.5,
+   "max": 0.6,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the hero's height (the queue's front figure, enlarged), a share of the picture height"
+  },
+  "hero_x": {
+   "default": 0.13,
+   "min": 0.08,
+   "max": 0.3,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the hero's centre, a share of the picture width (the left-front third)"
+  },
+  "hero_foot": {
+   "default": 0.97,
+   "min": 0.88,
+   "max": 1.0,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the hero's feet, a share of the picture height from the top; the queue's feet run from here to the far end"
+  },
+  "queue_gap": {
+   "default": 0.32,
+   "min": 0.2,
+   "max": 0.5,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's first figure behind the hero: its centre right of the hero's by this share of the hero's height"
+  },
+  "queue_far_h": {
+   "default": 0.17,
+   "min": 0.08,
+   "max": 0.25,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's farthest figure's height, a share of the picture height; with the hero it sets the one depth rule"
+  },
+  "queue_far_x": {
+   "default": 0.97,
+   "min": 0.8,
+   "max": 1.0,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's far end, a share of the picture width"
+  },
+  "queue_far_foot": {
+   "default": 0.5,
+   "min": 0.35,
+   "max": 0.7,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the far end's feet, a share of the picture height from the top (the queue recedes up and to the right)"
+  },
+  "queue_ink": {
+   "default": 0.62,
+   "min": 0.4,
+   "max": 0.85,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue's line opacity (a mid-grey queue; the hero's lines are at 1 and drawn once more at hero_ink_again)"
+  },
+  "queue_fill": {
+   "default": 0.8,
+   "min": 0.68,
+   "max": 0.92,
+   "renderers": [
+    "collage"
+   ],
+   "note": "the queue figures' blocks: the paper colour darkened to this share (the hero's block is the paper)"
+  }
+ },
+ "input": {
+  "schema": {
+   "tags": [
+    "subset of: wind, solar, hydro, coal, gas, grid"
+   ],
+   "ground": "name or colours",
+   "accent": "hex",
+   "composition": "any of the composition_knobs",
+   "parts": "optional {part_id: {knob: value}} overrides, clamped to the ranges above"
+  },
+  "render": {
+   "w": 2880,
+   "h": 1120,
+   "view_w": 1440,
+   "view_h": 560
+  }
+ },
+ "output": {
+  "files": [
+   "hero.svg (1440x560 viewBox, paper and paint grain embedded as raster, ink and paint planes vector)",
+   "hero.png (2880x1120, Chrome screenshot of the svg)",
+   "result.json"
+  ],
+  "measures": [
+   "palette",
+   "line_w_pct",
+   "edge_grey",
+   "texture_all",
+   "ground_cover",
+   "tones",
+   "hero_bbox_area_pct"
+  ],
+  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame",
+  "omitted": "run_hero's reply carries `omitted` (an integer: the members of the request the picture does not draw, 0 when all are drawn) and `omitted_label_key` (topics.omitted.label_key, the key of the caption the page prints, e.g. 'N left out in the middle'); the same number is in composition.omitted. The picture itself has no text."
+ },
+ "stories": {
+  "doc": "The opening picture follows the page's story, not its table: the caller names the lead finding's angle (findings.py ANGLES, the page's first titled section) as `lead`, and the scene it maps to here is drawn: its hero (placed, sized and framed by the scene), its own layout of the request's tags (a tag the scene has no slot for is left out), and the parts it always places. An angle with no scene, a scene whose tags or hero the request lacks, or no lead keeps the panorama (heroes + slots). Same input, same picture: nothing is random or read from words.",
+  "angles": {
+   "path": "road",
+   "need": "steps",
+   "rank": "lineup",
+   "spread": "lineup",
+   "ends": "pair",
+   "members": "atlas",
+   "map": "atlas",
+   "movers": "steps",
+   "overtake": "lineup",
+   "tiles": "atlas",
+   "chain": "sequence",
+   "pace": "sequence",
+   "groups": "atlas",
+   "below": "lineup"
+  },
+  "angle_arcs": {
+   "movers": "lagging"
+  },
+  "angle_arcs_doc": "An angle whose story arc is not its scene's (the steps scene is drawn for the on-time story and for the movers, who belong to the lagging story) gives the ground the angle's arc; scripts/test_illus_hero.py holds every angle's arc equal to findings.py ARC_OF.",
+  "arcs_doc": "Each scene belongs to one story arc (findings: what happened, on time for a target, lagging behind); the arc gives the ground its tone, so the opening pictures of different stories do not share one ground. A request's named ground (warm, cool) picks the family, given colours replace it; the panorama keeps palettes.",
+  "arc_grounds": {
+   "happened": {
+    "warm": {
+     "dark": [
+      110,
+      106,
+      96
+     ],
+     "mid": [
+      146,
+      142,
+      130
+     ],
+     "light": [
+      182,
+      178,
+      166
+     ],
+     "line": [
+      34,
+      30,
+      26
+     ]
+    },
+    "cool": {
+     "dark": [
+      70,
+      84,
+      96
+     ],
+     "mid": [
+      104,
+      120,
+      132
+     ],
+     "light": [
+      146,
+      160,
+      170
+     ],
+     "line": [
+      18,
+      26,
+      34
+     ]
+    }
+   },
+   "in_time": {
+    "warm": {
+     "dark": [
+      150,
+      102,
+      82
+     ],
+     "mid": [
+      184,
+      136,
+      112
+     ],
+     "light": [
+      212,
+      172,
+      150
+     ],
+     "line": [
+      54,
+      30,
+      22
+     ]
+    },
+    "cool": {
+     "dark": [
+      62,
+      88,
+      90
+     ],
+     "mid": [
+      94,
+      120,
+      120
+     ],
+     "light": [
+      134,
+      158,
+      156
+     ],
+     "line": [
+      16,
+      30,
+      32
+     ]
+    }
+   },
+   "lagging": {
+    "warm": {
+     "dark": [
+      98,
+      86,
+      96
+     ],
+     "mid": [
+      132,
+      118,
+      126
+     ],
+     "light": [
+      168,
+      154,
+      158
+     ],
+     "line": [
+      32,
+      24,
+      32
+     ]
+    },
+    "cool": {
+     "dark": [
+      62,
+      66,
+      88
+     ],
+     "mid": [
+      94,
+      98,
+      120
+     ],
+     "light": [
+      134,
+      138,
+      158
+     ],
+     "line": [
+      18,
+      18,
+      34
+     ]
+    }
+   }
+  }
+ },
+ "scenes": {
+  "road": {
+   "note": "the path to a target: a wide track winds from the near ground to the horizon, a line of pylons walks beside it, turbines and a solar field line the right, the target marker (the accent) on the far ridge where the track ends",
+   "needs_tags": [
+    "grid"
+   ],
+   "relief": 0.9,
+   "hero": {
+    "name": "flag",
+    "at": [
+     34,
+     116
+    ],
+    "args": {
+     "height": 64,
+     "cloth": 30
+    },
+    "camera": {
+     "loc": [
+      0,
+      -150,
+      34
+     ],
+     "target": [
+      6,
+      150,
+      22
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -58,
+       -24
+      ],
+      "args": {
+       "height": 40,
+       "yaw": 34
+      },
+      "mark": {
+       "z": "height",
+       "rise": 40
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -40,
+       16
+      ],
+      "args": {
+       "height": 38,
+       "yaw": 32
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -26,
+       50
+      ],
+      "args": {
+       "height": 36,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -12,
+       78
+      ],
+      "args": {
+       "height": 34,
+       "yaw": 28
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       6,
+       100
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 26
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       62,
+       -36
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 7,
+       "tilt": 28,
+       "scale": 2.6
+      },
+      "mark": {
+       "z": "4",
+       "rise": 60
+      }
+     }
+    ],
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       78,
+       40
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 40,
+       "blade_len": 21,
+       "rotor_deg": 20,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       112,
+       76
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 36,
+       "blade_len": 19,
+       "rotor_deg": 70,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       138,
+       112
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 32,
+       "blade_len": 17,
+       "rotor_deg": 100,
+       "yaw": 8
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -110,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 16,
+       "rotor_deg": 40,
+       "yaw": 4
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -6,
+        -110
+       ],
+       [
+        4,
+        -70
+       ],
+       [
+        18,
+        -30
+       ],
+       [
+        24,
+        6
+       ],
+       [
+        14,
+        40
+       ],
+       [
+        4,
+        68
+       ],
+       [
+        14,
+        94
+       ],
+       [
+        32,
+        114
+       ]
+      ],
+      "width": 10
+     }
+    }
+   ],
+   "arc": "in_time"
+  },
+  "steps": {
+   "note": "the climb a target needs: a stair of stone steps rises to the right, each carrying a taller turbine, the accent turbine on the highest built step, the marker on a taller step still ahead",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     60,
+     40
+    ],
+    "dz": 38,
+    "args": {
+     "height": 48,
+     "blade_len": 26,
+     "rotor_deg": 20,
+     "yaw": -8
+    },
+    "mark": {
+     "z": "height+0.75*blade_len+38",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -236,
+      64
+     ],
+     "target": [
+      0,
+      140,
+      58
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -120,
+       40
+      ],
+      "dz": 6,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 10,
+       "yaw": 6
+      },
+      "mark": {
+       "z": "height+blade_len+6",
+       "rise": 34
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -75,
+       40
+      ],
+      "dz": 14,
+      "args": {
+       "height": 32,
+       "blade_len": 17,
+       "rotor_deg": 50,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -30,
+       40
+      ],
+      "dz": 22,
+      "args": {
+       "height": 38,
+       "blade_len": 20,
+       "rotor_deg": 85,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       15,
+       40
+      ],
+      "dz": 30,
+      "args": {
+       "height": 44,
+       "blade_len": 23,
+       "rotor_deg": 30,
+       "yaw": 2
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -120,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 6,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -75,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 14,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      -30,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 22,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      15,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 30,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      60,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 38,
+      "width": 26,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "plinth",
+     "kind": "at_ground",
+     "fn": "plinth",
+     "at": [
+      108,
+      40
+     ],
+     "dz": 0.0,
+     "args": {
+      "height": 40,
+      "width": 24,
+      "depth": 18,
+      "yaw": 0
+     }
+    },
+    {
+     "part": "target_flag",
+     "kind": "at_ground",
+     "fn": "target_flag",
+     "at": [
+      108,
+      40
+     ],
+     "dz": 40,
+     "args": {
+      "height": 76,
+      "cloth": 20,
+      "yaw": 0
+     },
+     "mark": {
+      "z": "height+40",
+      "rise": 20
+     }
+    },
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -170,
+        24
+       ],
+       [
+        -60,
+        22
+       ],
+       [
+        60,
+        22
+       ],
+       [
+        170,
+        24
+       ]
+      ],
+      "width": 6
+     }
+    }
+   ],
+   "arc": "in_time"
+  },
+  "lineup": {
+   "note": "a ranking: a row of turbines from the tallest down across the whole frame, standing on one baseline, one of them (the accent) among the others",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     -62,
+     46
+    ],
+    "args": {
+     "height": 46,
+     "blade_len": 23,
+     "rotor_deg": 0,
+     "yaw": -6
+    },
+    "mark": {
+     "z": "height+blade_len",
+     "rise": 30
+    },
+    "camera": {
+     "loc": [
+      0,
+      -176,
+      30
+     ],
+     "target": [
+      0,
+      140,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -128,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 60,
+       "blade_len": 30,
+       "rotor_deg": 15,
+       "yaw": 4
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 30
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -95,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 54,
+       "blade_len": 27,
+       "rotor_deg": 75,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -28,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 40,
+       "blade_len": 20,
+       "rotor_deg": 40,
+       "yaw": 2
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       4,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 35,
+       "blade_len": 18,
+       "rotor_deg": 100,
+       "yaw": 2
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       36,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 15,
+       "rotor_deg": 5,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       66,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 13,
+       "rotor_deg": 65,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       94,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 23,
+       "blade_len": 11,
+       "rotor_deg": 30,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       120,
+       46
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 21,
+       "blade_len": 10,
+       "rotor_deg": 90,
+       "yaw": 0
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 50
+      }
+     }
+    ]
+   },
+   "arc": "lagging",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        38
+       ],
+       [
+        -60,
+        36
+       ],
+       [
+        60,
+        36
+       ],
+       [
+        190,
+        38
+       ]
+      ],
+      "width": 7
+     }
+    }
+   ]
+  },
+  "pair": {
+   "note": "the two ends: on the left a tall turbine (the accent) in a full wind farm over a solar field, on the right across the track one low turbine by the old plant; the track between them is the gap",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.7,
+   "hero": {
+    "name": "wind",
+    "at": [
+     -58,
+     4
+    ],
+    "args": {
+     "height": 44,
+     "blade_len": 26,
+     "rotor_deg": 40,
+     "yaw": -10
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -150,
+      32
+     ],
+     "target": [
+      0,
+      150,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -110,
+       50
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 34,
+       "blade_len": 18,
+       "rotor_deg": 70,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -70,
+       86
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 30,
+       "blade_len": 16,
+       "rotor_deg": 20,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -130,
+       110
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 28,
+       "blade_len": 15,
+       "rotor_deg": 100,
+       "yaw": 6
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       -28,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 28,
+       "blade_len": 15,
+       "rotor_deg": 50,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       44,
+       -4
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 20,
+       "blade_len": 10,
+       "rotor_deg": 70,
+       "yaw": 6
+      },
+      "mark": {
+       "z": "height+blade_len",
+       "rise": 30
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       -104,
+       -20
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 6,
+       "tilt": 28,
+       "scale": 2.4
+      }
+     }
+    ],
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": 108,
+       "cy": 90,
+       "towers": 2,
+       "chimney_h": 40,
+       "yaw": -10,
+       "scale": 0.75
+      }
+     }
+    ]
+   },
+   "arc": "lagging",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        10,
+        -110
+       ],
+       [
+        12,
+        -50
+       ],
+       [
+        6,
+        10
+       ],
+       [
+        14,
+        70
+       ],
+       [
+        8,
+        140
+       ]
+      ],
+      "width": 8
+     }
+    }
+   ]
+  },
+  "atlas": {
+   "note": "the members side by side, as on a map: an oblique view from high up over the whole land, each kind of plant in its own patch with a leader dot over it, the accent turbine standing in the wind farm on the right",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 1.0,
+   "hero": {
+    "name": "wind",
+    "at": [
+     96,
+     40
+    ],
+    "args": {
+     "height": 32,
+     "blade_len": 18,
+     "rotor_deg": 40,
+     "yaw": 0
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -190,
+      120
+     ],
+     "target": [
+      0,
+      70,
+      6
+     ],
+     "lens": 28
+    }
+   },
+   "slots": {
+    "wind": [
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       130,
+       20
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 10,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       150,
+       62
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 26,
+       "blade_len": 14,
+       "rotor_deg": 70,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       70,
+       70
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 30,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       124,
+       96
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 100,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       60,
+       10
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 24,
+       "blade_len": 13,
+       "rotor_deg": 50,
+       "yaw": 0
+      }
+     },
+     {
+      "part": "wind_turbine",
+      "kind": "at_ground",
+      "fn": "wind_turbine",
+      "at": [
+       170,
+       120
+      ],
+      "dz": -0.5,
+      "args": {
+       "height": 22,
+       "blade_len": 12,
+       "rotor_deg": 20,
+       "yaw": 0
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       -70,
+       -10
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 4,
+       "cols": 9,
+       "tilt": 28,
+       "scale": 3.0
+      },
+      "mark": {
+       "z": "6",
+       "rise": 46
+      }
+     },
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       24,
+       -60
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 3,
+       "cols": 6,
+       "tilt": 28,
+       "scale": 2.4
+      }
+     }
+    ],
+    "hydro": [
+     {
+      "part": "reservoir",
+      "kind": "reservoir",
+      "args": {
+       "level": 46,
+       "x0": -190,
+       "x1": 120,
+       "y0": 203,
+       "y1": 336
+      }
+     },
+     {
+      "part": "arch_dam",
+      "kind": "dam",
+      "args": {
+       "height": 30,
+       "width": 76
+      },
+      "mark": {
+       "at": [
+        -38,
+        205
+       ],
+       "z": "height+16",
+       "rise": 30
+      }
+     }
+    ],
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": -140,
+       "cy": 90,
+       "towers": 2,
+       "chimney_h": 44,
+       "yaw": -8,
+       "scale": 0.8
+      },
+      "mark": {
+       "z": "chimney_h*scale",
+       "rise": 30
+      }
+     }
+    ],
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -150,
+       20
+      ],
+      "args": {
+       "height": 30,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -104,
+       40
+      ],
+      "args": {
+       "height": 30,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -50,
+       60
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       4,
+       80
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       50,
+       100
+      ],
+      "args": {
+       "height": 32,
+       "yaw": 30
+      }
+     }
+    ]
+   },
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        -50
+       ],
+       [
+        -120,
+        -40
+       ],
+       [
+        -60,
+        -46
+       ],
+       [
+        0,
+        -20
+       ],
+       [
+        40,
+        0
+       ],
+       [
+        110,
+        -10
+       ],
+       [
+        190,
+        10
+       ]
+      ],
+      "width": 6
+     }
+    },
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        20,
+        -150
+       ],
+       [
+        10,
+        -80
+       ],
+       [
+        0,
+        -20
+       ]
+      ],
+      "width": 5
+     }
+    }
+   ],
+   "arc": "lagging"
+  },
+  "sequence": {
+   "note": "events in order, read left to right along one track: the old plant (or the gas line), then the wires, then the solar field, then the turbine (the accent), a leader dot over each station",
+   "needs_tags": [
+    "wind"
+   ],
+   "relief": 0.4,
+   "hero": {
+    "name": "wind",
+    "at": [
+     80,
+     30
+    ],
+    "args": {
+     "height": 52,
+     "blade_len": 28,
+     "rotor_deg": 40,
+     "yaw": -10
+    },
+    "mark": {
+     "z": "height+0.75*blade_len",
+     "rise": 20
+    },
+    "camera": {
+     "loc": [
+      0,
+      -160,
+      22
+     ],
+     "target": [
+      0,
+      140,
+      40
+     ],
+     "lens": 30
+    }
+   },
+   "slots": {
+    "coal": [
+     {
+      "part": "coal_plant",
+      "kind": "coal",
+      "fn": "coal_plant",
+      "args": {
+       "cx": -104,
+       "cy": 40,
+       "towers": 2,
+       "chimney_h": 50,
+       "yaw": -4,
+       "scale": 1.1
+      },
+      "mark": {
+       "z": "chimney_h*scale",
+       "rise": 30
+      }
+     }
+    ],
+    "gas": [
+     {
+      "part": "gas_pipe",
+      "kind": "gas_pipe",
+      "args": {
+       "x0": -160,
+       "y0": 20,
+       "x1": -70,
+       "y1": 24
+      },
+      "mark": {
+       "at": [
+        -115,
+        22
+       ],
+       "z": "8",
+       "rise": 60
+      }
+     }
+    ],
+    "grid": [
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -62,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -36,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      },
+      "mark": {
+       "z": "height",
+       "rise": 40
+      }
+     },
+     {
+      "part": "pylon",
+      "kind": "pylon",
+      "fn": "pylon",
+      "at": [
+       -10,
+       30
+      ],
+      "args": {
+       "height": 46,
+       "yaw": 4
+      }
+     }
+    ],
+    "solar": [
+     {
+      "part": "solar_array",
+      "kind": "at_ground",
+      "fn": "solar_array",
+      "at": [
+       26,
+       10
+      ],
+      "dz": 0.0,
+      "args": {
+       "rows": 4,
+       "cols": 7,
+       "tilt": 28,
+       "scale": 3.0
+      },
+      "mark": {
+       "z": "6",
+       "rise": 70
+      }
+     }
+    ]
+   },
+   "arc": "happened",
+   "always": [
+    {
+     "part": "track",
+     "kind": "track",
+     "args": {
+      "points": [
+       [
+        -190,
+        4
+       ],
+       [
+        -100,
+        0
+       ],
+       [
+        0,
+        -4
+       ],
+       [
+        100,
+        0
+       ],
+       [
+        190,
+        4
+       ]
+      ],
+      "width": 7
+     }
+    }
+   ]
+  }
+ },
+ "contact_shadow": {
+  "len": 0.55,
+  "w": 0.06,
+  "dir": [
+   0.8,
+   -0.6
+  ],
+  "note": "every standing part (turbine, pylon, marker) casts a thin wedge on the terrain from its foot, length len x its height, towards dir (x, y), so nothing in a picture floats; not mirrored with the reading order, as the light is not"
+ },
+ "topics": {
+  "doc": "The opening picture follows the page's topic as well as its finding. The caller names the measure family of the page's table (`family`, an id of runtime/pi/assets/measure-families.json), which maps here to a topic and the topic to its unit (one thing per member) and its ground filler; a family this table does not list, or none, is the neutral topic. `subject` (the finding's own rows: members with a value each, a rule or a path) then composes the picture: scenes.kind picks the layout from the lead angle (tally: the members that pass a line are lit; pair: the highest and the lowest at their sizes; rank: the members by value, sized by it; path: the milestones passed on the way to a target). The count of lit units is recomputed from the rows and refused when it is not the one the page declares. Nothing here is read from words.",
+  "families": {
+   "renewable_share": "energy",
+   "energy_balance": "energy",
+   "electricity_mix": "energy",
+   "installed_capacity": "energy",
+   "electricity_price": "energy",
+   "co2": "emissions",
+   "pop65": "people",
+   "population": "people",
+   "urban_share": "people",
+   "unemployment": "labour",
+   "gdp": "trade",
+   "gdp_pc": "trade",
+   "energy_imports": "trade",
+   "asylum": "migration"
+  },
+  "neutral": "neutral",
+  "angle_kinds": {
+   "members": "tally",
+   "tiles": "tally",
+   "map": "tally",
+   "groups": "groups",
+   "movers": "tally",
+   "overtake": "tally",
+   "need": "path",
+   "path": "path",
+   "pace": "series",
+   "chain": "series",
+   "ends": "pair",
+   "spread": "pair",
+   "rank": "rank"
+  },
+  "kind_arcs": {
+   "tally": "lagging",
+   "pair": "lagging",
+   "rank": "lagging",
+   "path": "in_time",
+   "series": "happened",
+   "groups": "lagging"
+  },
+  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people. scene = the scene renderer (scene_renderer below): the people topic takes it (11-24) for the layouts it draws (scene_renderer.kinds) and keeps people (its renderer_else) for the others; trade takes it too (11-25), its renderer_else the 3D path, and so does tech, a topic no family maps to yet; the other topics stay line or 3d. collage = runtime/illus_hero/collage (collage_renderer below: engraving cut-outs in a perspective queue, K of N in the accent): the labour topic (11-25, the unemployment family) takes it for a tally and a proportion and routes every other request as its renderer_else_topic (people) does, so its rank and pair stay the scene renderer's and its path, series and groups the people drawing's. scenes.<topic>.style is the look a topic gets from the scene renderer (people, migration, neutral: ink; energy, emissions, tech: iso; trade: geo), recorded for the topics not yet switched.",
+  "scene_renderer": {
+   "doc": "scene = runtime/illus_hero/scene/scene.mjs (node; one JSON line in: {scene, style, seed, figures: [{lit}], box: {w, h}, palette: {ink, paper, accent} as hex}, one line out: {svg, w, h, lit, total, dropped} | {refused}). run_hero.py starts it (build_scene) with the node on PATH, as next_leaf Runner::node does, and the deadline below; it decides who is lit, never the node: the node draws the flags it is given and reports its own count, which must be the recomputed one. Two subject forms: a rule (members, rule, declared: the tally's own recount, one figure per member, the lit first) and a proportion the subject carries beside its own form ({..., proportion: {share, figures, declared: {count, total}}}: count = figures x share rounded half to even on the decimal value as written, refused when it is not the declared count; drawn only on a topic whose renderer is scene, ignored on the others). The palette is the page's ink (--t-title) and paper (--bg) and the request's accent (the topic's when none is given). `kinds`: the layouts it draws (tally from a rule; rank and pair, the rank and ends/spread leads, from the members' values: the figures stand highest first in the given order (request order: given), rank lights the highest, pair the highest and the lowest; more members than fold's head + tail keep the head and the tail and the middle is one gap marker, `omitted` the members folded); a topic whose renderer is scene draws the other layouts (groups, path, series) with its renderer_else. On a topic whose renderer is scene a subject carrying a proportion draws the proportion (whatever its own layout); on other topics the proportion is ignored.",
+   "script": "scene/scene.mjs",
+   "kinds": [
+    "tally",
+    "rank",
+    "pair"
+   ],
+   "fold": [
+    6,
+    6
+   ],
+   "scene_choice_doc": "Which scene a request draws, by the data's shape: the first rule whose `when` the request matches (form: proportion, tally, rank or pair; style: the resolved style, the style knob's or the topic's; n_max: at most this many figures), else scene_default. The scene knob overrides it; `draws` says what each scene can draw (forms, styles, n_max), and an override it cannot draw is refused. Only queue takes the given order and gap markers of a rank or a pair.",
+   "scene_choice": [
+    {
+     "when": {
+      "form": "proportion",
+      "style": "geo",
+      "n_max": 10
+     },
+     "scene": "door"
+    },
+    {
+     "when": {
+      "form": "proportion"
+     },
+     "scene": "grid"
+    }
+   ],
+   "scene_default": "queue",
+   "draws": {
+    "queue": {
+     "forms": [
+      "proportion",
+      "tally",
+      "rank",
+      "pair"
+     ]
+    },
+    "grid": {
+     "forms": [
+      "proportion",
+      "tally"
+     ],
+     "n_max": 60
+    },
+    "door": {
+     "forms": [
+      "proportion",
+      "tally"
+     ],
+     "styles": [
+      "geo"
+     ],
+     "n_max": 10
+    }
+   },
+   "figures": [
+    1,
+    60
+   ],
+   "box": {
+    "w": 1440,
+    "h": 560
+   },
+   "deadline": 20.0
+  },
+  "collage_renderer": {
+   "doc": "collage = runtime/illus_hero/collage/draw.py (run_hero.py build_collage; standard library only, no pixel work): N single full-length engraving figures (Miguel Gamborino's street-cries series, The Metropolitan Museum of Art, CC0; collage/LICENSES.tsv) from one pack (collage/pack.bin, indexed by collage/pack.json, built once by scripts/build_collage_pack.py): one queue (people queueing for work) on one whole sheet of paper (no ground band; a soft shadow under each figure's feet), K of them with their clothing in the accent under the engraving lines. Of the K, the front-most is the hero: the queue's front figure enlarged, hero_h of the picture height, standing in the left-front third, the darkest and clearest figure (full ink on a block of the paper at hero_fill); the rest of the queue stands right behind it (its first figure queue_gap x the hero's height right of the hero) and recedes up and to the right, near-large to far-small in one continuous sweep, a mid-grey queue (its lines at queue_ink, its accent figures' lines at red_ink so the engraving stays legible over the accent, its blocks at queue_fill grey). K = 0 draws no hero. The hero is one of the N: the picture's figures are N and its accent figures K. Two subjects: a proportion (N = proportion.figures, K = run_hero.proportion_flags' K, its declared count and total required and checked there; scene <topic>.proportion) or a tally (kinds; the subject's declared count and total required and recounted by lit_codes); N off `figures`, or any other layout, is `unavailable` (the page's strip stands in). Every figure obeys one depth rule: its feet on the line from the hero's feet (hero_x, hero_foot) to the far end's (queue_far_x, queue_far_foot), its height k x (foot y - yh), the linear rule through the hero (hero_h) and the far end (queue_far_h); the knobs are composition_knobs with renderers [collage], defaults and ranges there. The queue's accent figures: one rule for every K (no share threshold): spread evenly over a run of candidate places, the first run holding at least 2 x K places so that a grey figure stands between every two accent figures (the clear places: not the first, which touches the hero, nor the last, at least red_min_h high; else every place but the first; else every place). One figure stands at most max_uses times in one picture (hero, queue and backdrop together); K over max_uses x the pack's masked figures (pack.json red_ok, read as it is) is unavailable. Behind the queue, the far view (far): layers of the pack's figures, far to near, each smaller and paler than the one in front (a foot line with a seeded jitter, a height, a count spread over an x span, fill and ink), the outer `edge` share of each layer fading into the paper; the far crowd is per_figure x N x a ramp from 0 at N = ramp[0] to 1 at N = ramp[1] figures, shared over the layers in the ratio of their n (no backdrop for a short queue, no jump at any N); no figure twice in a layer, no accent, not among the N (no outline-mask count), the least drawn figures first. Only the figures with a hand-set clothing mask (pack.json red_ok: a polygon per figure drawn over the engraving, shoulders followed, face, hands and held objects left out) wear the accent; when K is more than there are they come round again in the seeded order, never twice in one group (composition red_repeats). The hero is the first red_ok figure (seeded order) whose clothing solidity is at least hero_solidity; a queue accent figure the first red_ok figure whose clothing is at least red_visible in view of the figures in front (cover_cell px cells), else the one most in view. far_light: the queue lines' opacity factor, a + b x min(1, height / c) (far figures lighter). Layers: paper, then per figure farthest first a foot shadow, a block cut to the outline, the accent cut to the clothing, the lines; then the grain. No text, no number, no halo, no props. Same request, same bytes (the seed: sha256 of the sorted member codes or the proportion's share, K, N, the width, the knobs and the pack's sha256). max_svg_bytes: a reply larger is `unavailable`. A short queue is seen close (close; draw.py close_knobs): at N <= close.ramp[0] each knob in close.shift moves by its shift (the hero and the far end larger, the far end nearer and lower), so its few figures fill the sheet with their heads in the top third, and the spacing factor's top falls to close.fac_max, so the people stand close and a very short queue ends short of the far end; the shift falls to 0 by N = close.ramp[1] (the far crowd's ramp: the queue steps back as the crowd comes in, no jump at any N), so a long queue is drawn at the knobs as they are. No place lets the pack's widest figure run past the sheet's right edge.",
+   "kinds": [
+    "tally"
+   ],
+   "figures": [
+    3,
+    30
+   ],
+   "queue": {
+    "aspect": 0.42,
+    "probe": 80,
+    "fac": [
+     0.3,
+     1.5
+    ]
+   },
+   "max_uses": 2,
+   "group": 5,
+   "hero_solidity": 0.55,
+   "hero_fill": 0.9,
+   "red_ink": 1.0,
+   "far": {"layers": [{"foot": 0.2, "h": 0.1, "n": 34, "x": [-0.04, 1.04], "edge": 0.18, "jitter": 0.7, "foot_jitter": 0.25, "fill": 0.9, "ink": 0.36}, {"foot": 0.3, "h": 0.135, "n": 30, "x": [-0.06, 1.0], "edge": 0.2, "jitter": 0.7, "foot_jitter": 0.25, "fill": 0.85, "ink": 0.46}, {"foot": 0.42, "h": 0.18, "n": 22, "x": [-0.04, 1.04], "edge": 0.22, "jitter": 0.6, "foot_jitter": 0.2, "fill": 0.8, "ink": 0.56}], "per_figure": 2.0, "ramp": [14, 24]}, "queue_red_opacity": 0.78,
+   "shadow": {
+    "w": 1.0,
+    "h": 0.035,
+    "min_h": 3
+   },
+   "far_light": [
+    0.55,
+    0.45,
+    250
+   ],
+   "red_visible": 0.5,
+   "red_min_h": 60,
+   "close": {"ramp": [14, 24], "fac_max": 0.85, "shift": {"hero_h": 0.27, "hero_foot": 0.02, "queue_far_x": -0.03, "queue_far_foot": 0.21, "queue_far_h": 0.52, "queue_gap": -0.04}},
+   "cover_cell": 4,
+   "max_svg_bytes": 3145728
+  },
+  "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
+  "layout": {
+   "x": [
+    -108,
+    108
+   ],
+   "y0": 40,
+   "row_dy": 34,
+   "rows_at": [
+    10,
+    20
+   ],
+   "max_size": 1.5,
+   "min_size": 0.5,
+   "unlit_k": 0.8,
+   "pair": {
+    "hi_x": -62,
+    "lo_x": 40,
+    "y": 40,
+    "hi_size": 1.35,
+    "floor": 0.35,
+    "back_y": 104,
+    "back_max": 27,
+    "back_size": 0.9,
+    "back_floor": 0.2
+   },
+   "rank": {
+    "ends": {"3d": [7, 7], "line": [5, 5], "people": [5, 5]},
+    "size": 1.7,
+    "floor": 0.3,
+    "y": 46,
+    "x": [
+     -124,
+     124
+    ]
+   },
+   "path": {
+    "milestones": 10,
+    "y": 44,
+    "size": [
+     0.7,
+     1.2
+    ],
+    "flag_at": [
+     118,
+     56
+    ],
+    "track_y": 38,
+    "x": [
+     -100,
+     88
+    ]
+   },
+   "mark_rise": 38,
+   "series": {
+    "min": 4,
+    "max": 30,
+    "y": 44,
+    "size": 1.6,
+    "floor": 0.3,
+    "x": [
+     -124,
+     124
+    ]
+   },
+   "groups": {
+    "x": [
+     [
+      -112,
+      -10
+     ],
+     [
+      10,
+      112
+     ]
+    ],
+    "gap_note": "two panels, each on its own stone slab",
+    "slab": {
+     "h": 4,
+     "pad": 10
+    },
+    "rows_at": 6,
+    "rows": 2
+   }
+  },
+  "scenes": {
+   "energy": {
+    "unit": "turbine_unit",
+    "renderer": "line",
+    "style": "iso",
+    "relief": 0.4,
+    "filler": [],
+    "objects": {
+     "doc": "Within the energy topic the object follows the finding: the finding's measure key (subject.measure: wind, solar, hydro, grid, biomass) when given, else the registered family's entry below. A family entry is a measure key, or mix: then the layout picks (tally cycles the whole mix, the others one object of it). A key not listed refuses.",
+     "measure": {
+      "wind": "turbine_unit",
+      "solar": "solar_unit",
+      "hydro": "dam_unit",
+      "grid": "pylon_unit",
+      "biomass": "biomass_unit"
+     },
+     "family": {
+      "renewable_share": "mix",
+      "electricity_mix": "mix",
+      "installed_capacity": "wind",
+      "electricity_price": "grid",
+      "energy_balance": "grid"
+     },
+     "default": "mix",
+     "mix": {
+      "tally": [
+       "turbine_unit",
+       "solar_unit",
+       "dam_unit",
+       "biomass_unit",
+       "pylon_unit"
+      ],
+      "groups": [
+       "solar_unit"
+      ],
+      "pair": [
+       "solar_unit"
+      ],
+      "rank": [
+       "dam_unit"
+      ],
+      "path": [
+       "turbine_unit"
+      ],
+      "series": [
+       "biomass_unit"
+      ]
+     }
+    }
+   },
+   "emissions": {
+    "unit": "stack_unit",
+    "renderer": "3d",
+    "style": "iso",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "tree_unit",
+      "at": [
+       -140,
+       118
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -96,
+       134
+      ],
+      "args": {
+       "size": 0.9
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       -40,
+       124
+      ],
+      "args": {
+       "size": 1.1
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       52,
+       136
+      ],
+      "args": {
+       "size": 1.0
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       112,
+       120
+      ],
+      "args": {
+       "size": 1.2
+      }
+     },
+     {
+      "fn": "tree_unit",
+      "at": [
+       150,
+       132
+      ],
+      "args": {
+       "size": 0.9
+      }
+     }
+    ]
+   },
+   "people": {
+    "unit": "figure_unit",
+    "renderer": "scene",
+    "renderer_else": "people",
+    "style": "ink",
+    "relief": 0.3,
+    "filler": [],
+    "figure_style": {
+     "default": "line",
+     "values": [
+      "flat",
+      "line"
+     ],
+     "doc": "How the crowd is painted (line is the main look, flat is kept for comparison). flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
+    }
+   },
+   "labour": {
+    "unit": "figure_unit",
+    "renderer": "collage",
+    "renderer_else_topic": "people",
+    "style": "ink",
+    "relief": 0.3,
+    "filler": [],
+    "figure_style": {
+     "default": "line",
+     "values": [
+      "flat",
+      "line"
+     ],
+     "doc": "As the people topic's: its renderer_else_topic draws the layouts the collage does not, with the people topic's figures."
+    },
+    "doc": "The unemployment family (11-25): a tally and a proportion are the collage (topics.collage_renderer); every other request is routed as the people topic's (renderer_else_topic), drawn with this topic's own unit, style and accent. It shares the people figure unit for those layouts, as tech shares the neutral cairn."
+   },
+   "trade": {
+    "unit": "container_unit",
+    "renderer": "scene",
+    "renderer_else": "3d",
+    "style": "geo",
+    "relief": 0.3,
+    "filler": [
+     {
+      "fn": "crane_unit",
+      "at": [
+       -120,
+       150
+      ],
+      "args": {
+       "size": 1.6
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       20,
+       160
+      ],
+      "args": {
+       "size": 1.9
+      }
+     },
+     {
+      "fn": "crane_unit",
+      "at": [
+       130,
+       150
+      ],
+      "args": {
+       "size": 1.5
+      }
+     }
+    ]
+   },
+   "migration": {
+    "unit": "waypoint_unit",
+    "renderer": "3d",
+    "style": "ink",
+    "relief": 0.4,
+    "filler": [
+     {
+      "fn": "fence_unit",
+      "at": [
+       -100,
+       150
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       10,
+       156
+      ],
+      "args": {
+       "length": 100
+      }
+     },
+     {
+      "fn": "fence_unit",
+      "at": [
+       118,
+       150
+      ],
+      "args": {
+       "length": 80
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -150,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -114,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -78,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -42,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       -6,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       30,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       66,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       102,
+       9
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     },
+     {
+      "fn": "chevron_unit",
+      "at": [
+       138,
+       8
+      ],
+      "args": {
+       "size": 1.0,
+       "yaw": 0
+      }
+     }
+    ]
+   },
+   "tech": {
+    "unit": "cairn_unit",
+    "renderer": "scene",
+    "renderer_else": "3d",
+    "style": "iso",
+    "strip_style": "geo",
+    "relief": 0.4,
+    "filler": [],
+    "doc": "no measure family maps here yet (topics.families): a tech topic's tally is the scene renderer's (isometric), its other layouts the neutral topic's 3D cairns (renderer_else), once families are mapped to it"
+   },
+   "neutral": {
+    "unit": "cairn_unit",
+    "renderer": "3d",
+    "style": "ink",
+    "relief": 0.4,
+    "filler": []
+   }
+  },
+  "cameras": {
+   "tally": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
+   },
+   "default": {
+    "loc": [
+     0,
+     -176,
+     30
+    ],
+    "target": [
+     0,
+     140,
+     40
+    ],
+    "lens": 30
+   },
+   "groups": {
+    "loc": [
+     0,
+     -170,
+     96
+    ],
+    "target": [
+     0,
+     130,
+     22
+    ],
+    "lens": 30
+   },
+   "raised": {
+    "loc": [
+     0,
+     -176,
+     130
+    ],
+    "target": [
+     0,
+     140,
+     -14
+    ],
+    "lens": 30
+   }
+  },
+  "units": {
+   "turbine_unit": {
+    "mark_z": 46,
+    "k": 1.0,
+    "tally_k": 0.72,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "solar_unit": {
+    "mark_z": 26,
+    "k": 0.46,
+    "tally_k": 1.0,
+    "groups_k": 1.4,
+    "row_k": 1.0,
+    "groups_rows": 3,
+    "body_w": 33.6,
+    "row_dy_k": 1.2
+   },
+   "dam_unit": {
+    "mark_z": 22,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "body_w": 36.0,
+    "gap": 0.12,
+    "rank_ends": {"3d": [3, 3], "line": [5, 5], "people": [5, 5]},
+    "camera": "raised"
+   },
+   "pylon_unit": {
+    "mark_z": 40,
+    "k": 0.9,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 0.8
+   },
+   "biomass_unit": {
+    "mark_z": 18,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "body_w": 16.0,
+    "gap": 0.1
+   },
+   "stack_unit": {
+    "mark_z": 40,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "figure_unit": {
+    "mark_z": 34,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0,
+    "depth_groups": true,
+    "body_w": 10.6,
+    "row_dy_k": 1.8,
+    "unlit_k": 0.72,
+    "stagger": 0.5,
+    "stagger_rows": 2,
+    "gap": 0.5,
+    "rank_ends": {"3d": [5, 5], "line": [5, 5], "people": [5, 5]},
+    "persp_rows": true
+   },
+   "container_unit": {
+    "mark_z": 22,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "waypoint_unit": {
+    "mark_z": 32,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   },
+   "cairn_unit": {
+    "mark_z": 27,
+    "k": 1.0,
+    "tally_k": 1.0,
+    "groups_k": 1.0,
+    "row_k": 1.0
+   }
+  },
+  "units_doc": "mark_z: how high the leader mark stands over a unit of size 1; k: the unit's footprint against the turbine's, so a wide unit (a dam) is drawn smaller and rows of it do not overlap. tally_k, groups_k, row_k: the extra scale of the unit in a tally, in a groups panel and in the size-coded layouts (rank, series, pair), so a wide unit does not run into its neighbour.",
+  "omitted": {
+   "doc": "Where a ranking leaves members out (a wide unit shows only the top and the bottom of it) the picture draws an omission mark (three dots, the picture's own pen) between the two groups and reports `omitted`, the members of the request not drawn (members - drawn, counted from the rows), in its composition and as the reply's top-level `omitted`. The caption ('N left out in the middle') is printed by the page from that number under the key `label_key`; the picture holds no text. r_frac, gap, z_frac: the dots' radius as a share of the neighbours' height, the spacing in radii, the height of their centre as a share of that height. slot: the width in scene units left between the two groups for the mark.",
+   "label_key": "rank_omitted_middle",
+   "r_frac": 0.11,
+   "gap": 3.0,
+   "z_frac": 0.5,
+   "slot": 14.0
+  },
+  "cameras_doc": "raised: a camera standing above the ground the units stand on, so that a unit's far side (a reservoir behind a dam) shows; a unit names it in its `camera` field and it takes the size-coded layouts (rank, series, path, pair); tally and groups keep their own.",
+  "size_floor": 0.4,
+  "size_floor_doc": "The drawn units (lit and unlit together) must stand at least this share of the picture's height (their projected bounding box over the 560-px frame, frame.py unit_height_fraction, computed from the placed sizes and the scene's own camera); the tests hold the five story pictures to it."
+ }
+}

@@ -40,6 +40,8 @@ NOUN = {
     "hectares": "公顷", "hectare": "公顷", "square kilometres": "平方公里", "square kilometre": "平方公里",
     "kilowatt-hours": "千瓦时", "kilowatt-hour": "千瓦时", "gigawatt-hours": "吉瓦时", "gigawatt-hour": "吉瓦时",
     "terajoules": "太焦", "terajoule": "太焦", "cubic metres": "立方米", "kilograms": "千克", "kilogram": "千克",
+    # an installed electric capacity (a power, which adds across countries as an amount does)
+    "kilowatt": "千瓦", "megawatt": "兆瓦", "gigawatt": "吉瓦",
     "enterprises": "家企业", "households": "户",
     # the purchasing power standard (Eurostat's artificial currency, one PPS buying the same in every country); the EU27
     # aggregate it is set against is the standard's own definition, not part of the form
@@ -64,7 +66,8 @@ BASIS = [
 SAME_MONTH = r"same month in (\d{4})"
 # A price basis a national-accounts label starts with ("Current prices, euro per capita"): current prices leave an amount
 # as the amount it is; chain linked volumes (a real, not a nominal, measure) are read only for a rate of change, whose
-# comparison basis the rest of the label states, since a chain-linked level does not add up and has its own reference year.
+# comparison basis the rest of the label states, since a chain-linked level does not add up and has its own reference year
+# (the levels are reviewed rows, additive no, owner decision 11-25: kept as they are, never made from a label here).
 CURRENT_PRICES = "current prices, "
 CHAIN_LINKED = "chain linked volumes, "
 CHANGE = r"(percentage change|growth rate|annual average rate of change|rate of change)\b"
@@ -102,7 +105,7 @@ def read_label(label):
         if re.match(CHANGE, rest):
             return "%", "pct_change", "no", "%"
         # a chain-linked volume index ("Chain linked volumes, index 2020=100") is an index of its base year, written as
-        # I90 is (owner 11-20 17:3x: the recommended form); a chain-linked amount still gets no row
+        # I90 is (owner 11-20 17:3x: the recommended form); a chain-linked amount gets no generated row (its reviewed row holds it)
         m = re.fullmatch(r"index,? \(?(\d{4})=100\)?" + QUALIFIER, rest)
         return (f"指数({m.group(1)}=100)", "index_base", "no", "") if m else None
     low = low.removeprefix(CURRENT_PRICES)
@@ -170,8 +173,10 @@ def main():
             order.append(code)
             rows[code] = {"code": code, "short_zh": p.get("short_zh", ""), "rule": p.get("rule", ""), "additive": p.get("additive", ""),
                           "suffix_zh": p.get("suffix_zh") or suffix_of(p.get("short_zh", ""), p.get("rule", "")),
-                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, ""), "line_zh": ""}
-            # a reviewed rate of change prints its basis too, read from its label the same way
+                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, ""),
+                          "line_zh": p.get("line_zh", "")}
+            # a reviewed rate of change prints its basis too, read from its label the same way; a reviewed line form whose
+            # label no rule reads (a deflator's or a contribution's change on the previous period) is kept as it is
             if is_change(rows[code]["label_en"]) and basis_of(rows[code]["label_en"]):
                 rows[code]["line_zh"] = f"{rows[code]['short_zh']}（{basis_of(rows[code]['label_en'])}）"
     generated, unread = [], []

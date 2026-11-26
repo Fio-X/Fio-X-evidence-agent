@@ -129,6 +129,9 @@ pub struct Recipe {
     pub window: Vec<String>,
     pub same_measure: Vec<(String, String)>,
     pub strip: bool,
+    /// The page places an opening picture over its header (knobs.json recipes[].opening, run.OPENING_SLOT): the flow asks the
+    /// visual group's IllusHero for it, the strip standing in when it cannot be made.
+    pub opening: bool,
     /// The recipe's layers it binds external (knobs.json recipes[].external, which knobs.py writes from the page tree core's
     /// bindings; none written is rust): the flow
     /// asks the visual group's NodeDeclare and NodeDraw for them instead of a rust fill.
@@ -144,6 +147,22 @@ pub struct Recipe {
     pub relation: Option<String>,
     /// Only a block of a many-block page draws it (knobs.json recipes[].blocks_only, from knobs.py): a short page passes over it.
     pub blocks_only: bool,
+    /// The one condition of its eats the recipe may go without, and the minimums it then takes the page behind (knobs.json
+    /// recipes[].without, from knobs.py, the reason beside them there): next_run shape_for, recipe_request.
+    pub without: Option<Without>,
+}
+
+/// A recipe's minimums when it goes without one of its conditions (knobs.json recipes[].without): the condition passed over
+/// when the tables do not meet it, the countries the main must then hold at least, and the findings its findings step must
+/// then give at least. All three are data in the registry; layer 1 compares counts only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Without {
+    pub condition: String,
+    pub members: usize,
+    pub findings: usize,
+    /// The relations, besides the recipe's own, the table step may have kept when the recipe went without its condition
+    /// (a ranking of the last year has the years' rows too): with its condition met, only the recipe's own relation counts.
+    pub relations: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -280,6 +299,12 @@ pub fn leaves() -> &'static Leaves {
                         .as_bool()
                         .expect("knobs.json: a recipe's strip is true or false"),
                 },
+                opening: match &r["opening"] {
+                    Value::Null => false,
+                    v => v
+                        .as_bool()
+                        .expect("knobs.json: a recipe's opening is true or false"),
+                },
                 external: words(&r["external"]),
                 points: words(&r["points"]),
                 short_notes: r["short_notes"]
@@ -294,6 +319,31 @@ pub fn leaves() -> &'static Leaves {
                     v => v
                         .as_bool()
                         .expect("knobs.json: a recipe's blocks_only is true or false"),
+                },
+                without: match &r["without"] {
+                    Value::Null => None,
+                    w => {
+                        let n = |k: &str| {
+                            w[k].as_u64()
+                                .expect("knobs.json: a recipe's without minimum is a whole number")
+                                as usize
+                        };
+                        Some(Without {
+                            condition: word(&w["condition"]).to_string(),
+                            members: n("members"),
+                            findings: n("findings"),
+                            relations: w["relations"]
+                                .as_array()
+                                .expect("knobs.json: a recipe's without relations is a list")
+                                .iter()
+                                .map(|r| {
+                                    r.as_str()
+                                        .expect("knobs.json: a relation is a name")
+                                        .to_string()
+                                })
+                                .collect(),
+                        })
+                    }
                 },
             });
         Leaves {
@@ -807,6 +857,9 @@ fn svg_markup(svg: &str) -> Option<String> {
     None
 }
 
+/// The src a word laid over a layer's picture as html takes in the checks (take's `words`): never a ledger entry's.
+pub const WORDS_OVER: &str = "~words";
+
 /// Reads one reply into the panel, or the reasons it was refused. Only the first layer (the base) may fix the frame.
 fn take(
     panel: &mut Panel,
@@ -851,24 +904,42 @@ fn take(
         return Err(vec![format!("{layer}: an svg layer {why}")]);
     }
     let mut bad = Vec::new();
+    let as_text = |t: &Value, src: Option<&str>, bad: &mut Vec<String>| {
+        let s = |k: &str| t[k].as_str().unwrap_or("").to_string();
+        let n = |k: &str| t[k].as_f64().unwrap_or(f64::NAN);
+        let (x, y, size) = (n("x"), n("y"), n("size"));
+        if !(size.is_finite() && size > 0.0) {
+            bad.push(format!("{layer}: {:?} has no size", s("text")));
+        }
+        Text {
+            src: src.map_or_else(|| s("src"), str::to_string),
+            text: s("text"),
+            layer: layer.to_string(),
+            bx: text_box(x, y, size, &s("anchor"), &s("baseline"), &s("text")),
+            rot: t["rot"].as_f64().unwrap_or(0.0),
+            at: (x, y),
+        }
+    };
+    // the words a story layer lays over its picture as html (WORDS_OVER): no ledger entry, so no src of their own, but
+    // placed, sized and checked here as its svg texts are (inside the panel, over no other text or line); a digit among
+    // them, an empty one or an svg text claiming to be one refuses (a number is printed only marked)
+    let words: Vec<Text> = reply["words"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| as_text(t, Some(WORDS_OVER), &mut bad))
+        .collect();
+    for t in &words {
+        if t.text.trim().is_empty() || t.text.chars().any(char::is_numeric) {
+            bad.push(format!(
+                "{layer}: the word laid over {:?} is empty or holds a digit",
+                t.text
+            ));
+        }
+    }
     let texts: Vec<Text> = reported
         .iter()
-        .map(|t| {
-            let s = |k: &str| t[k].as_str().unwrap_or("").to_string();
-            let n = |k: &str| t[k].as_f64().unwrap_or(f64::NAN);
-            let (x, y, size) = (n("x"), n("y"), n("size"));
-            if !(size.is_finite() && size > 0.0) {
-                bad.push(format!("{layer}: {:?} has no size", s("text")));
-            }
-            Text {
-                src: s("src"),
-                text: s("text"),
-                layer: layer.to_string(),
-                bx: text_box(x, y, size, &s("anchor"), &s("baseline"), &s("text")),
-                rot: t["rot"].as_f64().unwrap_or(0.0),
-                at: (x, y),
-            }
-        })
+        .map(|t| as_text(t, None, &mut bad))
         .collect();
     // The texts reported are the texts drawn: a <text> left out of the report would escape the checks below.
     let mut drawn = drawn_texts(svg);
@@ -883,6 +954,12 @@ fn take(
             "{layer}: the svg draws texts {drawn:?} but reports {said:?}"
         ));
     }
+    if texts.iter().any(|t| t.src == WORDS_OVER) {
+        bad.push(format!(
+            "{layer}: an svg text names itself a word laid over the picture"
+        ));
+    }
+    let texts: Vec<Text> = texts.into_iter().chain(words).collect();
     let lines: Vec<Vec<(f64, f64)>> = reply["lines"]
         .as_array()
         .map(|ls| {
@@ -1445,6 +1522,18 @@ fn drawn(
                 .iter()
                 .map(|(name, s)| (name.to_string(), json!([s.w, s.h])))
                 .collect();
+            // a piece that leaves members out says so on the page, in words with no number (the count is the child's, not a fact)
+            let left_out: serde_json::Map<String, Value> = given
+                .iter()
+                .filter(|(_, s)| s.omitted > 0)
+                .map(|(name, _)| (name.to_string(), json!(true)))
+                .collect();
+            if !left_out.is_empty() {
+                request["left_out"] = Value::Object(left_out);
+            }
+            if let Some(drawn) = drawn_as(given) {
+                request["drawn_as"] = drawn;
+            }
         }
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
@@ -1664,6 +1753,24 @@ pub struct Strip {
     pub h: f64,
     pub dropped: Vec<String>,
     pub ms: u128,
+    /// The members of the finding the picture does not draw (a ranking shows its head and tail): the child's own count,
+    /// 0 for a strip and for a picture that draws them all. The page's caption says only that the middle is left out, with
+    /// no number (a number would be a page number, owed a fact).
+    pub omitted: u64,
+    /// The scene the opening picture's child says it drew (its reply's `scene`, e.g. "people.proportion"); empty for a strip
+    /// and for a reply that names none. The page is told it (drawn_as) and decides from it what it prints.
+    pub scene: String,
+}
+
+/// What each given piece was drawn as, by its layer name (the child's scene name, passed on as it is: the page decides what it
+/// prints from it); none when no piece names a scene.
+fn drawn_as(given: &[(&str, &Strip)]) -> Option<Value> {
+    let drawn: serde_json::Map<String, Value> = given
+        .iter()
+        .filter(|(_, s)| !s.scene.is_empty())
+        .map(|(name, s)| (name.to_string(), json!(s.scene)))
+        .collect();
+    (!drawn.is_empty()).then_some(Value::Object(drawn))
 }
 
 /// The strip one request draws, through one child started by `runner`: taken only when it is as wide as asked and
@@ -1702,12 +1809,21 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
         h,
         dropped: strs(&reply, "dropped"),
         ms: started.elapsed().as_millis(),
+        omitted: 0,
+        scene: String::new(),
     })
 }
 
-/// Every way a strip is more than line art in the page's colours: it holds only `<g>` groups (a transform at most) and
-/// `<path/>` strokes (a path, a stroke of one of `colours`, its width, no fill, round caps and joins, a transform), balanced,
-/// with nothing between the tags but white space: no text, no other element, no link, script, style or colour of its own.
+/// The page theme colours a strip may fill a shape with, as `fill="var(--name)"` (runtime/leaves_py/tokens.css defines them,
+/// so the page colours the shape and the strip holds no colour of its own): --bg the paper (a figure's light detail, a pale
+/// shirt), --bar the light grey (skin, pale clothes), --t-sec the grey of the second pen (mid tones, the near arm), --t-title
+/// the ink (silhouettes, hair, dark clothes). Not the accent: it marks the page's focus alone and a strip lights nobody.
+pub const STRIP_FILLS: &[&str] = &["--bg", "--bar", "--t-sec", "--t-title"];
+
+/// Every way a strip is more than line art and flat shapes in the page's colours: it holds only `<g>` groups (a transform at
+/// most) and `<path/>`s (a path, a stroke of one of `colours`, its width, a fill that is none or `var(--name)` of
+/// STRIP_FILLS, round caps and joins, a transform; the stroke and the fill always named), balanced, with nothing between
+/// the tags but white space: no text, no other element, no link, script, style, opacity, filter or colour of its own.
 pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
     let transform = |v: &str| {
         let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
@@ -1796,15 +1912,22 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
                         .all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZmclqtz".contains(c)),
                     "stroke" => colours.contains(&value),
                     "stroke-width" => value.parse::<f64>().is_ok_and(|w| w > 0.0 && w.is_finite()),
-                    "fill" => value == "none",
+                    "fill" => {
+                        value == "none"
+                            || value
+                                .strip_prefix("var(")
+                                .and_then(|v| v.strip_suffix(')'))
+                                .is_some_and(|t| STRIP_FILLS.contains(&t))
+                    }
                     "stroke-linecap" | "stroke-linejoin" => value == "round",
                     "transform" => transform(value),
                     _ => false,
                 };
             if !ok {
                 off.push(format!(
-                    "strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}",
-                    colours.join(" or ")
+                    "strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}, fills none or var() of {}",
+                    colours.join(" or "),
+                    STRIP_FILLS.join(" ")
                 ));
             }
             a = after.trim_start();
@@ -1812,12 +1935,294 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
         if name == "path" && !attrs.contains(" stroke=\"") {
             off.push("strip: a path names no stroke colour".into());
         }
+        if name == "path" && !attrs.contains(" fill=\"") {
+            off.push(
+                "strip: a path names no fill (unnamed, it paints black); e.g. fill=\"none\"".into(),
+            );
+        }
         if name == "g" {
             depth += 1;
         }
     }
     if depth > 0 && off.is_empty() {
         off.push(format!("strip: {depth} group(s) not closed"));
+    }
+    off
+}
+
+/// How long the opening illustration's child may take: Blender draws the scene, the painting follows.
+pub const HERO_DEADLINE: Duration = Duration::from_secs(60);
+
+/// The most bytes a hero picture may be (it holds its paper and paint rasters inline).
+pub const HERO_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// Why no hero came back: the child could not make it here (Blender or a package missing, too slow, a broken child), which
+/// the caller answers with the strip; or it refused the request or gave a picture the page may not hold, which is a fault of
+/// the request's own data and stops.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HeroMiss {
+    Unavailable(String),
+    Refused(String),
+}
+
+/// The opening picture one request draws, through one child started by `runner` (runtime/illus_hero/run_hero.py): taken only
+/// as wide as asked and when `hero_faults` finds nothing on it. The picture's markup comes back as the strip's does (no outer
+/// svg, its size, what was left out).
+pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
+    let started = Instant::now();
+    let (child, mut stdin, rx) = start(runner).map_err(HeroMiss::Unavailable)?;
+    let reply = ask(&mut stdin, &rx, "hero", request, HERO_DEADLINE);
+    drop(stdin);
+    stop(child);
+    let reply = reply.map_err(HeroMiss::Unavailable)?;
+    if let Some(why) = reply["unavailable"].as_str() {
+        return Err(HeroMiss::Unavailable(why.to_string()));
+    }
+    let refused = strs(&reply, "refused");
+    if !refused.is_empty() {
+        return Err(HeroMiss::Refused(refused.join("\n")));
+    }
+    let (Some(svg), Some(w), Some(h)) = (
+        reply["svg"].as_str(),
+        reply["w"].as_f64(),
+        reply["h"].as_f64(),
+    ) else {
+        return Err(HeroMiss::Refused(
+            "hero: the reply has no svg, w or h".into(),
+        ));
+    };
+    let mut off = hero_faults(svg);
+    if Some(w) != request["width"].as_f64() || !(h > 0.0 && h.is_finite()) {
+        off.push(format!(
+            "hero: drawn {w}x{h}, asked {} wide",
+            request["width"]
+        ));
+    }
+    if !off.is_empty() {
+        return Err(HeroMiss::Refused(off.join("\n")));
+    }
+    Ok(Strip {
+        svg: svg.to_string(),
+        w,
+        h,
+        dropped: strs(&reply, "dropped"),
+        ms: started.elapsed().as_millis(),
+        omitted: reply["omitted"].as_u64().unwrap_or(0),
+        scene: reply["scene"].as_str().unwrap_or_default().to_string(),
+    })
+}
+
+/// The keys under knobs.spec a story findings child's composed page may give (its facts, its sections, its leaf data in the
+/// hero, and the page's headline words: the lead finding's conclusion as the title and its text as the dek, each a wording
+/// whose numbers are placeholders of its facts); any other key of its reply is layer 1's and refused (next_run story_page).
+pub const STORY_TAKEN: [&str; 6] = ["facts", "sections", "hero", "title", "dek", "end"];
+/// The page's own words among STORY_TAKEN (the headline, the dek and the closing line of the story's arc): written over the
+/// fill's draft (the text step's, the picked recipe's), never merged.
+pub const STORY_WORDS: [&str; 3] = ["title", "dek", "end"];
+
+/// How long the story findings child may take for one request (it works over the request's rows only).
+pub const STORY_DEADLINE: Duration = Duration::from_secs(30);
+
+/// One request to the story findings child (runtime/leaves_py/findings.py) through one child started by `runner`: its reply
+/// (the candidates, or the composed page). Err when the child cannot start, gives no reply in time or refuses.
+pub fn story(runner: &Runner, request: &Value) -> Result<Value, String> {
+    let (child, mut stdin, rx) = start(runner)?;
+    let reply = ask(&mut stdin, &rx, "findings", request, STORY_DEADLINE);
+    drop(stdin);
+    stop(child);
+    let reply = reply?;
+    let refused = strs(&reply, "refused");
+    if !refused.is_empty() {
+        return Err(refused.join("\n"));
+    }
+    Ok(reply)
+}
+
+/// Every way an opening picture is more than shapes and paint: it holds only the elements `g`, `path`, `image`, `defs`,
+/// `linearGradient`, `stop` and `mask`, each with the attributes of its kind and values of its kind (colours as hex, `none` or
+/// a `url(#id)` of an id the picture defines; numbers; a path's d of path characters; an image's href a png or jpeg data
+/// URL), balanced, with nothing between the tags but white space: no text, no other element, no link, script, style, event
+/// attribute or outside reference. A picture prints no number and no word.
+pub fn hero_faults(svg: &str) -> Vec<String> {
+    let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
+    let hex = |s: &str| {
+        s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+    };
+    let id = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    let transform = |v: &str| {
+        // translate(x,y) and scale(k), in that order, either one
+        let mut rest = v;
+        let mut ok = false;
+        if let Some(r) = rest.strip_prefix("translate(") {
+            let Some((xy, r)) = r.split_once(')') else {
+                return false;
+            };
+            let at: Vec<&str> = xy.split(',').collect();
+            if at.len() != 2 || !at.iter().all(|s| num(s)) {
+                return false;
+            }
+            rest = r.trim_start();
+            ok = true;
+        }
+        if let Some(r) = rest.strip_prefix("scale(") {
+            let Some((k, r)) = r.split_once(')') else {
+                return false;
+            };
+            return num(k) && r.is_empty();
+        }
+        ok && rest.is_empty()
+    };
+    let mut off = Vec::new();
+    if svg.len() > HERO_MAX_BYTES {
+        off.push(format!(
+            "hero: {} bytes, over the {HERO_MAX_BYTES} a hero may be",
+            svg.len()
+        ));
+    }
+    let (mut stack, mut rest) = (Vec::<String>::new(), svg);
+    let (mut defined, mut used) = (Vec::<String>::new(), Vec::<String>::new());
+    while !rest.is_empty() && off.is_empty() {
+        let lt = rest.find('<').unwrap_or(rest.len());
+        if !rest[..lt].trim().is_empty() {
+            off.push(format!(
+                "hero: text {:?} between the tags",
+                &rest[..lt.min(40)]
+            ));
+            break;
+        }
+        rest = &rest[lt..];
+        if rest.is_empty() {
+            break;
+        }
+        let Some(gt) = rest.find('>') else {
+            off.push("hero: a tag is not closed".into());
+            break;
+        };
+        let tag = &rest[1..gt];
+        rest = &rest[gt + 1..];
+        if let Some(name) = tag.strip_prefix('/') {
+            if stack.pop().as_deref() != Some(name) {
+                off.push(format!("hero: a </{name}> closes nothing open"));
+                break;
+            }
+            continue;
+        }
+        let (body, closed) = match tag.strip_suffix('/') {
+            Some(t) => (t, true),
+            None => (tag, false),
+        };
+        let name = body.split(' ').next().unwrap_or("");
+        let allowed: &[&str] = match (name, closed) {
+            ("g", false) => &[
+                "fill",
+                "stroke",
+                "stroke-width",
+                "stroke-linejoin",
+                "opacity",
+                "transform",
+                "mask",
+            ],
+            ("path", true) => &[
+                "d",
+                "fill",
+                "stroke",
+                "stroke-width",
+                "stroke-linejoin",
+                "opacity",
+                "transform",
+                "mask",
+            ],
+            ("image", true) => &["href", "width", "height", "preserveAspectRatio"],
+            ("defs", false) => &[],
+            ("linearGradient", false) => &["id", "x1", "y1", "x2", "y2"],
+            ("stop", true) => &["offset", "stop-color", "stop-opacity"],
+            ("mask", false) => &["id", "maskUnits", "x", "y", "width", "height"],
+            _ => {
+                off.push(format!(
+                    "hero: <{name}{}> is no element a hero draws; e.g. <path .../>",
+                    if closed { "/" } else { "" }
+                ));
+                break;
+            }
+        };
+        let mut a = body[name.len()..].trim();
+        while !a.is_empty() {
+            let Some((key, after)) = a.split_once("=\"") else {
+                off.push(format!(
+                    "hero: <{name}> has an attribute that is not key=\"value\": {:?}",
+                    &a[..a.len().min(40)]
+                ));
+                break;
+            };
+            let Some((value, after)) = after.split_once('"') else {
+                off.push(format!("hero: <{name}> {key} is not closed"));
+                break;
+            };
+            let paint = |v: &str, used: &mut Vec<String>| {
+                if v == "none" || hex(v) {
+                    return true;
+                }
+                match v.strip_prefix("url(#").and_then(|r| r.strip_suffix(')')) {
+                    Some(i) if id(i) => {
+                        used.push(i.to_string());
+                        true
+                    }
+                    _ => false,
+                }
+            };
+            let ok = allowed.contains(&key)
+                && match key {
+                    "d" => value
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZHVmclqtzhv".contains(c)),
+                    "fill" | "stroke" | "stop-color" => paint(value, &mut used),
+                    "mask" => value.starts_with("url(#") && paint(value, &mut used),
+                    "stroke-width" | "x1" | "y1" | "x2" | "y2" | "x" | "y" | "width" | "height"
+                    | "offset" | "opacity" | "stop-opacity" => num(value),
+                    "stroke-linejoin" => value == "round",
+                    "transform" => transform(value),
+                    "id" => {
+                        defined.push(value.to_string());
+                        id(value)
+                    }
+                    "maskUnits" => value == "userSpaceOnUse",
+                    "preserveAspectRatio" => value == "none",
+                    "href" => value
+                        .strip_prefix("data:image/png;base64,")
+                        .or_else(|| value.strip_prefix("data:image/jpeg;base64,"))
+                        .is_some_and(|b| {
+                            !b.is_empty()
+                                && b.chars()
+                                    .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c))
+                        }),
+                    _ => false,
+                };
+            if !ok {
+                let shown: String = value.chars().take(40).collect();
+                off.push(format!(
+                    "hero: <{name} {key}={shown:?}> is not drawn by a hero"
+                ));
+                break;
+            }
+            a = after.trim_start();
+        }
+        if !closed {
+            stack.push(name.to_string());
+        }
+    }
+    if off.is_empty() && !stack.is_empty() {
+        off.push(format!("hero: {} element(s) not closed", stack.len()));
+    }
+    if off.is_empty() {
+        if let Some(i) = used.iter().find(|i| !defined.contains(i)) {
+            off.push(format!(
+                "hero: url(#{i}) names an id the picture does not define"
+            ));
+        }
     }
     off
 }
@@ -1916,6 +2321,75 @@ pub fn check_leaf_page(
     off
 }
 
+/// The members a page leaves out for asking the first or the last n (basis.cut), held against the request's rows: each a
+/// member, not drawn, with one row of the basis table at its year, and a value no better than any drawn place's (for the
+/// first n no higher than the lowest drawn, for the last n no lower than the highest drawn). A drawn place with no such row
+/// leaves nothing to hold the cut against, and is said.
+fn cut_said(
+    b: &crate::next_facts::Basis,
+    cut: &crate::next_facts::BasisCut,
+    drawn: &[String],
+    by: &str,
+    rows: &[Row],
+) -> Vec<String> {
+    let mut off = Vec::new();
+    let value = |code: &String| -> Result<f64, String> {
+        let at: Vec<f64> = rows
+            .iter()
+            .filter(|r| r.table == b.table && r.time == b.year && r.dims.get(by) == Some(code))
+            .map(|r| r.value)
+            .collect();
+        match at.as_slice() {
+            [v] => Ok(*v),
+            _ => Err(format!(
+                "basis: {code} has {} rows of {} at {}, so the cut cannot be held against it",
+                at.len(),
+                b.table,
+                b.year
+            )),
+        }
+    };
+    if cut.codes.is_empty() {
+        off.push("basis: the page cuts no member and says it draws only some".to_string());
+    }
+    let mut bound: Option<f64> = None;
+    for code in drawn {
+        match value(code) {
+            Ok(v) => {
+                bound = Some(match bound {
+                    None => v,
+                    Some(x) if cut.low => x.max(v),
+                    Some(x) => x.min(v),
+                })
+            }
+            Err(why) => off.push(why),
+        }
+    }
+    for code in &cut.codes {
+        if !b.members.contains(code) {
+            off.push(format!(
+                "basis: the page leaves out {code}, no member in {}",
+                b.year
+            ));
+        }
+        if drawn.contains(code) {
+            off.push(format!("basis: the page leaves out {code} and draws it"));
+        }
+        match (value(code), bound) {
+            (Ok(v), Some(x)) if cut.low && v < x => off.push(format!(
+                "basis: the page leaves out {code} at {v}, below the highest drawn {x}, asking the last n"
+            )),
+            (Ok(v), Some(x)) if !cut.low && v > x => off.push(format!(
+                "basis: the page leaves out {code} at {v}, above the lowest drawn {x}, asking the first n"
+            )),
+            (Ok(_), Some(_)) => {}
+            (Ok(_), None) => off.push(format!("basis: the page leaves out {code} and draws no value to hold it against")),
+            (Err(why), _) => off.push(why),
+        }
+    }
+    off
+}
+
 /// A page for a country group whose request keeps a member basis (spec.basis, the knowledge group's words) is held to it:
 /// its count fact counts at the basis year, only members and the places the question names beside them, and the members
 /// it does not count are exactly the ones the basis names as having no data, which the line must name; the page's text
@@ -2001,11 +2475,26 @@ fn basis_said(
                     b.year
                 ));
             }
-            let lacking: std::collections::BTreeSet<&String> =
-                b.members.iter().filter(|m| !codes.contains(m)).collect();
+            // a member the page leaves out for asking the first or the last n is no member it must name as with no data:
+            // the cut is verified on its own (cut_said), each such member's value against the drawn ones
+            let cut: Vec<&String> = b.cut.iter().flat_map(|c| &c.codes).collect();
+            let lacking: std::collections::BTreeSet<&String> = b
+                .members
+                .iter()
+                .filter(|m| !codes.contains(m) && !cut.contains(m))
+                .collect();
             let said: std::collections::BTreeSet<&String> = b.missing.iter().collect();
             if lacking != said {
                 off.push(format!("basis: the members of {} the page does not draw are {lacking:?}, it names {said:?} as with no data", b.year));
+            }
+            if let Some(c) = &b.cut {
+                let by = b
+                    .count
+                    .as_ref()
+                    .and_then(|k| spec.facts.iter().find(|(x, _)| x == k))
+                    .and_then(|(_, q)| q["by"].as_str())
+                    .unwrap_or_default();
+                off.extend(cut_said(b, c, codes, by, rows));
             }
         }
         None if b.count.is_none() && (b.words.is_some() || !b.missing.is_empty()) => {
@@ -2293,8 +2782,9 @@ mod tests {
         assert_eq!(split_months(&span("2026-S1.h", "上")).len(), 1);
     }
 
-    /// A strip is taken as line art in the page's colours only: groups and strokes pass; text, another element, a colour of
-    /// its own, a fill, a link, an odd transform, an unclosed group each refuse, naming what.
+    /// A strip is taken as line art and flat shapes in the page's colours only: groups, strokes and fills of the page's theme
+    /// tokens (STRIP_FILLS, each by name) pass; text, another element, a colour of its own, a fill of any other colour, a
+    /// link, an opacity, a filter, a style, an odd transform, an unnamed fill, an unclosed group each refuse, naming what.
     #[test]
     fn a_strip_is_only_strokes_in_the_page_colours() {
         let colours = ["var(--t-title)", "var(--accent)"];
@@ -2304,27 +2794,274 @@ mod tests {
             path(
                 r#"stroke="var(--t-title)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round""#
             ),
-            path(r#"stroke="var(--accent)" stroke-width="1.300""#),
+            path(r#"stroke="var(--accent)" stroke-width="1.300" fill="none""#),
             path(
-                r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0""#
+                r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0" fill="none""#
             ),
         );
         assert_eq!(strip_faults(&ok, &colours), Vec::<String>::new());
+        // the fills a strip may use: exactly these four theme tokens, each one the page defines
+        assert_eq!(STRIP_FILLS, &["--bg", "--bar", "--t-sec", "--t-title"][..]);
+        let tokens = include_str!("../runtime/leaves_py/tokens.css");
+        for t in STRIP_FILLS {
+            assert!(tokens.contains(&format!("{t}:")), "the page defines no {t}");
+        }
+        for fill in ["var(--bg)", "var(--bar)", "var(--t-sec)", "var(--t-title)"] {
+            let shape = format!(
+                r#"<g>{}</g>"#,
+                path(&format!(
+                    r#"stroke="var(--t-title)" stroke-width="0.5" fill="{fill}" stroke-linejoin="round""#
+                ))
+            );
+            assert_eq!(
+                strip_faults(&shape, &colours),
+                Vec::<String>::new(),
+                "{fill}"
+            );
+        }
         let refused = |svg: &str| {
             let off = strip_faults(svg, &colours);
             assert!(!off.is_empty(), "{svg} passed");
             off[0].clone()
         };
+        let filled = |attrs: &str| path(&format!(r#"stroke="var(--t-title)" {attrs}"#));
+        assert!(refused(&filled(r##"fill="#c93f2b""##)).contains("fill=\"#c93f2b\""));
+        assert!(refused(&filled(r#"fill="red""#)).contains("fill=\"red\""));
+        assert!(refused(&filled(r#"fill="url(#x)""#)).contains("fill=\"url(#x)\""));
+        assert!(refused(&filled(r#"fill="var(--not-a-token)""#)).contains("var(--not-a-token)"));
+        assert!(refused(&filled(r#"fill="var(--accent)""#)).contains("fill=\"var(--accent)\""));
+        assert!(refused(&filled(r#"fill="var(--t-body)""#)).contains("var(--t-body)"));
+        assert!(refused(&filled(r#"fill="var(--bg) ""#)).contains("fill"));
+        assert!(refused(&filled(r#"fill="var(--bg)" fill-opacity="0.5""#)).contains("fill-opacity"));
+        assert!(refused(&filled(r#"fill="var(--bg)" opacity="0.5""#)).contains("opacity"));
+        assert!(refused(&filled(r#"fill="var(--bg)" filter="url(#f)""#)).contains("filter"));
+        assert!(refused(&filled(r#"fill="none" style="fill:red""#)).contains("style"));
+        assert!(refused(&filled(r#"stroke-width="1""#)).contains("names no fill"));
+        assert!(refused(r#"<g fill="var(--bg)"></g>"#).contains("<g fill"));
         assert!(refused(&format!("{ok}<text>3</text>")).contains("<text> is no element"));
         assert!(refused(&format!("{ok} 44 ")).contains("text \" 44 \" between the tags"));
         assert!(refused(&path(r##"stroke="#D0021B""##)).contains("stroke=\"#D0021B\""));
-        assert!(refused(&path(r#"stroke="var(--t-title)" fill="var(--accent)""#)).contains("fill"));
         assert!(refused(&path(r#"stroke="var(--t-title)" href="x""#)).contains("href"));
         assert!(refused(r#"<g transform="rotate(4)"></g>"#).contains("transform"));
         assert!(refused(&path(r#"stroke-width="1""#)).contains("names no stroke colour"));
         assert!(refused("<g>").contains("not closed"));
         assert!(refused("<rect/>").contains("<rect> is no element"));
         assert!(refused("<script/>").contains("<script> is no element"));
+    }
+
+    /// A hero is taken as shapes and paint only: groups, paths, images of png or jpeg data, masks and gradients with values of
+    /// their kind pass; text, another element, a script, an outside link, an event attribute, an odd transform, a colour name,
+    /// an unclosed element or an id nobody defines each refuse, naming what.
+    #[test]
+    fn a_hero_is_only_shapes_and_paint() {
+        let ok = concat!(
+            r##"<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a86e54" stop-opacity="0.34"/></linearGradient>"##,
+            r##"<mask id="dry_h" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="560"><image href="data:image/png;base64,iVBORw0KGgo=" width="1440" height="560" preserveAspectRatio="none"/></mask></defs>"##,
+            r##"<g transform="scale(0.79167)"><image href="data:image/jpeg;base64,/9j/4AAQ+Q==" width="1440" height="560" preserveAspectRatio="none"/>"##,
+            r##"<g fill="url(#wash)"><path d="M0 1L2.5 -3e-1 4 5Z"/></g><g fill="none" stroke="#301a14" stroke-width="1.4" stroke-linejoin="round" opacity="0.8">"##,
+            r##"<path d="M1.5,2 L3,4" transform="translate(-2.0,1.5)" fill="#14100e" mask="url(#dry_h)" opacity="0.4"/></g></g>"##,
+        );
+        assert_eq!(hero_faults(ok), Vec::<String>::new());
+        let refused = |svg: &str| {
+            let off = hero_faults(svg);
+            assert!(!off.is_empty(), "{svg} passed");
+            off[0].clone()
+        };
+        assert!(refused(&format!("{ok}<text>3</text>")).contains("<text> is no element"));
+        assert!(refused(&format!("{ok} 44 ")).contains("text \" 44 \" between the tags"));
+        assert!(refused(r##"<path d="M0 0" fill="red"/>"##).contains("fill"));
+        assert!(refused(r##"<path d="M0 0" onclick="x()"/>"##).contains("onclick"));
+        assert!(refused(r##"<path d="alert(1)"/>"##).contains("d="));
+        assert!(
+            refused(r##"<image href="https://x.test/a.png" width="1" height="1"/>"##)
+                .contains("href")
+        );
+        assert!(refused(
+            r##"<image href="data:image/svg+xml;base64,AAAA" width="1" height="1"/>"##
+        )
+        .contains("href"));
+        assert!(refused(r##"<g transform="rotate(4)"></g>"##).contains("transform"));
+        assert!(refused(r##"<g fill="url(#nowhere)"></g>"##).contains("does not define"));
+        assert!(refused(r##"<g mask="x"></g>"##).contains("mask"));
+        assert!(refused("<g>").contains("not closed"));
+        assert!(refused("</g>").contains("closes nothing"));
+        for el in [
+            "<rect/>",
+            "<script/>",
+            "<use href=\"#a\"/>",
+            "<foreignObject>",
+            "<style>",
+        ] {
+            assert!(refused(el).contains("is no element"), "{el}");
+        }
+        let big = format!(
+            r##"<path d="M0 0" stroke="#000000"/>{}"##,
+            " ".repeat(HERO_MAX_BYTES)
+        );
+        assert!(refused(&big).contains("bytes, over"));
+    }
+
+    /// A hero child answers `unavailable` (the caller falls back), `refused` (an error), or a picture, which is taken only as
+    /// wide as asked and when it holds nothing a hero may not.
+    #[test]
+    fn a_hero_child_is_unavailable_refused_or_drawn() {
+        let child = |reply: &str| Runner {
+            program: "python3".into(),
+            args: vec![
+                "-I".into(),
+                "-B".into(),
+                "-c".into(),
+                format!("import sys; sys.stdin.readline(); print({reply:?})"),
+            ],
+        };
+        let ask = json!({"tags": ["wind"], "hero": "wind", "width": 1140.0});
+        let svg = r##"<g transform=\"scale(0.79167)\"><path d=\"M0 0 L1 1\" stroke=\"#301a14\" stroke-width=\"1\"/></g>"##;
+        let drawn = format!(r#"{{"svg": "{svg}", "w": 1140.0, "h": 443.33, "dropped": []}}"#);
+        let got = hero(&child(&drawn), &ask).unwrap();
+        assert_eq!((got.w, got.h), (1140.0, 443.33));
+        assert_eq!(got.scene, "");
+        let named = drawn.replace(
+            r#""dropped": []"#,
+            r#""dropped": [], "scene": "people.proportion""#,
+        );
+        assert_eq!(
+            hero(&child(&named), &ask).unwrap().scene,
+            "people.proportion"
+        );
+        assert_eq!(
+            hero(
+                &child(r#"{"unavailable": "Blender is not installed"}"#),
+                &ask
+            ),
+            Err(HeroMiss::Unavailable("Blender is not installed".into()))
+        );
+        assert_eq!(
+            hero(&child(r#"{"refused": ["tags: unknown"]}"#), &ask),
+            Err(HeroMiss::Refused("tags: unknown".into()))
+        );
+        let narrow = drawn.replace("1140.0", "900.0");
+        assert!(
+            matches!(hero(&child(&narrow), &ask), Err(HeroMiss::Refused(w)) if w.contains("asked"))
+        );
+        let texty = drawn.replace("<g ", "<text>1</text><g ");
+        assert!(
+            matches!(hero(&child(&texty), &ask), Err(HeroMiss::Refused(w)) if w.contains("<text>"))
+        );
+        let missing = Runner {
+            program: "no-such-hero-runner".into(),
+            args: vec![],
+        };
+        assert!(
+            matches!(hero(&missing, &ask), Err(HeroMiss::Unavailable(w)) if w.contains("did not start"))
+        );
+    }
+
+    /// The page is told what each given piece was drawn as, by its layer name: the child's scene name passed on as it is
+    /// (a proportion's and a ranking's alike; story.py decides what prints), nothing for a piece that names no scene (a strip),
+    /// and none at all when no piece names one; the left-out flag is its own and unchanged.
+    #[test]
+    fn the_page_is_told_the_scene_each_given_piece_was_drawn_as() {
+        let piece = |scene: &str, omitted: u64| Strip {
+            svg: "<g></g>".into(),
+            w: 1140.0,
+            h: 400.0,
+            dropped: vec![],
+            ms: 1,
+            omitted,
+            scene: scene.into(),
+        };
+        let (share, rank, strip) = (
+            piece("people.proportion", 0),
+            piece("energy.rank", 7),
+            piece("", 0),
+        );
+        assert_eq!(
+            drawn_as(&[("illus_hero", &share)]),
+            Some(json!({"illus_hero": "people.proportion"}))
+        );
+        assert_eq!(
+            drawn_as(&[("illus_hero", &rank)]),
+            Some(json!({"illus_hero": "energy.rank"}))
+        );
+        assert_eq!(drawn_as(&[("illus_strip", &strip)]), None);
+        assert_eq!(drawn_as(&[]), None);
+        assert_eq!(
+            drawn_as(&[("illus_hero", &share), ("illus_strip", &strip)]),
+            Some(json!({"illus_hero": "people.proportion"}))
+        );
+    }
+
+    /// The scene renderer's real reply (runtime/illus_hero/run_hero.py build_scene over runtime/illus_hero/scene/scene.mjs, node on
+    /// PATH) passes the hero gate as it is: a people-topic tally (2 of 5 members above the line) and a proportion (8 figures at a
+    /// share of 0.284: 2 lit), each in the three styles.
+    #[test]
+    fn a_scene_hero_passes_the_hero_gate() {
+        let child = Runner::python(Path::new("runtime/illus_hero/run_hero.py"));
+        let members: Vec<Value> = (1..=5)
+            .map(|i| json!({"code": format!("M{i}"), "value": f64::from(i)}))
+            .collect();
+        for style in ["ink", "iso", "geo"] {
+            for subject in [
+                json!({"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}),
+                json!({"proportion": {"share": 0.284, "figures": 8, "declared": {"count": 2, "total": 8}}}),
+            ] {
+                let ask = json!({"family": "pop65", "lead": "members", "width": 1140.0, "accent": "#b8433a",
+                                 "subject": subject, "composition": {"style": style}});
+                let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {subject}: {e:?}"));
+                assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{style}");
+                assert_eq!(got.w, 1140.0);
+            }
+        }
+        // the labour topic's tally (the unemployment family): the collage, image data URLs under masks
+        {
+            let ask = json!({"family": "unemployment", "lead": "members", "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("collage: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "collage");
+            assert_eq!(got.scene, "labour.tally");
+        }
+        // the economy topic's tally in its own style (geo), with its piece set's accent
+        {
+            let (family, accent) = ("gdp_pc", "#2b7fa6");
+            let ask = json!({"family": family, "lead": "members", "width": 1140.0, "accent": accent, "ground": "warm",
+                             "subject": {"members": members, "rule": {"op": "gt", "ref": 3.0}, "declared": {"count": 2, "total": 5}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{family}: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{family}");
+        }
+        // the labour topic's proportion (the unemployment family, 30 figures, 10.5% -> 3 lit): the collage too
+        {
+            let ask = json!({"family": "unemployment", "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"proportion": {"share": 0.105, "figures": 30, "declared": {"count": 3, "total": 30}}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("collage proportion: {e:?}"));
+            assert_eq!(
+                hero_faults(&got.svg),
+                Vec::<String>::new(),
+                "collage proportion"
+            );
+            assert_eq!(got.scene, "labour.proportion");
+        }
+        // the grid (30 figures, 9 lit) and the door (geo, 8 figures, 2 lit) that scene_choice picks for a proportion (a people topic)
+        for (style, share, figures, count) in [("ink", 0.3, 30, 9), ("geo", 0.284, 8, 2)] {
+            let ask = json!({"family": "pop65", "width": 1140.0, "accent": "#b8433a", "composition": {"style": style},
+                             "subject": {"proportion": {"share": share, "figures": figures, "declared": {"count": count, "total": figures}}}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{style} {figures}: {e:?}"));
+            assert_eq!(
+                hero_faults(&got.svg),
+                Vec::<String>::new(),
+                "{style} {figures}"
+            );
+        }
+        // a rank and an ends lead (the figures highest first, the middle of 20 members folded into one gap marker, 8 omitted)
+        let many: Vec<Value> = (1..=20)
+            .map(|i| json!({"code": format!("M{i:02}"), "value": f64::from(i)}))
+            .collect();
+        for lead in ["rank", "ends"] {
+            let ask = json!({"family": "unemployment", "lead": lead, "width": 1140.0, "accent": "#b8433a",
+                             "subject": {"members": many}});
+            let got = hero(&child, &ask).unwrap_or_else(|e| panic!("{lead}: {e:?}"));
+            assert_eq!(hero_faults(&got.svg), Vec::<String>::new(), "{lead}");
+            assert_eq!(got.omitted, 8, "{lead}");
+        }
     }
 
     const LAID: &str =
@@ -2464,6 +3201,36 @@ mod tests {
         );
         let raw = run(&page("2021 年")).err().unwrap();
         assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
+    }
+
+    /// st4 11-23: the type check scrolls a text into view before it reads what is under the text's centre, and a centre in the
+    /// window's last pixel row (an earlier text's scroll left it there) read nothing (elementsFromPoint gives none there): the
+    /// text was counted unmeasured. The page's script, at load, puts text A's centre at `a` (a whole number less half the
+    /// window: the check's scroll to A's centre lands on a whole pixel) below the window and text B's at `a + innerHeight / 2 -
+    /// 0.1`, so once A is scrolled to the window's middle B's centre is 0.1 px above the window's bottom edge. With the 2 px
+    /// margin B is scrolled into view too and both are measured, dark on the page's white.
+    #[test]
+    fn the_bake_measures_a_text_whose_centre_falls_in_the_windows_last_row() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let text = |id: &str, words: &str| {
+            format!("<div id=\"{id}\" style=\"position:absolute;left:100px;top:0px;font-size:16px;line-height:20px;color:#222\">{words}</div>")
+        };
+        let page = format!(
+            "<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\" style=\"position:relative;height:6000px\">{}{}</div>\
+             <script>(()=>{{const ih=innerHeight;\
+             const mid=(e)=>{{const g=document.createRange();g.selectNodeContents(e.firstChild);const r=g.getBoundingClientRect();return r.top+r.height/2+scrollY;}};\
+             const put=(id,want)=>{{const e=document.getElementById(id);e.style.top=(parseFloat(e.style.top)+want-mid(e))+'px';}};\
+             const a=Math.max(1000,ih+200)+ih/2-Math.floor(ih/2);put('a',a);put('b',a+ih/2-0.1);}})()</script></body>",
+            text("a", "甲地的文字"),
+            text("b", "乙地的文字")
+        );
+        let baked = bake(&real, &page, "", 1440).unwrap();
+        let typed = baked.type_measured.as_ref().expect("the bake's type");
+        assert_eq!(
+            (&typed["texts"], &typed["unmeasured"]),
+            (&json!(2), &json!(0)),
+            "{typed}"
+        );
     }
 
     #[test]
@@ -2843,6 +3610,22 @@ mod tests {
         }
     }
 
+    /// st1 11-23: a word a story layer lays over its picture as html, inside the panel and over nothing, is taken.
+    #[test]
+    fn a_word_laid_over_a_picture_that_fits_is_taken() {
+        for done in both(&[layer(
+            "echo",
+            "notes",
+            json!({"words": [text("", 10.0, 30.0)]}),
+        )]) {
+            let (panel, _) = done.unwrap();
+            assert!(panel
+                .texts
+                .iter()
+                .any(|t| t.src == WORDS_OVER && t.text == "德国"));
+        }
+    }
+
     #[test]
     fn a_text_out_of_the_panel_on_a_line_over_a_text_with_no_src_or_no_place_is_refused() {
         let no_size = json!({"src": "name:x/DE", "text": "德国", "x": 10, "y": 30, "size": 0});
@@ -2853,6 +3636,31 @@ mod tests {
                 "outside the panel",
             ),
             (json!({"texts": [text("", 10.0, 30.0)]}), "has no src"),
+            // the words a story layer lays over its picture as html are checked as its texts are, with no src and no digit
+            (
+                json!({"words": [text("", 890.0, 30.0)]}),
+                "outside the panel",
+            ),
+            (
+                json!({"words": [text("", 10.0, 54.0)]}),
+                "sits on a line of base",
+            ),
+            (
+                json!({"texts": [text("name:x/DE", 100.0, 30.0)], "words": [text("", 110.0, 32.0)]}),
+                "overlaps",
+            ),
+            (
+                json!({"words": [json!({"text": "2030 年", "x": 10, "y": 30, "size": 12})]}),
+                "holds a digit",
+            ),
+            (
+                json!({"words": [json!({"text": " ", "x": 10, "y": 30, "size": 12})]}),
+                "is empty",
+            ),
+            (
+                json!({"texts": [text(WORDS_OVER, 10.0, 30.0)]}),
+                "names itself a word laid over",
+            ),
             (
                 json!({"texts": [text("name:x/DE", 10.0, 54.0)]}),
                 "sits on a line of base",
@@ -3013,7 +3821,7 @@ mod tests {
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
-        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 20 with its label gap and spacing, leader
+        // chart leaves over the column page's frame (section_head 8, rankbar 10 (its fold_over and fold_to came last), bubbles 20 with its label gap and spacing, leader
         // reach, land cost, nudge, circle gap, inset and the notes' other places (noted), three of them a list of codes), then
         // the map panel's leader notes (7: a note never sits over the land, so it has no land cost; two a list of codes, the
         // highlight and the focus laid out first), the
@@ -3021,8 +3829,10 @@ mod tests {
         // sankey over the flow page's frame (11: its highlight a list of codes, its finding auto or none), and the 100% stacked
         // bars (9: its highlight a list of codes), the line leaf (8: its highlight one code), the rank lines (10: its highlight
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
-        // highlight one code), and the stacked area last (5: its highlight one code)
-        assert_eq!((t.nodes.len(), knobs), (42, 203));
+        // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
+        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them, change dots 7, rank slope 7 and tile map 6, then unit grid, glyph row and dot strip last)
+        // and 2 more for the one focal point: accent_n of the big numbers and of the thesis claims.
+        assert_eq!((t.nodes.len(), knobs), (58, 336));
         let reserve: Vec<_> = t
             .nodes
             .iter()
@@ -3062,6 +3872,7 @@ mod tests {
                 "flow",
                 "map",
                 "one_line",
+                "page_story",
                 "ranked_bars",
                 "ring",
                 "scmp"
@@ -3086,7 +3897,22 @@ mod tests {
                 "dumbbell",
                 "waterfall",
                 "waffle",
-                "stacked_area"
+                "stacked_area",
+                "gap_axis",
+                "winners_losers",
+                "event_chain",
+                "target_path",
+                "pair_bars",
+                "thesis_claims",
+                "risk_notes",
+                "small_multiples",
+                "member_map",
+                "change_dots",
+                "rank_slope",
+                "tile_map",
+                "unit_grid",
+                "glyph_row",
+                "dot_strip"
             ]
         );
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer
@@ -3468,6 +4294,84 @@ mod tests {
         println!("findings {}", off.len());
         for f in off {
             println!("finding {f}");
+        }
+    }
+
+    /// The members a page leaves out for the first or the last n (basis.cut) hold only when each is a member, not drawn,
+    /// with one row at the basis year whose value is no better than any drawn: for the first n no higher than the lowest
+    /// drawn (a tie allowed), for the last n no lower than the highest drawn. Two place dimensions (iso3 country, geo).
+    #[test]
+    fn a_cut_member_holds_only_with_a_value_no_better_than_any_drawn() {
+        for dim in ["country", "geo"] {
+            let rows: Vec<Row> = [("A", 9.0), ("B", 7.0), ("C", 5.0), ("D", 3.0), ("E", 3.0)]
+                .iter()
+                .map(|(c, v)| place_row(dim, c, "2024", *v))
+                .collect();
+            let basis = |cut: &[&str], low: bool| crate::next_facts::Basis {
+                year: "2024".into(),
+                table: "t".into(),
+                members: ["A", "B", "C", "D", "E"].map(String::from).to_vec(),
+                cut: Some(crate::next_facts::BasisCut {
+                    codes: cut.iter().map(|c| c.to_string()).collect(),
+                    low,
+                }),
+                ..Default::default()
+            };
+            let said = |drawn: &[&str], cut: &[&str], low: bool| {
+                let b = basis(cut, low);
+                let drawn: Vec<String> = drawn.iter().map(|c| c.to_string()).collect();
+                cut_said(&b, b.cut.as_ref().unwrap(), &drawn, dim, &rows)
+            };
+            // the first two, the last two: the cut is no better (D and E tie at 3, and a tie holds)
+            assert_eq!(
+                said(&["A", "B"], &["C", "D", "E"], false),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            assert_eq!(
+                said(&["D", "E"], &["A", "B", "C"], true),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            assert_eq!(
+                said(&["A", "B", "C", "D"], &["E"], false),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            // a cut member better than a drawn one, from either end
+            let top = said(&["A", "C"], &["B", "D", "E"], false);
+            assert!(
+                top.iter().any(|w| w.contains("leaves out B at 7")),
+                "{dim}: {top:?}"
+            );
+            let low = said(&["C", "D"], &["A", "B", "E"], true);
+            assert!(
+                low.iter().any(|w| w.contains("leaves out E at 3")),
+                "{dim}: {low:?}"
+            );
+            let low = said(&["B", "D"], &["A", "C", "E"], true);
+            assert!(
+                low.iter().any(|w| w.contains("leaves out C at 5")),
+                "{dim}: {low:?}"
+            );
+            // no member, drawn as well, no row, and an empty cut
+            let odd = said(&["A", "B"], &["Z", "B"], false);
+            for want in [
+                "leaves out Z, no member",
+                "leaves out B and draws it",
+                "Z has 0 rows",
+            ] {
+                assert!(
+                    odd.iter().any(|w| w.contains(want)),
+                    "{dim}: {want} in {odd:?}"
+                );
+            }
+            assert!(
+                said(&["A"], &[], false)
+                    .iter()
+                    .any(|w| w.contains("cuts no member")),
+                "{dim}"
+            );
         }
     }
 
