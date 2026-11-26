@@ -124,7 +124,7 @@ class OpeningCaption(unittest.TestCase):
         html = page(rate_request(10.5), RATE_NAMES, ["rank", "ends"], kicker="人均GDP（最近时点排名）")[1]
         body = re.sub(r"<[^>]+>", "", html)
         self.assertNotIn("Unemployment by sex", body)
-        # 11-26: the table's measure family names the heads (失业率, a table lookup) before the kicker does; the kicker prints its own name
+        # 11-26: the table's measure family names the heads (the Chinese word for the unemployment rate, a table lookup) before the kicker does; the kicker prints its own name
         self.assertGreaterEqual(body.count("人均GDP"), 1)
         self.assertGreaterEqual(body.count("失业率"), 2)
 
