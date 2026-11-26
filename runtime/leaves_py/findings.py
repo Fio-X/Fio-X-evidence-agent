@@ -957,6 +957,12 @@ def angle_rank(q):
             "score": round(size * surprise * sturdy, 4), "why": why, "summary": why_line}, grid_part(q, y, sorted(members))), None
 
 
+def by_direction(v, rose, fell, flat):
+    """The word key for a change printed as its size (the larger value less the smaller, never below 0): the rise word when the change
+    v is above 0, the fall word below 0, the neutral word at 0, so a size never reads as a rise when the value fell."""
+    return rose if v > 0 else fell if v < 0 else flat
+
+
 def angle_members(q):
     members = dict(q.panel)
     if len(members) < SM_MIN: return None, f"fewer than {SM_MIN} members"
@@ -1022,10 +1028,11 @@ def angle_members(q):
     surprise = clamp(0.3 + 1.4 * minority)
     sturdy = clamp(len(ys) / 10) * clamp(len(members) / 8)
     big_items = [{"fact": hot, "label": {"word": "story.big.now", "name": hi, "year": {"src": f"fact:{hot}.t.y"}}},
-                 {"fact": "dhi", "label": {"word": "story.big.change_of", "name": hi}}, {"fact": "dlo", "label": {"word": "story.big.change_of", "name": lo}}]
+                 *({"fact": k, "label": {"word": by_direction(ch[c], "story.big.rose_of", "story.big.fell_of", "story.big.change_of"), "name": c}}
+                   for k, c in (("dhi", hi), ("dlo", lo)))]   # dhi and dlo are sizes: the word says which way each member moved
     return {"angle": "members", "shows": [q.shows(f"{y0}-{y1}", "series")], "about": [hi, lo], "layer": "small_multiples", "big": big_items, "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
             "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
-            "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
+            "claim": {"num": "fact:dhi", "head": T(by_direction(ch[hi], "story.sm.claim_rose", "story.sm.claim_fell", "story.sm.claim"), hi=hi)}, "notes": [], "members": True, "last": hot,
             "anns": [compared(q, f, "hi", "story.note.members.last", hot, hot, "sm_w", members[hi][y1][0], whole_at, mean=by_mean, r=q.whole, hi=hi) if whole_at is not None else note(hot, "story.note.members.last", hi=hi),
                      compared(q, f, "lo", "story.note.members.last_lo", key(lo), key(lo), "sm_w", members[lo][y1][0], whole_at, mean=by_mean, r=q.whole, lo=lo) if whole_at is not None else note(key(lo), "story.note.members.last_lo", lo=lo)],
             "score": round(size * surprise * sturdy, 4),

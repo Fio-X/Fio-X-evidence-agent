@@ -3085,5 +3085,57 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
                 self.assertEqual(flat(words).count(unit), 1, (kind, flat(words)))
 
 
+class MembersChangeReadsItsWay(unittest.TestCase):
+    """The members angle prints the best and the worst member's change as its size (the larger value less the smaller): the header's big
+    numbers and the claim say which way it went (rose, fell), never the neutral word for a fall, and the number is the recomputed size.
+    On a World Bank tonnes-per-head shape and a Eurostat percent shape: the best rose and the worst fell, both fell, both rose."""
+
+    CASES = {   # test-only ends (first, last) of six members
+        "split": {"A": (5.0, 9.0), "B": (3.0, 4.0), "C": (8.0, 8.5), "D": (6.0, 6.2), "E": (4.0, 3.5), "F": (16.0, 14.0)},
+        "fell": {"A": (9.0, 8.8), "B": (7.0, 6.5), "C": (12.0, 10.0), "D": (6.0, 5.0), "E": (4.0, 3.7), "F": (16.0, 12.0)},
+        "rose": {"A": (5.0, 9.0), "B": (3.0, 3.5), "C": (8.0, 9.0), "D": (6.0, 6.3), "E": (4.0, 4.4), "F": (10.0, 10.1)},
+    }
+    SHAPES = (("wb", WB_T + "@2", "country", {}), ("eu", "nrg_ind_ren", "geo", {"nrg_bal": "REN"}))
+
+    def request(self, shape, ends):
+        _, table, by, fixed = shape
+        req = linear_request(table, by, ends, 2016, 2024, fixed=fixed, text=shape[0] == "wb")
+        if shape[0] == "eu": req = {**req, "fmt_defs": {**FMT_DEFS, "x": {**FMT_DEFS["x"], "suffix": "%"}}, "words": {"measure": "可再生能源占比", "unit": "%"}}
+        return req, {c: c for c in ends}
+
+    def test_the_big_numbers_and_the_claim_say_which_way_each_member_moved(self):
+        word = {1: ("story.big.rose_of", "story.sm.claim_rose"), -1: ("story.big.fell_of", "story.sm.claim_fell")}
+        for shape in self.SHAPES:
+            for case, ends in self.CASES.items():
+                req, names = self.request(shape, ends)
+                composed = FN.compose({**req, "picks": ["members", "rank"]})
+                _, facts = ledger(req, composed, names)
+                ch = {c: b - a for c, (a, b) in ends.items()}
+                hi, lo = max(ch, key=lambda c: (ch[c], c)), min(ch, key=lambda c: (ch[c], c))
+                big = {i["fact"]: i["label"] for i in composed["leaves"]["bignums"]["bignums"]}
+                for key, c in (("dhi", hi), ("dlo", lo)):
+                    sign = 1 if ch[c] > 0 else -1
+                    self.assertEqual(big[key], {"word": word[sign][0], "name": c}, (shape[0], case, key))
+                    self.assertAlmostEqual(facts[key]["v"], abs(ch[c]), 6, (shape[0], case, key))   # the size, recomputed from the rows
+                    self.assertGreater(facts[key]["v"], 0)
+                if case == "split": self.assertEqual((ch[hi] > 0, ch[lo] < 0), (True, True))
+                claim = composed["leaves"]["thesis_claims"]["claims"][0]
+                self.assertEqual(claim["num"].split(".")[0], "fact:dhi")
+                want = FN.segs(FN.T(word[1 if ch[hi] > 0 else -1][1], hi=hi))
+                self.assertEqual(claim["head"], want, (shape[0], case))
+                self.assertNotIn("story.big.change_of", json.dumps(composed["leaves"]["bignums"]))
+
+    def test_a_change_of_exactly_zero_keeps_the_neutral_word(self):
+        self.assertEqual(FN.by_direction(0, "r", "f", "n"), "n")
+        self.assertEqual(FN.by_direction(0.0, "r", "f", "n"), "n")
+        self.assertEqual(FN.by_direction(1e-9, "r", "f", "n"), "r")
+        self.assertEqual(FN.by_direction(-2, "r", "f", "n"), "f")
+        # a best or worst member that did not move: the angle stands down (it has no change to say), on both shapes
+        for shape in self.SHAPES:
+            req, _ = self.request(shape, {**self.CASES["fell"], "C": (12.0, 12.0)})
+            dropped = {d["angle"]: d["why"] for d in FN.candidates(req)[2]}
+            self.assertIn("did not move", dropped.get("members", ""), shape[0])
+
+
 if __name__ == "__main__":
     unittest.main()
