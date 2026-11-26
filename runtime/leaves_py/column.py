@@ -435,6 +435,14 @@ def bignum_fit(text, cell, K):
     return size, True
 
 
+def times_word(c, k):
+    """The words after a big number that is a ratio (its fact's op times) printed with no unit of its own: the word table's times
+    word ("N times", as the notes say it); nothing after any other number."""
+    q = (c.spec.get("facts") or {}).get(k)
+    if not isinstance(q, dict) or q.get("op") != "times" or "fmt" not in q or FX.unit(c.spec, q).strip(): return ""
+    return html.escape(word("story.times"))
+
+
 def cl_bignums(f, occ):
     """The big numbers beside the title: each a fact the request names (hero.data.bignums, else hi, lo, gap, times), printed from its
     ledger entry, in a box `width` px wide with `cols` cells a row; each number at the largest size up to `size` that keeps it in its
@@ -446,10 +454,24 @@ def cl_bignums(f, occ):
     cols = min(K("cols"), len(cells)); cell = (K("width") - BN_PAD - (cols - 1) * BN_GAP) / cols
     st = f' style="width:{K("width")}px;grid-template-columns:repeat({cols},1fr);text-align:{K("align")}"'
     out = []
+    # the story's header (unit_to_label; the column page keeps each number's unit after it): a number whose unit is words prints
+    # alone. When every such number has one unit, the unit stands once on a line over the numbers (the word table's unit line);
+    # numbers of two units each keep theirs in brackets on the label under them (when the label has room). A ratio or a
+    # percent is no such number and keeps its own mark.
+    def words_unit(k):
+        u = FX.unit(c.spec, c.F[k]).strip() if k in c.F and "fmt" in c.F[k] else ""
+        return u if getattr(f, "unit_to_label", False) and FX.long_unit(u) and not FX.digit(u) else ""
+    units = {k: words_unit(k) for k, _ in cells}
+    one = {u for u in units.values() if u}
+    one = one.pop() if len(one) == 1 else None
+    head = f'<div class="bnu" style="font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px">{html.escape(word("unit.line", v=one), quote=False)}</div>' if one else ""
     for n, (k, lab) in enumerate(cells):
-        v = c.t("{" + k + "}"); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
+        unit_lab = html.escape(word("paren", v=units[k]), quote=False) if units[k] and not one else ""
+        if unit_lab and len(re.sub(r"<[^>]+>", "", lab + unit_lab)) > K("label_lines") * 22: unit_lab = ""
+        v = c.t("{" + k + (".n" if unit_lab or (one and units[k]) else "") + "}") + times_word(c, k); lab += unit_lab
+        size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
         out.append(f'<div class="bn"{" data-hot" if n < K("accent_n") else ""}><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
-    return f'<div class="bns"{st}>' + "".join(out) + "</div>"
+    return head + f'<div class="bns"{st}>' + "".join(out) + "</div>"
 
 
 # name -> (draw, reserve); svg layers go into the picture, html layers sit in the page around it

@@ -55,7 +55,7 @@ def cl_bignums(f, occ):
     if d is None: raise FX.Refused("the hero names no leaves.bignums")
     st = dict(f.h.get("style") or {})
     st["bignums"] = {**st.get("bignums", {}), **FIXED["bignums"]}
-    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}})(), occ)
+    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}, "unit_to_label": True})(), occ)
 
 
 def rank_style(h):
@@ -158,8 +158,21 @@ def notes_items(spec, layer, kn):
     for j, n in enumerate(got[:int(kn["notes"])]):
         if not isinstance(n, dict) or not isinstance(n.get("num"), str) or not isinstance(n.get("text"), list): raise FX.Refused(f"page: {layer}'s note {j + 1} is no {{num, text}}")
         if not FX.digit(FX.text(n["num"])): raise FX.Refused(f"page: {layer}'s note {j + 1} number {n['num']} prints no digit")
-        items.append((n["num"], n["text"]))
+        items.append(note_unit(spec, n["num"], n["text"]))
     return items
+
+
+def note_unit(spec, num, sg):
+    """A note's (number, words) with the number's unit moved: a fact whose unit is words prints its number alone, and its unit stands once
+    in the note's words, in brackets before them unless a ledger entry in the words already prints it. A percent sign, a ratio and any
+    other ledger entry are left as they are."""
+    m = re.fullmatch(r"fact:([a-z0-9_]+)", num)
+    q = (spec.get("facts") or {}).get(m[1]) if m else None
+    if not isinstance(q, dict) or "fmt" not in q: return num, sg
+    u = FX.unit(spec, q).strip()
+    if not FX.long_unit(u) or FX.digit(u) or f"{num}.n" not in FX.LEDGER: return num, sg
+    said = any(isinstance(x, dict) and "src" in x and FX.text(x["src"]).rstrip().endswith(u) for x in sg)
+    return f"{num}.n", (sg if said else [{"w": word("paren", v=u)}] + sg)
 
 
 def notes_html(spec, layer, kn):

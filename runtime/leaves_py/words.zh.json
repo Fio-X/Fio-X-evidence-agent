@@ -6,6 +6,8 @@
  "half.1": "上",
  "half.2": "下",
  "paren": "（{v}）",
+ "sentence.end": "。！？",
+ "unit.line": "单位：{v}",
  "scope.within": "在图中各方中",
  "missing": "缺",
  "gap": "差 {v}",
