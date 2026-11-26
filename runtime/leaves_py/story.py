@@ -176,7 +176,8 @@ def note_unit(spec, num, sg):
     return f"{num}.n", sg, ("" if said else u)
 
 
-UNIT_EM = 6   # a note's unit under its number wraps at this many of its own font size (the css's max-width)
+UNIT_EM = 10   # a note's unit under its number stands on one line up to this many of its own font size (the css's max-width), so the
+# number cell grows to fit a unit of up to about ten characters (吨二氧化碳当量/人 is nine) and the words keep the rest of the card
 
 
 def unit_px(ns):
@@ -184,19 +185,36 @@ def unit_px(ns):
     return max(12, ns - 2)
 
 
+def unit_lines(u, us):
+    """The lines a note's unit at us px takes under its number (as the css lays it): one line up to UNIT_EM of its size; a longer unit
+    breaks after a slash (the html's break point there), and only a part that alone runs past the cap breaks inside it."""
+    cap, lines = UNIT_EM * us, [""]
+    for part in re.split(r"(?<=/)", u):
+        if lines[-1] and K.tw(lines[-1] + part, us) > cap: lines.append("")
+        for ch in part:
+            if lines[-1] and K.tw(lines[-1] + ch, us) > cap: lines.append("")
+            lines[-1] += ch
+    return lines
+
+
+def unit_html(u):
+    """A note's unit under its number: the words escaped, a break point after each slash (the css keeps the rest of the words whole)."""
+    return f'<span class="u">{html.escape(u, quote=False).replace("/", "/<wbr>")}</span>' if u else ""
+
+
 def note_cell(num, u, ns):
     """A note's number cell, (width px, height px): the bold number one line at ns + 2 (line height 1.2) and, when it carries one, its unit
-    under it at unit_px, as wide as its words up to UNIT_EM of its size and wrapping there (line height 1.3)."""
+    under it at unit_px in its unit_lines (line height 1.3), the cell as wide as the wider of the number and the unit's longest line."""
     w, h = K.tw(num, ns + 2), (ns + 2) * 1.2
     if not u: return w, h
     us = unit_px(ns)
-    return max(w, min(K.tw(u, us), UNIT_EM * us)), h + 2 + -(-K.tw(u, us) // (UNIT_EM * us)) * us * 1.3
+    lines = unit_lines(u, us)
+    return max(w, max(K.tw(x, us) for x in lines)), h + 2 + len(lines) * us * 1.3
 
 
 def notes_html(spec, layer, kn):
     """The notes of a section as a list: a bold number and the words that say what it is."""
-    unit = lambda u: f'<span class="u">{html.escape(u, quote=False)}</span>' if u else ""
-    items = [f'<li class="note"><b class="n">{FX.entry(num, "span", None)}{unit(u)}</b><span class="nt">{seg_html(sg, f"{layer}'s note {j + 1}")}</span></li>'
+    items = [f'<li class="note"><b class="n">{FX.entry(num, "span", None)}{unit_html(u)}</b><span class="nt">{seg_html(sg, f"{layer}'s note {j + 1}")}</span></li>'
              for j, (num, sg, u) in enumerate(notes_items(spec, layer, kn))]
     return f'<ul class="notes" style="--lead:{kn["lead"]}px;--ns:{kn["note_size"]}px">{"".join(items)}</ul>' if items else ""
 
@@ -678,8 +696,10 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
        "border-left:3px solid var(--t-sec);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
        ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--t-title);flex:none}"  # ink, not the accent: the accent is for the one mark the page is about, and the page has one focal point (11-24)
-       # a note's unit under its number (note_cell): lighter and smaller, wrapping at UNIT_EM of its size
-       f".story .note .n .u{{display:block;max-width:{UNIT_EM}em;margin-top:2px;font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-sec)}}"
+       # a note's unit under its number (note_cell): lighter and smaller, on one line up to UNIT_EM of its size, past that broken after a
+       # slash (unit_html's break point), inside a word only when one alone runs past the cap
+       f".story .note .n .u{{display:block;max-width:{UNIT_EM}em;width:max-content;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere;"
+       "font:400 max(12px,calc(var(--ns) - 2px))/1.3 var(--sans);color:var(--t-sec)}"
        ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
        ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
        ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"

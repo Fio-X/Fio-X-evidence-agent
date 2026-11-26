@@ -2668,8 +2668,9 @@ class ChangeNotes(unittest.TestCase):
                     self.assertFalse(re.search(r"[0-9]", re.sub(r"<[^>]+>", "", re.sub(r'<span data-src="[^"]*">[^<]*</span>', "", item))), item)
                     cell, txt = re.match(r'<b class="n">(.*?)</b><span class="nt">(.*)</span>$', item, re.S).groups()
                     num, txt = re.sub(r"<[^>]+>", "", re.sub(r'<span class="u">.*?</span>', "", cell)), re.sub(r"<[^>]+>", "", txt)
-                    unit = re.search(r'<span class="u">([^<]*)</span>', cell)
-                    w = (int(col.group(1)) if col else story.PAGE_W - 640 - 36) - 28 - 3 - 12 - story.note_cell(num, unit[1] if unit else "", 14)[0]
+                    unit = re.search(r'<span class="u">(.*?)</span>', cell)
+                    w = (int(col.group(1)) if col else story.PAGE_W - 640 - 36) - 28 - 3 - 12 - story.note_cell(num, flat(unit[1]) if unit else "", 14)[0]
+                    self.assertGreaterEqual(w, 160, (num, txt))   # the number cell, its unit on one line, leaves the words a column
                     lines = K.lay([(txt, None)], 14, w)
                     self.assertLessEqual(len(lines), 3, txt)
                     self.assertTrue(all(sum(K.tw(u, 14) for u, _ in ln) <= w + 14 for ln in lines), txt)   # a line past the box by under one glyph is its closing mark
@@ -3098,7 +3099,7 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
                     self.assertEqual(rest, "", kind)   # a percent sign stays on its number; no unit cell
                     continue
                 self.assertNotIn(unit, flat(num), kind)
-                self.assertIn(rest, ("", f'<span class="u">{unit}</span>'), kind)
+                self.assertIn(rest, ("", f'<span class="u">{unit.replace("/", "/<wbr>")}</span>'), kind)
                 if rest:   # moved under the number: once in the note
                     moved += 1
                     self.assertEqual(flat(cell + words).count(unit), 1, (kind, flat(cell), flat(words)))
@@ -3130,15 +3131,25 @@ class UnitOnceInSentencesBigNumbersNotes(unittest.TestCase):
                                  story.notes_html(spec, "rankbar", {"notes": 3, "lead": 24, "note_size": 14}), re.S)
             finally:
                 FX.LEDGER = old
-            self.assertEqual([c for c, _ in got], [f'<span data-src="fact:a.n">1.6</span><span class="u">{u}</span>',
+            self.assertEqual([c for c, _ in got], [f'<span data-src="fact:a.n">1.6</span><span class="u">{u.replace("/", "/<wbr>")}</span>',
                                                    '<span data-src="fact:a.n">1.6</span>', '<span data-src="fact:c">12%</span>'], u)
             self.assertEqual([flat(c + w).count(u) for c, w in got[:2]], [1, 1], u)
             self.assertFalse([w for _, w in got if flat(w).startswith(FN.WD.WORDS["paren"][0])], u)
-            # the cell is as wide as the wider of the number and the unit up to UNIT_EM of its size, and taller by the unit's lines
+            # the cell grows to the unit on one line (both units are under UNIT_EM of their size) and is one unit line taller
             w0, h0 = story.note_cell("1.6", "", 14)
             w1, h1 = story.note_cell("1.6", u, 14)
-            self.assertTrue(w0 < w1 <= story.UNIT_EM * story.unit_px(14) and h1 > h0, (u, w0, w1, h0, h1))
+            us = story.unit_px(14)
+            self.assertEqual(story.unit_lines(u, us), [u])
+            self.assertEqual((w1, h1), (K.tw(u, us), h0 + 2 + us * 1.3), u)
         self.assertEqual(story.unit_px(12), 12)   # never under the page's 12 px floor
+        # past the cap a unit breaks after its slash, not inside a word; a part alone past the cap breaks inside it (test-only units)
+        us = story.unit_px(14)
+        self.assertEqual(story.unit_lines("吨二氧化碳当量/每千居民", us), ["吨二氧化碳当量/", "每千居民"])
+        self.assertEqual(story.unit_lines("千吨油当量按最终能源消费口径", us), ["千吨油当量按最终能源", "消费口径"])
+        w, h = story.note_cell("1.6", "吨二氧化碳当量/每千居民", 14)
+        self.assertEqual((w, h), (K.tw("吨二氧化碳当量/", us), story.note_cell("1.6", "", 14)[1] + 2 + 2 * us * 1.3))
+        self.assertLessEqual(story.note_cell("1.6", "千吨油当量按最终能源消费口径", 14)[0], story.UNIT_EM * us)
+        self.assertEqual(story.unit_html("吨/人"), '<span class="u">吨/<wbr>人</span>')
 
 
 class MembersChangeReadsItsWay(unittest.TestCase):
