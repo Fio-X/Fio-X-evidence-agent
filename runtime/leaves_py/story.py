@@ -177,7 +177,7 @@ def note_unit(spec, num, sg):
 
 
 UNIT_EM = 10   # a note's unit under its number stands on one line up to this many of its own font size (the css's max-width), so the
-# number cell grows to fit a unit of up to about ten characters (吨二氧化碳当量/人 is nine) and the words keep the rest of the card
+# number cell grows to fit a unit of up to about ten characters (the Chinese unit for tonnes of CO2 equivalent per person is nine) and the words keep the rest of the card
 
 
 def unit_px(ns):
