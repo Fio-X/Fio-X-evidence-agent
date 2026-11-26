@@ -384,22 +384,19 @@ def clamp(x):
 
 # ---------------------------------------------------------------- the request
 
-# The measure families (the knowledge group's runtime/pi/assets/measure-families.json, shipped beside this folder): each family's
-# "zh" is its reviewed short name for the page, and its "tables" the table ids (or id prefixes ending in "_" or ".") it holds.
-FAMILIES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pi", "assets", "measure-families.json")
-
-
 def short_measure(table):
-    """The short name a chart's head prints for the main table's measure: the zh of the first measure family that holds the table
-    (as next_visual measure_family matches it: a prefix ending in "_" or ".", else the id itself, the id's "@<version>" left off),
-    or None when no family holds it, the file is missing or the name holds a digit (the request's measure words stay then). The
-    table's long reviewed name stays on the page's source line, which layer 1 writes."""
-    try:
-        with open(FAMILIES, encoding="utf-8") as fh: fams = json.load(fh).get("families") or []
-    except (OSError, ValueError):
-        return None
+    """The short name a chart's head prints for the main table's measure: the zh of the first entry of the word table's
+    "measure.short" (a copy of the knowledge group's runtime/pi/assets/measure-families.json, each family's reviewed zh and
+    its table ids or id prefixes ending in "_" or ".", in the same order; scripts/test_short_measure_shipped.py holds the two
+    equal) that holds the table (as next_visual measure_family matches it: a prefix ending in "_" or ".", else the id itself,
+    the id's "@<version>" left off), or None when no entry holds it, the table has no such key or the name holds a digit (the
+    request's measure words stay then). The word table ships with this folder, the families file does not. The table's long
+    reviewed name stays on the page's source line, which layer 1 writes."""
+    fams = WD.WORDS.get("measure.short")
+    if not isinstance(fams, list): return None
     tid = str(table or "").split("@")[0]
     for fam in fams:
+        if not isinstance(fam, dict): continue
         held = [h for h in fam.get("tables") or [] if isinstance(h, str) and h]
         if any(tid.startswith(h) if h.endswith(("_", ".")) else tid == h for h in held):
             zh = fam.get("zh")

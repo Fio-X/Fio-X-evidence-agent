@@ -407,5 +407,21 @@
 "story.grid.title_below": "最低的{n:lo}是 {f:ug_lo}，离{n:w} {y:goal}整体目标还差 {f:ug_gap}",
 "story.grid.lit_bottom": "最低的几个",
 "story.grid.title_bottom": "{y:ug_lo}最低的是{n:lo}，只有 {f:ug_lo}",
-"story.grid.text": "每格是一个成员，亮着的是图例所说的那几个。"
+"story.grid.text": "每格是一个成员，亮着的是图例所说的那几个。",
+"measure.short": [
+  {"zh": "可再生能源占比", "tables": ["sdg_07_40", "nrg_ind_ren", "nrg_ind_ure", "nrg_ind_urt", "nrg_ind_fecf", "nrg_ind_cotd", "EG.FEC.RNEW.", "EG.ELC.RNEW."]},
+  {"zh": "能源来源与去向", "tables": ["nrg_bal_"]},
+  {"zh": "发电结构", "tables": ["nrg_bal_peh", "nrg_ind_peh", "nrg_cb_pem", "EG.ELC."]},
+  {"zh": "碳排放", "tables": ["EN.GHG.", "EN.ATM.CO2E.", "env_air_gge", "sdg_13_10"]},
+  {"zh": "老年人口", "tables": ["SP.POP.65UP.", "demo_pjanind", "proj_23ndbi"]},
+  {"zh": "庇护申请", "tables": ["migr_asy"]},
+  {"zh": "人均GDP", "tables": ["nama_10_pc", "NY.GDP.PCAP."]},
+  {"zh": "GDP", "tables": ["nama_10_gdp", "NY.GDP.MKTP."]},
+  {"zh": "能源进口", "tables": ["nrg_ti_", "nrg_te_"]},
+  {"zh": "人口", "tables": ["SP.POP.TOTL", "SP.POP.GROW", "demo_pjan", "demo_gind"]},
+  {"zh": "失业率", "tables": ["une_rt_", "tipsun20", "tps00203", "SL.UEM.TOTL.", "SL.UEM.1524.", "yth_empl_090", "yth_empl_100", "tipslm80", "tesem120", "tesem140", "tepsr_wc170"]},
+  {"zh": "城镇化率", "tables": ["SP.URB.TOTL.IN."]},
+  {"zh": "电价", "tables": ["nrg_pc_204", "nrg_pc_205"]},
+  {"zh": "发电装机容量", "tables": ["nrg_inf_epc"]}
+]
 }
